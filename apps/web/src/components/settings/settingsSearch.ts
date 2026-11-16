@@ -1327,6 +1327,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["link peer another machine vps agents work there handoff pairing code"],
   },
   {
+    id: "personal-network",
+    title: "Personal network",
+    to: "/settings/connections",
+    searchTerms: ["share this computer host key guest relay relay.example.com pair remote access"],
+    primaryEnvironmentOnly: true,
+  },
+  {
     id: "remote-environments",
     title: "Environments",
     to: "/settings/connections",

@@ -1,108 +1,96 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { PersonalAdminHost, PersonalGuestClient } from "@t3tools/contracts";
 import {
-  type PersonalPortalRecord,
-  isPersonalPortalError,
-  readPersonalPortalRecord,
-  recordPairedEnvironments,
-  savePersonalPortalConfig,
-  syncPersonalPortal,
+  forgetPersonalAdminConfig,
+  getAdminHost,
+  isPersonalAdminError,
+  listAdminHosts,
+  readPersonalAdminConfig,
+  removeAdminHost,
+  revokeAdminClient,
+  rotateAdminHostKey,
+  savePersonalAdminConfig,
+  type PersonalAdminConfig,
 } from "@t3tools/client-runtime/personal/portal";
-import type { ReactNode } from "react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { connectPairing } from "../../connection/onboarding";
-import {
-  enablePersonalNotifications,
-  personalNotificationPermission,
-} from "../../personal/notifications";
-import { useAtomCommand } from "../../state/use-atom-command";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 
-/**
- * The portal's personal key gate. A hosted build without a saved key shows the
- * one-time setup screen; once the key is saved, host discovery refreshes when
- * the page becomes visible or the network returns.
- */
-export function PersonalModeGate({ hosted, children }: { hosted: boolean; children: ReactNode }) {
-  const [record, setRecord] = useState(readPersonalPortalRecord);
+export function PersonalModeGate({
+  hosted,
+  children,
+}: {
+  hosted: boolean;
+  children: React.ReactNode;
+}) {
+  const [config, setConfig] = useState(readPersonalAdminConfig);
   if (!hosted) return <>{children}</>;
-  if (record === null) return <PersonalSetupSurface onSaved={setRecord} />;
+  if (config === null) {
+    return <AdminSetupSurface onSaved={setConfig} />;
+  }
   return (
-    <>
-      <PersonalHostSync record={record} />
-      <PersonalNotificationPrompt record={record} />
-      {children}
-    </>
+    <AdminConsole
+      config={config}
+      onForget={() => {
+        forgetPersonalAdminConfig();
+        setConfig(null);
+      }}
+    />
   );
 }
 
-function PersonalSetupSurface({ onSaved }: { onSaved: (record: PersonalPortalRecord) => void }) {
-  const connectPairingEnvironment = useAtomCommand(connectPairing, { reportFailure: false });
+function errorMessage(cause: unknown): string {
+  return isPersonalAdminError(cause)
+    ? cause.message
+    : cause instanceof Error
+      ? cause.message
+      : "The relay request failed.";
+}
+
+function AdminSetupSurface({ onSaved }: { onSaved: (config: PersonalAdminConfig) => void }) {
   const [relayUrl, setRelayUrl] = useState(() => window.location.origin);
-  const [key, setKey] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [adminKey, setAdminKey] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const pair = (input: {
-    readonly host: string;
-    readonly pairingCode: string;
-    readonly expectedEnvironmentId: EnvironmentId;
-  }) =>
-    connectPairingEnvironment(input).then((result) => {
-      if (result._tag !== "Success") {
-        throw new Error("This host refused the key.");
-      }
-      return result.value;
-    });
-
-  const handleSubmit = async () => {
-    setIsSubmitting(true);
-    setErrorMessage("");
+  const submit = async () => {
+    setBusy(true);
+    setError("");
     try {
-      const saved = savePersonalPortalConfig({ relayUrl, key });
-      const result = await syncPersonalPortal({ config: saved, record: saved, pair });
-      onSaved(recordPairedEnvironments(saved, result.paired.map(String)));
-      if (result.hosts.length === 0) {
-        setErrorMessage(
-          "The key is valid, but no hosts are registered yet. Start a host and reopen this page.",
-        );
-      }
+      const saved = savePersonalAdminConfig({ relayUrl, adminKey });
+      await listAdminHosts({ config: saved });
+      onSaved(saved);
     } catch (cause) {
-      setErrorMessage(
-        isPersonalPortalError(cause)
-          ? cause.message
-          : "Could not set up this portal. Check the relay URL and key.",
-      );
+      setError(errorMessage(cause));
     } finally {
-      setIsSubmitting(false);
+      setBusy(false);
     }
   };
 
   return (
     <StandalonePage>
       <StandalonePageHeader
-        title="Personal network"
-        description="Enter the key once. Every host registered with it appears here, and this device stays paired until you forget it."
+        title="Personal network admin"
+        description="This console manages hosts and guest access. It cannot open projects; use a host key in a client to do that."
       />
       <form
         className="mt-6 space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          void handleSubmit();
+          void submit();
         }}
       >
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="personal-relay">
+          <label className="text-sm font-medium" htmlFor="admin-relay">
             Relay
           </label>
           <Input
-            id="personal-relay"
+            id="admin-relay"
             autoCapitalize="none"
             autoCorrect="off"
-            disabled={isSubmitting}
+            disabled={busy}
             nativeInput
             onChange={(event) => setRelayUrl(event.currentTarget.value)}
             placeholder="https://t3.example.com"
@@ -111,140 +99,294 @@ function PersonalSetupSurface({ onSaved }: { onSaved: (record: PersonalPortalRec
           />
         </div>
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="personal-key">
-            Personal key
+          <label className="text-sm font-medium" htmlFor="admin-key">
+            Admin key
           </label>
           <Input
-            id="personal-key"
+            id="admin-key"
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect="off"
-            disabled={isSubmitting}
+            disabled={busy}
             nativeInput
-            onChange={(event) => setKey(event.currentTarget.value)}
-            placeholder="The key shared with every host"
+            onChange={(event) => setAdminKey(event.currentTarget.value)}
+            placeholder="The relay's admin key"
             spellCheck={false}
             type="password"
-            value={key}
+            value={adminKey}
           />
         </div>
-
-        {errorMessage ? (
+        {error ? (
           <Alert variant="error">
-            <AlertDescription>{errorMessage}</AlertDescription>
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-
-        <Button disabled={isSubmitting || key.trim().length === 0} size="sm" type="submit">
-          {isSubmitting ? "Connecting..." : "Connect this device"}
+        <Button disabled={busy || adminKey.trim().length === 0} size="sm" type="submit">
+          {busy ? "Checking..." : "Open admin console"}
         </Button>
       </form>
-
       <div className="mt-6 rounded-lg border border-border/70 bg-background/55 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-        The key stays in this browser. Anyone who has it can operate the agents on every host, so
-        losing a device means rotating the key on the relay and each host.
+        The admin key stays in this browser under a separate storage key. It lists hosts and guest
+        sessions, and can rotate or remove host keys. It never authenticates as a guest.
       </div>
     </StandalonePage>
   );
 }
 
-function PersonalHostSync({ record }: { record: PersonalPortalRecord }) {
-  const connectPairingEnvironment = useAtomCommand(connectPairing, { reportFailure: false });
-  const runningRef = useRef(false);
-  // Paired ids are bookkeeping for the next sync, not rendered; a ref keeps the
-  // effect from re-firing on its own write.
-  const recordRef = useRef(record);
+function AdminConsole({
+  config,
+  onForget,
+}: {
+  readonly config: PersonalAdminConfig;
+  readonly onForget: () => void;
+}) {
+  const [hosts, setHosts] = useState<ReadonlyArray<PersonalAdminHost>>([]);
+  const [clients, setClients] = useState<Record<string, ReadonlyArray<PersonalGuestClient>>>({});
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const sync = useEffectEvent(async () => {
-    if (runningRef.current) return;
-    runningRef.current = true;
+  const refresh = async () => {
+    setError("");
     try {
-      const pair = (input: {
-        readonly host: string;
-        readonly pairingCode: string;
-        readonly expectedEnvironmentId: EnvironmentId;
-      }) =>
-        connectPairingEnvironment(input).then((result) => {
-          if (result._tag !== "Success") {
-            throw new Error("This host refused the key.");
-          }
-          return result.value;
-        });
-      const result = await syncPersonalPortal({
-        config: record,
-        record: recordRef.current,
-        pair,
-      });
-      if (result.paired.length > 0) {
-        recordRef.current = recordPairedEnvironments(recordRef.current, result.paired.map(String));
-      }
-    } catch {
-      // A temporary relay or host failure retries on the next foreground.
-    } finally {
-      runningRef.current = false;
+      setHosts(await listAdminHosts({ config }));
+    } catch (cause) {
+      setError(errorMessage(cause));
     }
-  });
+  };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes the personal host catalog when the portal is foregrounded or reconnects
+  /* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync -- loads the relay's host catalog when the admin console opens */
   useEffect(() => {
-    void sync();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void sync();
-    };
-    const onOnline = () => void sync();
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("online", onOnline);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("online", onOnline);
-    };
-  }, []);
+    void refresh();
+  }, [config.relayUrl, config.adminKey]);
+  /* oxlint-enable react/set-state-in-effect, react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync */
 
-  return null;
-}
+  const toggleClients = async (host: PersonalAdminHost) => {
+    if (expanded === host.hostId) {
+      setExpanded(null);
+      return;
+    }
+    setExpanded(host.hostId);
+    if (clients[host.hostId] !== undefined) return;
+    setBusy(host.hostId);
+    try {
+      const detail = await getAdminHost({ config, hostId: host.hostId });
+      setClients((current) => ({ ...current, [host.hostId]: detail.clients }));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
 
-const NOTIFICATION_DISMISSED_KEY = "t3.personal.notificationsDismissed";
+  const rotate = async (host: PersonalAdminHost) => {
+    if (
+      !window.confirm(
+        `Rotate ${host.label ?? host.hostId}'s host key? Old guest sessions stop working.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(host.hostId);
+    setError("");
+    try {
+      await rotateAdminHostKey({ config, hostId: host.hostId });
+      await refresh();
+      setRevealed((current) => new Set(current).add(host.hostId));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
 
-function PersonalNotificationPrompt({ record }: { record: PersonalPortalRecord }) {
-  const [permission, setPermission] = useState(personalNotificationPermission);
-  const [dismissed, setDismissed] = useState(
-    () => globalThis.sessionStorage?.getItem(NOTIFICATION_DISMISSED_KEY) === "1",
-  );
-  const [busy, setBusy] = useState(false);
-  // The prompt is an offer, not a status light: any permission decision ends it.
-  if (dismissed || permission !== "default") return null;
+  const remove = async (host: PersonalAdminHost) => {
+    if (!window.confirm(`Remove ${host.label ?? host.hostId}? Its host key stops working.`)) {
+      return;
+    }
+    setBusy(host.hostId);
+    setError("");
+    try {
+      await removeAdminHost({ config, hostId: host.hostId });
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
 
-  const dismiss = () => {
-    globalThis.sessionStorage?.setItem(NOTIFICATION_DISMISSED_KEY, "1");
-    setDismissed(true);
+  const copy = async (host: PersonalAdminHost) => {
+    await navigator.clipboard.writeText(host.hostKey);
+  };
+
+  const revokeClient = async (host: PersonalAdminHost, client: PersonalGuestClient) => {
+    setBusy(host.hostId);
+    setError("");
+    try {
+      await revokeAdminClient({
+        config,
+        hostId: host.hostId,
+        sessionId: client.sessionId,
+      });
+      setClients((current) => ({
+        ...current,
+        [host.hostId]: (current[host.hostId] ?? []).map((entry) =>
+          entry.sessionId === client.sessionId
+            ? { ...entry, revokedAt: new Date().toISOString() }
+            : entry,
+        ),
+      }));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(null);
+    }
   };
 
   return (
-    <div className="fixed right-4 bottom-4 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-border bg-card p-3 shadow-lg">
-      <div className="min-w-0 text-sm">
-        <p className="font-medium">Get notified when an agent needs you</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Approvals, questions, and finished runs arrive even when this app is closed.
+    <StandalonePage>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <StandalonePageHeader
+          title="Personal network admin"
+          description="Hosts registered with this relay, their host keys, and the guest clients they reported."
+        />
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => void refresh()}>
+            Refresh
+          </Button>
+          <Button size="sm" variant="outline" onClick={onForget}>
+            Forget key
+          </Button>
+        </div>
+      </div>
+
+      {error ? (
+        <Alert className="mt-4" variant="error">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {hosts.length === 0 ? (
+        <p className="mt-6 text-sm text-muted-foreground">
+          No hosts yet. Open T3 Code on a computer and use Settings → Personal Network → Share this
+          computer.
         </p>
-      </div>
-      <div className="flex shrink-0 gap-2">
-        <Button
-          disabled={busy}
-          size="sm"
-          onClick={() => {
-            setBusy(true);
-            void enablePersonalNotifications({ relayUrl: record.relayUrl, key: record.key })
-              .then((result) => setPermission(result))
-              .catch(() => undefined)
-              .finally(() => setBusy(false));
-          }}
-        >
-          Enable
-        </Button>
-        <Button size="sm" variant="outline" onClick={dismiss}>
-          Not now
-        </Button>
-      </div>
-    </div>
+      ) : (
+        <div className="mt-6 space-y-3">
+          {hosts.map((host) => {
+            const isRevealed = revealed.has(host.hostId);
+            const hostClients = clients[host.hostId];
+            return (
+              <div key={host.hostId} className="rounded-lg border border-border/70 bg-card p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{host.label ?? host.hostId}</p>
+                      <span className="text-xs text-muted-foreground">
+                        {host.paused ? "Paused" : host.online ? "Online" : "Offline"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {host.hostId} · {host.platform ?? "unknown"} · {host.clientsCount} guest
+                      {host.clientsCount === 1 ? "" : "s"} · last seen {host.lastSeenAt}
+                    </p>
+                    <a
+                      className="mt-1 block truncate text-xs text-primary underline-offset-2 hover:underline"
+                      href={host.publicUrl}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {host.publicUrl}
+                    </a>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <code className="rounded bg-muted px-2 py-1 text-xs">
+                        {isRevealed ? host.hostKey : "••••••••••••••••"}
+                      </code>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() =>
+                          setRevealed((current) => {
+                            const next = new Set(current);
+                            if (next.has(host.hostId)) next.delete(host.hostId);
+                            else next.add(host.hostId);
+                            return next;
+                          })
+                        }
+                      >
+                        {isRevealed ? "Hide" : "Reveal"}
+                      </Button>
+                      <Button size="xs" variant="outline" onClick={() => void copy(host)}>
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => void toggleClients(host)}
+                    >
+                      {expanded === host.hostId ? "Hide guests" : "Guests"}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => void rotate(host)}
+                    >
+                      Rotate key
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="destructive"
+                      disabled={busy !== null}
+                      onClick={() => void remove(host)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+
+                {expanded === host.hostId ? (
+                  <div className="mt-3 border-t border-border/60 pt-3">
+                    {busy === host.hostId && hostClients === undefined ? (
+                      <p className="text-xs text-muted-foreground">Loading guests...</p>
+                    ) : hostClients === undefined || hostClients.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No guest sessions reported.</p>
+                    ) : (
+                      <ul className="space-y-1 text-xs">
+                        {hostClients.map((client) => (
+                          <li key={client.sessionId} className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium">{client.clientLabel ?? "Guest"}</span>
+                            <span className="text-muted-foreground">
+                              {client.platform ?? "unknown"} · last seen {client.lastSeenAt}
+                              {client.revokedAt ? " · revoked" : ""}
+                            </span>
+                            {client.revokedAt ? null : (
+                              <Button
+                                size="xs"
+                                variant="ghost-destructive"
+                                disabled={busy !== null}
+                                onClick={() => void revokeClient(host, client)}
+                              >
+                                Revoke
+                              </Button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </StandalonePage>
   );
 }

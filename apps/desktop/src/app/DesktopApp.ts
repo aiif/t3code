@@ -11,7 +11,9 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
+import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { installDesktopIpcHandlers } from "../ipc/DesktopIpcHandlers.ts";
+import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
@@ -19,6 +21,7 @@ import * as DesktopCliCommand from "./DesktopCliCommand.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as PreviewPasskeys from "../preview/Passkeys.ts";
+import { destroyDesktopTray, installDesktopTray } from "../window/DesktopTray.ts";
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopHomeOwner from "../backend/DesktopHomeOwner.ts";
@@ -339,6 +342,9 @@ const startup = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const previewPasskeys = yield* PreviewPasskeys.PreviewPasskeys;
+  const assets = yield* Effect.serviceOption(DesktopAssets.DesktopAssets);
+  const electronWindow = yield* Effect.serviceOption(ElectronWindow.ElectronWindow);
+  const desktopWindowOption = yield* Effect.serviceOption(DesktopWindow.DesktopWindow);
 
   yield* shellEnvironment.installIntoProcess;
   const hasCommandLinePasswordStore =
@@ -404,6 +410,32 @@ const startup = Effect.gen(function* () {
   );
   yield* previewPasskeys.configure;
   yield* applicationMenu.configure;
+  if (
+    Option.isSome(assets) &&
+    Option.isSome(electronWindow) &&
+    Option.isSome(desktopWindowOption)
+  ) {
+    const desktopWindow = desktopWindowOption.value;
+    const desktopRuntimeContext = yield* Effect.context<DesktopWindow.DesktopWindow>();
+    const runDesktopEffect = Effect.runPromiseWith(desktopRuntimeContext);
+    yield* installDesktopTray({
+      iconPaths: yield* assets.value.iconPaths,
+      platform: environment.platform,
+      isPersonalOnly: environment.personalOnly === true,
+      reveal: () => {
+        void runDesktopEffect(desktopWindow.revealOrCreateMain).catch(() => undefined);
+      },
+      dispatchMenuAction: (action) => {
+        void runDesktopEffect(desktopWindow.dispatchMenuAction(action, { reveal: false })).catch(
+          () => undefined,
+        );
+      },
+      quit: () => {
+        void runDesktopEffect(electronApp.quit).catch(() => undefined);
+      },
+    }).pipe(Effect.catchCause(() => Effect.logWarning("desktop tray could not be installed")));
+    yield* Effect.addFinalizer(() => Effect.sync(destroyDesktopTray));
+  }
   // Portal identity is prepared pre-ready; MIME helpers must not gate the backend or window.
   yield* linuxUrlHandler.register.pipe(Effect.forkScoped);
   yield* bootstrap(backendStarted).pipe(

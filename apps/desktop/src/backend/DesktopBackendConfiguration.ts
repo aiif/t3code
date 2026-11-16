@@ -569,6 +569,18 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
         T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1",
+        ...(environment.personalOnly
+          ? { T3CODE_PERSONAL_ONLY: "1", T3CODE_PERSONAL_MODE: "1" }
+          : {}),
+        ...(environment.isPackaged
+          ? {
+              T3CODE_FRPC_PATH: environment.path.join(
+                environment.resourcesPath,
+                "frpc",
+                environment.platform === "win32" ? "frpc.exe" : "frpc",
+              ),
+            }
+          : {}),
         T3CODE_CLI_PATH: Option.getOrUndefined(input.cliPath),
         [DESKTOP_HOST_SCOPE_ENV]: input.hostScope,
       },
@@ -693,6 +705,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       ...parentEnvWithoutT3Home,
       ...backendChildEnvPatch(),
       ...forwardedEnv,
+      ...(environment.personalOnly ? { T3CODE_PERSONAL_ONLY: "1", T3CODE_PERSONAL_MODE: "1" } : {}),
       ...(wslEnv !== undefined ? { WSLENV: wslEnv } : {}),
     },
     // env already excludes T3CODE_HOME; merging the host env would restore it.

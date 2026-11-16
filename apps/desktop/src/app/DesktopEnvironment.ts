@@ -39,6 +39,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly processArch: string;
     readonly isPackaged: boolean;
     readonly isDevelopment: boolean;
+    readonly personalOnly: boolean;
     readonly appVersion: string;
     readonly appPath: string;
     readonly resourcesPath: string;
@@ -85,7 +86,17 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
+declare const __T3CODE_BUILD_PERSONAL_ONLY__: boolean | undefined;
+
 const APP_BASE_NAME = "T3 Code";
+
+function resolvePersonalOnly(): boolean {
+  const baked =
+    typeof __T3CODE_BUILD_PERSONAL_ONLY__ === "undefined"
+      ? false
+      : __T3CODE_BUILD_PERSONAL_ONLY__ === true;
+  return baked || process.env.T3CODE_PERSONAL_ONLY === "1";
+}
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -191,6 +202,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     processArch: input.processArch,
     isPackaged: input.isPackaged,
     isDevelopment,
+    personalOnly: resolvePersonalOnly(),
     appVersion: input.appVersion,
     appPath: input.appPath,
     resourcesPath,

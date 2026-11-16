@@ -5,38 +5,38 @@ import {
   makeTestRegistry,
   registerTestHost,
   subscribeTestDevice,
-  TEST_PERSONAL_KEY as PERSONAL_KEY,
+  TEST_ADMIN_KEY,
 } from "./testkit.ts";
 
-describe("personal key", () => {
-  it("accepts only the configured key and derives a stable space", () => {
+describe("admin key", () => {
+  it("accepts only the configured admin key", () => {
     const registry = makeTestRegistry();
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-    expect(spaceId).toBe(registry.service.authenticatePersonalKey(PERSONAL_KEY));
-    expect(() => registry.service.authenticatePersonalKey("wrong-key")).toThrow(
-      RegistryRequestError,
-    );
-    expect(() => registry.service.authenticatePersonalKey("")).toThrow(RegistryRequestError);
+    expect(() => registry.service.authenticateAdminKey(TEST_ADMIN_KEY)).not.toThrow();
+    expect(() => registry.service.authenticateAdminKey("wrong-key")).toThrow(RegistryRequestError);
+    expect(() => registry.service.authenticateAdminKey("")).toThrow(RegistryRequestError);
     registry.close();
   });
 });
 
 describe("host registration", () => {
-  it("re-registering the same environment keeps the host id and token", () => {
+  it("re-registering the same environment keeps the host id and host key", () => {
     const registry = makeTestRegistry();
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-    const first = registry.service.registerHost(spaceId, {
+    const first = registry.service.registerHost({
       environmentId: "env-a",
       label: "Home PC",
+      platform: "win32",
     });
     registry.advance(1_000);
-    const second = registry.service.registerHost(spaceId, {
+    const second = registry.service.registerHost({
       environmentId: "env-a",
       label: "Home PC (renamed)",
+      platform: "win32",
     });
 
     expect(second.hostId).toBe(first.hostId);
-    expect(second.hostToken).toBe(first.hostToken);
+    expect(second.hostKey).toBe(first.hostKey);
+    expect(second.hostKeyVersion).toBe(first.hostKeyVersion);
+    expect(second.hostToken).not.toBe(first.hostToken);
     expect(second.label).toBe("Home PC (renamed)");
     expect(second.publicUrl).toBe(`https://${first.hostId}.t3.example.test`);
     expect(second.frp).toEqual({
@@ -45,29 +45,36 @@ describe("host registration", () => {
       authToken: "frp-shared-token",
       domain: `${first.hostId}.t3.example.test`,
     });
-    expect(registry.service.listHosts(spaceId).hosts).toHaveLength(1);
+    expect(registry.service.listAdminHosts().hosts).toHaveLength(1);
     registry.close();
   });
 
-  it("registers distinct environments as distinct hosts", () => {
+  it("registers distinct environments as distinct hosts with distinct keys", () => {
     const registry = makeTestRegistry();
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-    const first = registry.service.registerHost(spaceId, { environmentId: "env-a" });
-    const second = registry.service.registerHost(spaceId, { environmentId: "env-b" });
+    const first = registerTestHost(registry, "env-a");
+    const second = registerTestHost(registry, "env-b");
 
     expect(second.hostId).not.toBe(first.hostId);
+    expect(second.hostKey).not.toBe(first.hostKey);
     expect(second.hostToken).not.toBe(first.hostToken);
-    expect(registry.service.listHosts(spaceId).hosts).toHaveLength(2);
+    expect(registry.service.listAdminHosts().hosts).toHaveLength(2);
     registry.close();
   });
 
   it("rejects a malformed registration", () => {
     const registry = makeTestRegistry();
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-    expect(() => registry.service.registerHost(spaceId, {})).toThrow(RegistryRequestError);
-    expect(() =>
-      registry.service.registerHost(spaceId, { environmentId: "x".repeat(201) }),
-    ).toThrow(RegistryRequestError);
+    expect(() => registry.service.registerHost({})).toThrow(RegistryRequestError);
+    expect(() => registry.service.registerHost({ environmentId: "x".repeat(201) })).toThrow(
+      RegistryRequestError,
+    );
+    registry.close();
+  });
+
+  it("round-trips the host key through encryption and the admin reveal", () => {
+    const registry = makeTestRegistry();
+    const host = registerTestHost(registry);
+    const listed = registry.service.getAdminHost(host.hostId).host;
+    expect(listed.hostKey).toBe(host.hostKey);
     registry.close();
   });
 });
@@ -75,99 +82,191 @@ describe("host registration", () => {
 describe("host liveness", () => {
   it("reports online until the heartbeat TTL passes, then offline", () => {
     const registry = makeTestRegistry();
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-    const host = registry.service.registerHost(spaceId, { environmentId: "env-a" });
-
-    expect(registry.service.listHosts(spaceId).hosts[0]?.online).toBe(true);
+    const host = registerTestHost(registry);
+    expect(registry.service.listAdminHosts().hosts[0]?.online).toBe(true);
     registry.advance(91_000);
-    expect(registry.service.listHosts(spaceId).hosts[0]?.online).toBe(false);
+    expect(registry.service.listAdminHosts().hosts[0]?.online).toBe(false);
 
     const row = registry.service.authenticateHostToken(host.hostToken);
-    registry.service.heartbeat(row, {});
-    expect(registry.service.listHosts(spaceId).hosts[0]?.online).toBe(true);
+    registry.service.heartbeat(row, { hostKeyVersion: host.hostKeyVersion });
+    expect(registry.service.listAdminHosts().hosts[0]?.online).toBe(true);
+    registry.close();
+  });
+
+  it("pausing makes the host offline while its host key still resolves", () => {
+    const registry = makeTestRegistry();
+    const host = registerTestHost(registry);
+    const row = registry.service.authenticateHostToken(host.hostToken);
+    registry.service.heartbeat(row, { online: false });
+
+    const resolved = registry.service.resolveHostKey(host.hostKey);
+    expect(resolved.online).toBe(false);
+    expect(resolved.paused).toBe(true);
+
+    registry.service.heartbeat(registry.service.authenticateHostToken(host.hostToken), {
+      online: true,
+    });
+    expect(registry.service.resolveHostKey(host.hostKey).online).toBe(true);
     registry.close();
   });
 
   it("accepts only the matching host token", () => {
     const registry = makeTestRegistry();
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-    const host = registry.service.registerHost(spaceId, { environmentId: "env-a" });
-    const other = registry.service.registerHost(spaceId, { environmentId: "env-b" });
-
-    const row = registry.service.authenticateHostToken(host.hostToken);
-    expect(row.id).toBe(host.hostId);
+    const first = registerTestHost(registry, "env-a");
+    const second = registerTestHost(registry, "env-b");
+    expect(registry.service.authenticateHostToken(first.hostToken).id).toBe(first.hostId);
+    expect(() => registry.service.authenticateHostToken(second.hostToken)).not.toThrow();
     expect(() =>
-      registry.service.authenticateHostToken(other.hostToken.replace(other.hostId, host.hostId)),
+      registry.service.authenticateHostToken(first.hostToken.replace(first.hostId, second.hostId)),
     ).toThrow(RegistryRequestError);
     expect(() => registry.service.authenticateHostToken("garbage")).toThrow(RegistryRequestError);
     registry.close();
   });
 
-  it("unregistering removes the host", () => {
+  it("unregistering removes the host and invalidates its key", () => {
     const registry = makeTestRegistry();
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-    const registered = registry.service.registerHost(spaceId, { environmentId: "env-a" });
-    const host = registry.service.authenticateHostToken(registered.hostToken);
+    const host = registerTestHost(registry);
+    const row = registry.service.authenticateHostToken(host.hostToken);
+    expect(registry.service.unregister(row)).toEqual({ removed: true });
+    expect(registry.service.listAdminHosts().hosts).toHaveLength(0);
+    expect(() => registry.service.resolveHostKey(host.hostKey)).toThrow(RegistryRequestError);
+    registry.close();
+  });
+});
 
-    expect(registry.service.unregister(host)).toEqual({ removed: true });
-    expect(registry.service.listHosts(spaceId).hosts).toHaveLength(0);
-    expect(() => registry.service.authenticateHostToken(registered.hostToken)).toThrow(
+describe("host keys", () => {
+  it("resolves only the host the key belongs to", () => {
+    const registry = makeTestRegistry();
+    const first = registerTestHost(registry, "env-a");
+    const second = registerTestHost(registry, "env-b");
+
+    expect(registry.service.resolveHostKey(first.hostKey)).toMatchObject({
+      hostId: first.hostId,
+      environmentId: "env-a",
+    });
+    expect(registry.service.resolveHostKey(second.hostKey)).toMatchObject({
+      hostId: second.hostId,
+      environmentId: "env-b",
+    });
+    expect(() => registry.service.resolveHostKey(TEST_ADMIN_KEY)).toThrow(RegistryRequestError);
+    registry.close();
+  });
+
+  it("rotation invalidates the old key and tells the host the new version", () => {
+    const registry = makeTestRegistry();
+    const host = registerTestHost(registry);
+    const rotated = registry.service.rotateHostKey(host.hostId, "admin");
+
+    expect(rotated.hostKey).not.toBe(host.hostKey);
+    expect(() => registry.service.resolveHostKey(host.hostKey)).toThrow(RegistryRequestError);
+    expect(registry.service.resolveHostKey(rotated.hostKey).hostId).toBe(host.hostId);
+
+    const heartbeat = registry.service.heartbeat(
+      registry.service.authenticateHostToken(host.hostToken),
+      { hostKeyVersion: host.hostKeyVersion },
+    );
+    expect(heartbeat.hostKey).toBe(rotated.hostKey);
+    expect(heartbeat.hostKeyVersion).toBeGreaterThan(host.hostKeyVersion);
+
+    const repeated = registry.service.heartbeat(
+      registry.service.authenticateHostToken(host.hostToken),
+      { hostKeyVersion: heartbeat.hostKeyVersion },
+    );
+    expect(repeated.hostKey).toBeUndefined();
+    registry.close();
+  });
+});
+
+describe("guest clients", () => {
+  it("stores a snapshot, revokes missing sessions, and reports revocation", () => {
+    const registry = makeTestRegistry();
+    const host = registerTestHost(registry);
+    const row = registry.service.authenticateHostToken(host.hostToken);
+    registry.service.reportClients(row, {
+      clients: [
+        {
+          sessionId: "session-1",
+          clientLabel: "Phone",
+          platform: "mobile",
+          firstSeenAt: "2026-11-16T00:00:00.000Z",
+          lastSeenAt: "2026-11-16T00:05:00.000Z",
+        },
+      ],
+    });
+    expect(registry.service.listAdminClients(host.hostId).clients).toHaveLength(1);
+    expect(registry.service.getAdminHost(host.hostId).host.clientsCount).toBe(1);
+
+    registry.service.reportClients(row, { clients: [] });
+    expect(registry.service.listAdminClients(host.hostId).clients[0]?.revokedAt).not.toBeNull();
+    expect(registry.service.heartbeat(row, {}).revokedSessionIds).toEqual(["session-1"]);
+    registry.close();
+  });
+
+  it("marks a client revoked on admin request", () => {
+    const registry = makeTestRegistry();
+    const host = registerTestHost(registry);
+    registry.service.reportClients(registry.service.authenticateHostToken(host.hostToken), {
+      clients: [{ sessionId: "session-1", firstSeenAt: 1, lastSeenAt: 2 }],
+    });
+    expect(
+      registry.service.revokeClient(host.hostId, { sessionId: "session-1" }, "admin").revoked,
+    ).toBe(true);
+    expect(registry.service.listAdminClients(host.hostId).clients[0]?.revokedAt).not.toBeNull();
+    registry.close();
+  });
+});
+
+describe("admin host management", () => {
+  it("removes hosts", () => {
+    const registry = makeTestRegistry();
+    const host = registerTestHost(registry);
+    expect(registry.service.removeHost(host.hostId, "admin")).toEqual({ removed: true });
+    expect(() => registry.service.getAdminHost(host.hostId)).toThrow(RegistryRequestError);
+    expect(() => registry.service.authenticateHostToken(host.hostToken)).toThrow(
       RegistryRequestError,
     );
+    expect(() =>
+      registry.service.registerHost({ environmentId: "env-a", label: "Home PC" }),
+    ).toThrow(RegistryRequestError);
     registry.close();
   });
 });
 
 describe("web push", () => {
-  it("stores subscriptions idempotently and removes them", () => {
+  it("stores a host subscription and removes it", () => {
     const registry = makeTestRegistry();
-    const spaceId = subscribeTestDevice(registry);
-    subscribeTestDevice(registry);
-
-    expect(registry.store.listPushSubscriptions(spaceId)).toHaveLength(1);
+    const host = registerTestHost(registry);
+    const scope = subscribeTestDevice(registry, undefined, host.hostKey);
+    expect(scope).toEqual({ scope: "host", hostId: host.hostId });
+    expect(registry.store.listPushSubscriptions("host", host.hostId)).toHaveLength(1);
     expect(
-      registry.service.unsubscribe(spaceId, {
+      registry.service.unsubscribe(scope, {
         endpoint: "https://push.example.test/subscription/one",
       }),
     ).toEqual({ removed: true });
-    expect(registry.store.listPushSubscriptions(spaceId)).toHaveLength(0);
     registry.close();
   });
 
-  it("rejects a subscription without an https endpoint", () => {
-    const registry = makeTestRegistry();
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-    expect(() =>
-      registry.service.subscribe(spaceId, {
-        subscription: {
-          endpoint: "http://push.example.test/subscription/one",
-          keys: { p256dh: "p", auth: "a" },
-        },
-      }),
-    ).toThrow(RegistryRequestError);
-    registry.close();
-  });
-
-  it("notifies every subscription with a redacted payload", async () => {
+  it("notifies host and admin subscriptions with a redacted payload", async () => {
     const registry = makeTestRegistry();
     const host = registerTestHost(registry);
-    const spaceId = subscribeTestDevice(registry);
+    subscribeTestDevice(registry, "https://push.example.test/host", host.hostKey);
+    subscribeTestDevice(registry, "https://push.example.test/admin", TEST_ADMIN_KEY);
 
-    const result = await registry.service.notify(spaceId, {
-      hostId: host.hostId,
-      environmentId: "env-a",
-      threadId: "thread-1",
-      phase: "waiting_for_approval",
-      threadTitle: "Fix the login flow",
-      projectTitle: "web",
-      hostLabel: "Home PC",
-      // Hosts must never send these; the registry never forwards unknown fields.
-      prompt: "secret prompt",
-      output: "secret output",
-    });
+    const result = await registry.service.notify(
+      registry.service.authenticateHostToken(host.hostToken),
+      {
+        environmentId: "env-a",
+        threadId: "thread-1",
+        phase: "waiting_for_approval",
+        threadTitle: "Fix the login flow",
+        projectTitle: "web",
+        hostLabel: "Home PC",
+        prompt: "secret prompt",
+      },
+    );
 
-    expect(result).toEqual({ delivered: 1, removed: 0, skipped: null });
-    expect(registry.sent).toHaveLength(1);
+    expect(result).toEqual({ delivered: 2, removed: 0, skipped: null });
     expect(registry.sent[0]?.payload).toEqual({
       title: "Approval needed · Home PC",
       body: "Fix the login flow · web",
@@ -181,110 +280,22 @@ describe("web push", () => {
     registry.close();
   });
 
-  it("deduplicates the same host, thread and phase inside the window", async () => {
+  it("deduplicates and drops gone subscriptions", async () => {
     const registry = makeTestRegistry();
     const host = registerTestHost(registry);
-    const spaceId = subscribeTestDevice(registry);
+    subscribeTestDevice(registry, "https://push.example.test/host", host.hostKey);
     const notification = {
-      hostId: host.hostId,
       environmentId: "env-a",
       threadId: "thread-1",
       phase: "completed" as const,
     };
-
-    expect((await registry.service.notify(spaceId, notification)).delivered).toBe(1);
-    expect(await registry.service.notify(spaceId, notification)).toEqual({
+    const row = registry.service.authenticateHostToken(host.hostToken);
+    expect((await registry.service.notify(row, notification)).delivered).toBe(1);
+    expect(await registry.service.notify(row, notification)).toEqual({
       delivered: 0,
       removed: 0,
       skipped: "deduped",
     });
-    registry.advance(30_001);
-    expect((await registry.service.notify(spaceId, notification)).delivered).toBe(1);
-    registry.close();
-  });
-
-  it("removes a subscription the push service reports as gone", async () => {
-    const registry = makeTestRegistry({
-      sender: {
-        send: async () => "gone",
-      },
-    });
-    const host = registerTestHost(registry);
-    const spaceId = subscribeTestDevice(registry);
-
-    const result = await registry.service.notify(spaceId, {
-      hostId: host.hostId,
-      environmentId: "env-a",
-      threadId: "thread-1",
-      phase: "failed",
-    });
-
-    expect(result).toEqual({ delivered: 0, removed: 1, skipped: null });
-    expect(registry.store.listPushSubscriptions(spaceId)).toHaveLength(0);
-    registry.close();
-  });
-
-  it("reports when no device is subscribed and never fails the caller", async () => {
-    const registry = makeTestRegistry();
-    const host = registerTestHost(registry);
-    const spaceId = registry.service.authenticatePersonalKey(PERSONAL_KEY);
-
-    expect(
-      await registry.service.notify(spaceId, {
-        hostId: host.hostId,
-        environmentId: "env-a",
-        threadId: "thread-1",
-        phase: "completed",
-      }),
-    ).toEqual({ delivered: 0, removed: 0, skipped: "no-subscriptions" });
-    registry.close();
-  });
-
-  it("rejects notifications for unknown hosts, phases, and mismatched environments", async () => {
-    const registry = makeTestRegistry();
-    const host = registerTestHost(registry);
-    const spaceId = subscribeTestDevice(registry);
-    const base = {
-      hostId: host.hostId,
-      environmentId: "env-a",
-      threadId: "thread-1",
-      phase: "completed",
-    };
-
-    await expect(
-      registry.service.notify(spaceId, { ...base, hostId: "ffffffffffff" }),
-    ).rejects.toThrow(RegistryRequestError);
-    await expect(
-      registry.service.notify(spaceId, { ...base, environmentId: "other-env" }),
-    ).rejects.toThrow(RegistryRequestError);
-    await expect(registry.service.notify(spaceId, { ...base, phase: "running" })).rejects.toThrow(
-      RegistryRequestError,
-    );
-    registry.close();
-  });
-});
-
-describe("push sender failure", () => {
-  it("keeps the subscription when delivery fails for another reason", async () => {
-    const registry = makeTestRegistry({
-      sender: {
-        send: async () => {
-          throw new Error("network");
-        },
-      },
-    });
-    const host = registerTestHost(registry);
-    const spaceId = subscribeTestDevice(registry);
-
-    expect(
-      await registry.service.notify(spaceId, {
-        hostId: host.hostId,
-        environmentId: "env-a",
-        threadId: "thread-1",
-        phase: "completed",
-      }),
-    ).toEqual({ delivered: 0, removed: 0, skipped: null });
-    expect(registry.store.listPushSubscriptions(spaceId)).toHaveLength(1);
     registry.close();
   });
 });

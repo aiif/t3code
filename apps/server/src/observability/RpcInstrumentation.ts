@@ -239,6 +239,13 @@ const RPC_AGGREGATES = {
   [WS_METHODS.subscribeServerLifecycle]: "server",
   [WS_METHODS.subscribeAuthAccess]: "auth",
   [PERSONAL_WS_METHODS.relayStatus]: "server",
+  [PERSONAL_WS_METHODS.startSharing]: "server",
+  [PERSONAL_WS_METHODS.stopSharing]: "server",
+  [PERSONAL_WS_METHODS.pauseSharing]: "server",
+  [PERSONAL_WS_METHODS.resumeSharing]: "server",
+  [PERSONAL_WS_METHODS.rotateSharingKey]: "server",
+  [PERSONAL_WS_METHODS.revealSharingKey]: "server",
+  [PERSONAL_WS_METHODS.resolveHostKey]: "server",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
 const RPC_SPAN_PREFIX = "ws.rpc";

@@ -41,6 +41,7 @@ import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
+import { shouldHideWindowOnClose } from "./DesktopTrayState.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
 const TITLEBAR_HEIGHT = 40;
@@ -826,8 +827,13 @@ export const make = Effect.gen(function* () {
     window.on("move", scheduleBoundsPersist);
     window.on("maximize", scheduleBoundsPersist);
     window.on("unmaximize", scheduleBoundsPersist);
-    window.on("close", () => {
+    window.on("close", (event) => {
       runFork(flushBoundsPersist);
+      const quitting = Effect.runSyncWith(context)(Ref.get(desktopState.quitting));
+      if (!quitting && shouldHideWindowOnClose(environment.personalOnly)) {
+        event.preventDefault();
+        window.hide();
+      }
     });
 
     if (environment.platform === "darwin") {

@@ -33,11 +33,7 @@ import * as Stream from "effect/Stream";
 import * as ServerConfig from "../config.ts";
 import * as AuthConnectDevices from "../persistence/AuthConnectDevices.ts";
 import * as AuthPairingLinks from "../persistence/AuthPairingLinks.ts";
-import {
-  PERSONAL_KEY_BOOTSTRAP_METHOD,
-  PERSONAL_KEY_SUBJECT,
-  personalKeyValue,
-} from "./personalKey.ts";
+import { readPersonalHostFile } from "../personal/hostSharingState.ts";
 
 export interface BootstrapGrant {
   readonly method: ServerAuthBootstrapMethod;
@@ -46,8 +42,10 @@ export interface BootstrapGrant {
   readonly label?: string;
   readonly proofKeyThumbprint?: string;
   readonly expiresAt: DateTime.DateTime;
-  /** A personal-key grant; the session may drive work but not administer the host. */
+  /** A guest grant; the session may drive work but not administer the host. */
   readonly personalGuest?: boolean;
+  /** The host whose host key created the guest session. */
+  readonly hostId?: string;
 }
 
 export class UnknownBootstrapCredentialError extends Schema.TaggedError<UnknownBootstrapCredentialError>()(
@@ -254,6 +252,12 @@ export type BootstrapCredentialChange =
 export class PairingGrantStore extends Context.Service<
   PairingGrantStore,
   {
+    /** Installs the one reusable host-key grant; null clears it. Not persisted. */
+    readonly setHostKeyGrant: (input: {
+      readonly hostKey: string;
+      readonly hostId: string;
+    }) => Effect.Effect<void>;
+    readonly clearHostKeyGrant: () => Effect.Effect<void>;
     readonly issueOneTimeToken: (input?: {
       readonly ttl?: Duration.Duration;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
@@ -351,8 +355,8 @@ const toPairingLink = (row: AuthPairingLinks.AuthPairingLinkRecord): AuthPairing
 });
 const DESKTOP_BOOTSTRAP_TTL_HOURS = Duration.hours(24);
 const DEV_STARTUP_TTL_HOURS = Duration.hours(24);
-// A personal key is the root credential; its grant never expires in practice.
-const PERSONAL_KEY_TTL = Duration.days(3650);
+// A host key is reusable and stable; its grant expires with the host record.
+const HOST_KEY_TTL = Duration.days(3650);
 const PAIRING_TOKEN_REJECTION_LIMIT =
   Math.floor(256 / PAIRING_CODE_ALPHABET.length) * PAIRING_CODE_ALPHABET.length;
 
@@ -367,6 +371,7 @@ const make = Effect.gen(function* () {
   const pairingLinks = yield* AuthPairingLinks.AuthPairingLinkRepository;
   const connectDevices = yield* AuthConnectDevices.AuthConnectDeviceRepository;
   const seededGrantsRef = yield* Ref.make(new Map<string, StoredBootstrapGrant>());
+  const hostGrantRef = yield* Ref.make<{ hostKey: string; hostId: string } | null>(null);
   const changesPubSub = yield* PubSub.unbounded<BootstrapCredentialChange>();
   const generatePairingToken = Effect.gen(function* () {
     let credential = "";
@@ -435,20 +440,25 @@ const make = Effect.gen(function* () {
     });
   }
 
-  // The raw key lives only in this in-memory grant, like the desktop bootstrap seed.
-  // Persisting it would make the database a way to recover the root credential.
-  const personalKey = personalKeyValue(config);
-  if (personalKey !== undefined) {
-    const now = yield* DateTime.now;
-    yield* seedGrant(personalKey, {
-      method: PERSONAL_KEY_BOOTSTRAP_METHOD,
-      scopes: AuthPersonalGuestScopes,
-      subject: PERSONAL_KEY_SUBJECT,
-      expiresAt: DateTime.add(now, { milliseconds: Duration.toMillis(PERSONAL_KEY_TTL) }),
-      remainingUses: "unbounded",
-      personalGuest: true,
+  // The host key lives in the owner-only host state file. Seeding it here keeps
+  // guest exchanges working before the sharing service has started.
+  const persistedHost = yield* readPersonalHostFile({ stateDir: config.stateDir });
+  if (Option.isSome(persistedHost) && persistedHost.value.enabled) {
+    yield* Ref.set(hostGrantRef, {
+      hostKey: persistedHost.value.hostKey,
+      hostId: persistedHost.value.hostId,
     });
   }
+  const setHostKeyGrant: PairingGrantStore["Service"]["setHostKeyGrant"] = Effect.fn(
+    "PairingGrantStore.setHostKeyGrant",
+  )(function* (grant) {
+    yield* Ref.set(hostGrantRef, { hostKey: grant.hostKey, hostId: grant.hostId });
+  });
+  const clearHostKeyGrant: PairingGrantStore["Service"]["clearHostKeyGrant"] = Effect.fn(
+    "PairingGrantStore.clearHostKeyGrant",
+  )(function* () {
+    yield* Ref.set(hostGrantRef, null);
+  });
 
   const listActive: PairingGrantStore["Service"]["listActive"] = Effect.fn(
     "PairingGrantStore.listActive",
@@ -558,6 +568,17 @@ const make = Effect.gen(function* () {
   const consume: PairingGrantStore["Service"]["consume"] = Effect.fn("PairingGrantStore.consume")(
     function* (credential, input) {
       const now = yield* DateTime.now;
+      const hostGrant = yield* Ref.get(hostGrantRef);
+      if (hostGrant !== null && credential.trim() === hostGrant.hostKey) {
+        return {
+          method: "host-key",
+          scopes: AuthPersonalGuestScopes,
+          subject: `host-key:${hostGrant.hostId}`,
+          expiresAt: DateTime.add(now, { milliseconds: Duration.toMillis(HOST_KEY_TTL) }),
+          personalGuest: true,
+          hostId: hostGrant.hostId,
+        } satisfies BootstrapGrant;
+      }
       if (yield* consumeRotatingDesktopToken(credential, now.epochMilliseconds)) {
         return {
           method: "desktop-bootstrap",
@@ -647,6 +668,7 @@ const make = Effect.gen(function* () {
                   ? { proofKeyThumbprint: grant.proofKeyThumbprint }
                   : {}),
                 ...(grant.personalGuest ? { personalGuest: true } : {}),
+                ...(grant.hostId ? { hostId: grant.hostId } : {}),
                 expiresAt: grant.expiresAt,
               } satisfies BootstrapGrant,
             },
@@ -877,6 +899,8 @@ const make = Effect.gen(function* () {
     });
 
   return PairingGrantStore.of({
+    setHostKeyGrant,
+    clearHostKeyGrant,
     issueOneTimeToken,
     findPendingConnect,
     recordConnectRequestClient,

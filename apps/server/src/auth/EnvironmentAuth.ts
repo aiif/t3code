@@ -99,6 +99,8 @@ export interface AuthenticatedSession {
   readonly expiresAt?: DateTime.DateTime;
   /** A personal-key session: can drive work, cannot administer the host. */
   readonly personalGuest?: true;
+  /** The host whose host key created this guest session. */
+  readonly hostId?: string;
 }
 
 const serverAuthInternalErrorContext = {
@@ -813,6 +815,7 @@ export const make = Effect.gen(function* () {
         ...(session.proofKeyThumbprint ? { proofKeyThumbprint: session.proofKeyThumbprint } : {}),
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
         ...(session.personalGuest ? { personalGuest: true as const } : {}),
+        ...(session.hostId ? { hostId: session.hostId } : {}),
       })),
     );
 
@@ -902,6 +905,7 @@ export const make = Effect.gen(function* () {
             sessionMethod: session.method,
             ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
             ...(session.personalGuest ? { personalGuest: true } : {}),
+            ...(session.hostId ? { hostId: session.hostId } : {}),
           }) satisfies AuthSessionState,
       ),
       Effect.catchIf(isServerAuthCredentialError, () =>
@@ -956,6 +960,7 @@ export const make = Effect.gen(function* () {
         subject: grant.subject,
         scopes: grant.scopes,
         ...(grant.personalGuest ? { personalGuest: true } : {}),
+        ...(grant.hostId ? { hostId: grant.hostId } : {}),
         ...(previousSession?.method === "browser-session-cookie"
           ? { replaceSessionId: previousSession.sessionId }
           : {}),
@@ -972,6 +977,7 @@ export const make = Effect.gen(function* () {
         sessionMethod: session.method,
         expiresAt: DateTime.toUtc(session.expiresAt),
         ...(grant.personalGuest ? { personalGuest: true } : {}),
+        ...(grant.hostId ? { hostId: grant.hostId } : {}),
       } satisfies AuthBrowserSessionResult,
       sessionToken: session.token,
     } satisfies BootstrapExchangeResult;
@@ -979,7 +985,7 @@ export const make = Effect.gen(function* () {
 
   type ResolvedBootstrapGrant = Pick<
     PairingGrantStore.BootstrapGrant,
-    "scopes" | "subject" | "label" | "personalGuest"
+    "scopes" | "subject" | "label" | "personalGuest" | "hostId"
   > & {
     readonly method: PairingGrantStore.BootstrapGrant["method"] | "reusable-dev-token";
   };
@@ -1074,6 +1080,7 @@ export const make = Effect.gen(function* () {
                 subject: grant.subject,
                 scopes: grantedScopes,
                 ...(grant.personalGuest ? { personalGuest: true } : {}),
+                ...(grant.hostId ? { hostId: grant.hostId } : {}),
                 ...(input?.proofKeyThumbprint
                   ? {
                       proofKeyThumbprint: input.proofKeyThumbprint,
@@ -1091,10 +1098,10 @@ export const make = Effect.gen(function* () {
                   (cause) => new ServerAuthAuthenticatedAccessTokenIssueError({ cause }),
                 ),
               );
-            return { session, personalGuest: grant.personalGuest === true };
+            return { session, personalGuest: grant.personalGuest === true, hostId: grant.hostId };
           }),
         ),
-        Effect.flatMap(({ session, personalGuest }) =>
+        Effect.flatMap(({ session, personalGuest, hostId }) =>
           DateTime.now.pipe(
             Effect.map(
               (now) =>
@@ -1110,6 +1117,7 @@ export const make = Effect.gen(function* () {
                   ),
                   scope: encodeOAuthScope(session.scopes),
                   ...(personalGuest ? { personal_guest: true } : {}),
+                  ...(hostId ? { host_id: hostId } : {}),
                 }) satisfies AuthAccessTokenResult,
             ),
           ),
@@ -1524,6 +1532,7 @@ export const make = Effect.gen(function* () {
               : {}),
             ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
             ...(session.personalGuest ? { personalGuest: true as const } : {}),
+            ...(session.hostId ? { hostId: session.hostId } : {}),
           };
         }
       }
@@ -1540,7 +1549,7 @@ export const make = Effect.gen(function* () {
         session.personalGuest === true
           ? Effect.fail(
               new ServerAuthInvalidCredentialError({
-                diagnostic: "Personal-key sessions cannot be used with /mcp.",
+                diagnostic: "Guest sessions cannot be used with /mcp.",
               }),
             )
           : session.subject === MCP_CLIENT_SUBJECT && session.method === "bearer-access-token"

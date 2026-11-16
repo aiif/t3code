@@ -427,6 +427,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         tailscaleServePort: 443,
         personalEnabled: false,
         personalMode: false,
+        personalOnly: false,
       });
     }),
   );
@@ -508,6 +509,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         tailscaleServePort: 443,
         personalEnabled: false,
         personalMode: false,
+        personalOnly: false,
       });
     }),
   );
@@ -747,6 +749,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         tailscaleServePort: 443,
         personalEnabled: false,
         personalMode: false,
+        personalOnly: false,
       });
     }),
   );

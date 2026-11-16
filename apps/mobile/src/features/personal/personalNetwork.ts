@@ -1,23 +1,21 @@
-import {
-  forgetPersonalPortal,
-  readPersonalPortalRecord,
-  recordPairedEnvironments,
-  savePersonalPortalConfig,
-  syncPersonalPortal,
-  type PersonalPortalConfig,
-  type PersonalPortalRecord,
-  type PersonalPortalStorage,
-  type PersonalPortalSyncResult,
-} from "@t3tools/client-runtime/personal/portal";
 import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  personalHostRecord,
+  readPersonalHosts,
+  refreshPersonalHosts,
+  removePersonalHost,
+  resolvePersonalHost,
+  upsertPersonalHost,
+  type PersonalHostRecord,
+  type PersonalStorage,
+} from "@t3tools/client-runtime/personal/portal";
 import * as SecureStore from "expo-secure-store";
 
 /**
- * The personal key is the root credential for every host, so it lives in the
- * platform keystore rather than app preferences. SecureStore's sync API keeps
- * the shared portal helpers usable from render.
+ * Host keys are guest credentials, so they live in the platform keystore
+ * rather than app preferences. Each key is one independent host.
  */
-const personalNetworkStorage: PersonalPortalStorage = {
+const personalNetworkStorage: PersonalStorage = {
   getItem: (key) => {
     try {
       return SecureStore.getItem(key);
@@ -34,55 +32,67 @@ const personalNetworkStorage: PersonalPortalStorage = {
   },
   removeItem: (key) => {
     try {
-      // SecureStore has no synchronous delete. A JSON object without the
-      // required fields reads back as unconfigured and is overwritten next save.
-      SecureStore.setItem(key, "{}");
+      // SecureStore has no synchronous delete. An empty array reads back as unconfigured.
+      SecureStore.setItem(key, "[]");
     } catch {
       // Removing an already absent record is the desired state.
     }
   },
 };
 
-export function readPersonalNetworkRecord(): PersonalPortalRecord | null {
-  return readPersonalPortalRecord(personalNetworkStorage);
-}
-
-export function savePersonalNetworkConfig(config: PersonalPortalConfig): PersonalPortalRecord {
-  return savePersonalPortalConfig(config, personalNetworkStorage);
-}
-
-export function forgetPersonalNetwork(): void {
-  forgetPersonalPortal(personalNetworkStorage);
+export function readPersonalNetworkHosts(): ReadonlyArray<PersonalHostRecord> {
+  return readPersonalHosts(personalNetworkStorage);
 }
 
 export type PairPersonalHost = (input: {
   readonly host: string;
   readonly pairingCode: string;
   readonly expectedEnvironmentId: EnvironmentId;
-}) => Promise<unknown>;
+}) => Promise<{ readonly ok: boolean; readonly error: string | null }>;
 
 /**
- * Discovers the hosts registered under the saved key and pairs the ones this
- * device has not paired yet. `pair` is injected so the UI and the background
- * sync can share the same discovery rules.
+ * Resolves one host key through the relay, then pairs with that host URL. The
+ * host key itself is retained so the record can be refreshed and re-paired.
  */
-export async function syncPersonalNetwork(input: {
+export async function addPersonalNetworkHost(input: {
+  readonly relayUrl: string;
+  readonly hostKey: string;
   readonly pair: PairPersonalHost;
-  readonly record?: PersonalPortalRecord | null;
-}): Promise<PersonalPortalSyncResult | null> {
-  const record = input.record ?? readPersonalNetworkRecord();
-  if (record === null) return null;
-  const result = await syncPersonalPortal({
-    config: { relayUrl: record.relayUrl, key: record.key },
-    record,
-    pair: input.pair,
+}): Promise<PersonalHostRecord> {
+  const resolved = await resolvePersonalHost({
+    relayUrl: input.relayUrl,
+    hostKey: input.hostKey,
   });
-  if (result.paired.length > 0) {
-    const current = readPersonalNetworkRecord();
-    // A forget or key rotation while discovery was in flight wins.
-    if (current !== null && current.relayUrl === record.relayUrl && current.key === record.key) {
-      recordPairedEnvironments(current, result.paired.map(String), personalNetworkStorage);
-    }
+  const outcome = await input.pair({
+    host: resolved.publicUrl,
+    pairingCode: input.hostKey.trim(),
+    expectedEnvironmentId: resolved.environmentId as EnvironmentId,
+  });
+  if (!outcome.ok) {
+    throw new Error(outcome.error ?? "This host refused the key.");
   }
-  return result;
+  const record = personalHostRecord({
+    relayUrl: input.relayUrl,
+    hostKey: input.hostKey,
+    resolved,
+  });
+  upsertPersonalHost(record, personalNetworkStorage);
+  return record;
+}
+
+export function removePersonalNetworkHost(
+  host: PersonalHostRecord,
+): ReadonlyArray<PersonalHostRecord> {
+  return removePersonalHost(
+    { hostId: host.hostId, relayUrl: host.relayUrl },
+    personalNetworkStorage,
+  );
+}
+
+export function refreshPersonalNetworkHosts(): Promise<ReadonlyArray<PersonalHostRecord>> {
+  return refreshPersonalHosts({
+    hosts: readPersonalNetworkHosts(),
+    storage: personalNetworkStorage,
+    fetchImpl: async (url, init) => fetch(url, init),
+  });
 }

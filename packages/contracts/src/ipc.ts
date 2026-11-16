@@ -10,6 +10,7 @@ import type {
   BrowserImportSourceId,
 } from "./browserImport.ts";
 import { AuthAccessTokenResult, AuthSessionState } from "./auth.ts";
+import type { DesktopPersonalShareState } from "./personal.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
@@ -1157,6 +1158,8 @@ export interface DesktopBridge {
   checkSystemPermission: (pane: SystemSettingsPane) => Promise<boolean>;
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
   pasteAsText: () => Promise<void>;
+  /** Updates the tray menu and whether closing the window hides to the tray. */
+  setPersonalShareState: (state: DesktopPersonalShareState) => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;

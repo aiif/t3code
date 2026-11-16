@@ -220,6 +220,13 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeServerLifecycle]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeAuthAccess]: AuthAccessReadScope,
   [PERSONAL_WS_METHODS.relayStatus]: AuthOrchestrationReadScope,
+  [PERSONAL_WS_METHODS.startSharing]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.stopSharing]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.pauseSharing]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.resumeSharing]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.rotateSharingKey]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.revealSharingKey]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.resolveHostKey]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope {

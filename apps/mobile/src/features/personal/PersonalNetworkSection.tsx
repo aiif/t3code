@@ -10,10 +10,10 @@ import { buildPairingUrl } from "../connection/pairing";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { configuredPersonalRelayUrl } from "./mode";
 import {
-  forgetPersonalNetwork,
-  readPersonalNetworkRecord,
-  savePersonalNetworkConfig,
-  syncPersonalNetwork,
+  addPersonalNetworkHost,
+  readPersonalNetworkHosts,
+  refreshPersonalNetworkHosts,
+  removePersonalNetworkHost,
 } from "./personalNetwork";
 
 type PersonalPairOutcome = {
@@ -26,115 +26,112 @@ type PersonalPair = (
   expectedEnvironmentId?: EnvironmentId,
 ) => Promise<PersonalPairOutcome>;
 
-interface PersonalConnectOutcome {
-  readonly error: string | null;
-  readonly message: string | null;
+function personalAddErrorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : "Could not add this computer.";
 }
 
-async function connectPersonalNetwork(input: {
-  readonly relayUrl: string;
-  readonly key: string;
-  readonly pair: PersonalPair;
-}): Promise<PersonalConnectOutcome> {
-  try {
-    const saved = savePersonalNetworkConfig({ relayUrl: input.relayUrl, key: input.key });
-    const result = await syncPersonalNetwork({
-      record: saved,
-      pair: async ({ host, pairingCode, expectedEnvironmentId }) => {
-        const outcome = await input.pair(buildPairingUrl(host, pairingCode), expectedEnvironmentId);
-        if (!outcome.ok) throw new Error(outcome.error ?? "This host refused the key.");
-      },
-    });
-    if (result === null) return { error: null, message: null };
-    if (result.hosts.length === 0) {
-      return {
-        error: "The key is valid, but no hosts are registered yet. Start a host and try again.",
-        message: null,
-      };
-    }
-    if (result.failures.length > 0) {
-      return {
-        error: `Paired ${result.paired.length} host(s). ${result.failures
-          .map((failure) => `${failure.environmentId}: ${failure.message}`)
-          .join(" ")}`,
-        message: null,
-      };
-    }
-    return {
-      error: null,
-      message:
-        result.paired.length === 0
-          ? "Every host is already paired."
-          : `Paired ${result.paired.length} host(s).`,
-    };
-  } catch (cause) {
-    return {
-      error:
-        cause instanceof Error
-          ? cause.message
-          : "Could not reach the relay. Check the URL and your connection.",
-      message: null,
-    };
-  }
+function personalAddedMessage(host: { readonly label: string | null; readonly publicUrl: string }) {
+  return `Added ${host.label ?? host.publicUrl}.`;
 }
 
-export function PersonalNetworkSection(props: { readonly onPair: PersonalPair }) {
-  const [record, setRecord] = useState(readPersonalNetworkRecord);
+export function PersonalNetworkSection(props: {
+  readonly onPair: PersonalPair;
+  readonly onOpenHost?: (environmentId: EnvironmentId) => void;
+}) {
+  const [hosts, setHosts] = useState(readPersonalNetworkHosts);
   const [relayUrl, setRelayUrl] = useState(
-    () => record?.relayUrl ?? configuredPersonalRelayUrl() ?? "",
+    () => hosts[0]?.relayUrl ?? configuredPersonalRelayUrl() ?? "",
   );
-  const [key, setKey] = useState(() => record?.key ?? "");
+  const [hostKey, setHostKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const connect = async () => {
+  const add = async () => {
     setBusy(true);
     setError(null);
     setMessage(null);
-    const outcome = await connectPersonalNetwork({
-      relayUrl,
-      key,
-      pair: props.onPair,
-    });
-    setRecord(readPersonalNetworkRecord());
-    setError(outcome.error);
-    setMessage(outcome.message);
+    try {
+      const host = await addPersonalNetworkHost({
+        relayUrl,
+        hostKey,
+        pair: async ({ host: publicUrl, pairingCode, expectedEnvironmentId }) => {
+          const outcome = await props.onPair(
+            buildPairingUrl(publicUrl, pairingCode),
+            expectedEnvironmentId,
+          );
+          return outcome;
+        },
+      });
+      setHosts(readPersonalNetworkHosts());
+      setHostKey("");
+      setMessage(personalAddedMessage(host));
+    } catch (cause) {
+      setError(personalAddErrorMessage(cause));
+    }
     setBusy(false);
   };
 
-  const forget = () => {
-    Dialog.alert(
-      "Forget personal network?",
-      "This removes the key from this device. Environments stay saved, but new hosts will not appear until you enter the key again.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Forget",
-          style: "destructive",
-          onPress: () => {
-            forgetPersonalNetwork();
-            setRecord(null);
-            setKey("");
-            setError(null);
-            setMessage(null);
-          },
+  const refresh = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setHosts(await refreshPersonalNetworkHosts());
+    } catch {
+      setError("Could not refresh host status.");
+    }
+    setBusy(false);
+  };
+
+  const remove = (host: (typeof hosts)[number]) => {
+    Dialog.alert("Remove this computer?", "The host key is forgotten on this device.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          setHosts(removePersonalNetworkHost(host));
+          setMessage(null);
         },
-      ],
-    );
+      },
+    ]);
   };
 
   return (
     <SettingsSection
       title="Personal network"
-      footer="Every host registered with this key appears here. Anyone with the key can operate the agents on those hosts."
+      footer="Each host key reaches exactly one computer. Multiple keys are independent and can run at the same time."
     >
       <View collapsable={false} className="gap-3.5 bg-grouped-card p-4">
-        {record ? (
-          <Text className="text-xs leading-normal text-foreground-muted">
-            Connected to {record.relayUrl}
-          </Text>
-        ) : null}
+        {hosts.map((host) => (
+          <View key={`${host.relayUrl}:${host.hostId}`} className="gap-1.5">
+            <View className="flex-row items-center justify-between gap-2">
+              <Text className="min-w-0 flex-1 text-sm font-t3-medium text-foreground">
+                {host.label ?? host.publicUrl}
+              </Text>
+              <Text className="text-xs text-foreground-muted">
+                {host.paused ? "Paused" : host.online ? "Online" : "Offline"}
+              </Text>
+            </View>
+            <Text className="text-xs leading-normal text-foreground-muted">{host.publicUrl}</Text>
+            {host.lastError ? (
+              <Text className="text-xs leading-normal text-danger-foreground">
+                {host.lastError}
+              </Text>
+            ) : null}
+            <View className="flex-row gap-2">
+              {props.onOpenHost ? (
+                <Button
+                  label="Open"
+                  size="compact"
+                  disabled={!host.online}
+                  onPress={() => props.onOpenHost?.(host.environmentId as EnvironmentId)}
+                />
+              ) : null}
+              <Button label="Remove" tone="danger" size="compact" onPress={() => remove(host)} />
+            </View>
+          </View>
+        ))}
 
         <ConnectionFormField
           label="Relay"
@@ -146,14 +143,14 @@ export function PersonalNetworkSection(props: { readonly onPair: PersonalPair })
           onChangeText={setRelayUrl}
         />
         <ConnectionFormField
-          label="Personal key"
+          label="Host key"
           autoCapitalize="none"
           autoComplete="off"
           autoCorrect={false}
-          placeholder="The key shared with every host"
+          placeholder="The key this computer shares"
           secureTextEntry
-          value={key}
-          onChangeText={setKey}
+          value={hostKey}
+          onChangeText={setHostKey}
         />
 
         {error ? (
@@ -174,15 +171,24 @@ export function PersonalNetworkSection(props: { readonly onPair: PersonalPair })
 
         <View className="flex-row flex-wrap items-center gap-2">
           <Button
-            label={record ? "Sync now" : "Connect this device"}
+            label="Add computer"
             size="compact"
             loading={busy}
-            disabled={relayUrl.trim().length === 0 || key.trim().length === 0}
+            disabled={relayUrl.trim().length === 0 || hostKey.trim().length === 0}
             onPress={() => {
-              void connect();
+              void add();
             }}
           />
-          {record ? <Button label="Forget" tone="danger" size="compact" onPress={forget} /> : null}
+          {hosts.length > 0 ? (
+            <Button
+              label="Refresh"
+              size="compact"
+              disabled={busy}
+              onPress={() => {
+                void refresh();
+              }}
+            />
+          ) : null}
         </View>
       </View>
     </SettingsSection>

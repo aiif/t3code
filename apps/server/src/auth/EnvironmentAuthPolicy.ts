@@ -41,7 +41,7 @@ export const make = Effect.gen(function* () {
       : config.mode === "desktop" && policy === "remote-reachable"
         ? (["desktop-bootstrap", "one-time-token"] as const)
         : (["one-time-token"] as const)),
-    ...(config.personalKey === undefined ? [] : (["personal-key"] as const)),
+    ...(config.personalMode === true ? (["host-key"] as const) : []),
   ];
 
   const descriptor: ServerAuthDescriptor = {

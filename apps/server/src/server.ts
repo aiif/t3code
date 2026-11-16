@@ -553,14 +553,17 @@ const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(
 
 const layerServerEnvironment = ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer));
 
-const layerPersonalRelay = PersonalRelay.layer.pipe(Layer.provide(layerServerEnvironment));
-const layerPersonalMode = PersonalNotifier.layer.pipe(Layer.provideMerge(layerPersonalRelay));
-
 const layerAuth = EnvironmentAuth.layer.pipe(
   Layer.provideMerge(layerPersistence),
   Layer.provide(layerServerEnvironment),
   Layer.provide(ServerSecretStore.layer),
 );
+
+const layerPersonalRelay = PersonalRelay.layer.pipe(
+  Layer.provide(layerServerEnvironment),
+  Layer.provide(layerAuth),
+);
+const layerPersonalMode = PersonalNotifier.layer.pipe(Layer.provideMerge(layerPersonalRelay));
 
 const layerCloudManagedEndpointRuntime = Layer.mergeAll(
   layerRelayClient,

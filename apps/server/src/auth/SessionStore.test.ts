@@ -85,10 +85,7 @@ const makeDiskSessionStoreLayer = Effect.fn("makeDiskSessionStoreLayer")(functio
   );
 });
 
-const makeDiskPersonalKeyLayer = Effect.fn("makeDiskPersonalKeyLayer")(function* (
-  baseDir: string,
-  personalKey: string,
-) {
+const makeDiskSessionLayer = Effect.fn("makeDiskSessionLayer")(function* (baseDir: string) {
   const devUrl = new URL("http://127.0.0.1:5173");
   const paths = yield* ServerConfig.deriveServerPaths(baseDir, devUrl, {
     baseDirIsExplicit: true,
@@ -104,7 +101,6 @@ const makeDiskPersonalKeyLayer = Effect.fn("makeDiskPersonalKeyLayer")(function*
         baseDir,
         mode: "web",
         devUrl,
-        personalKey: Redacted.make(personalKey),
       }),
     ),
   );
@@ -127,16 +123,25 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
 
       const owner = yield* sessions.issue({ subject: "owner" });
       expect((yield* sessions.verify(owner.token)).personalGuest).toBeUndefined();
+
+      const hostGuest = yield* sessions.issue({
+        subject: "host-key:abc123def456",
+        scopes: AuthPersonalGuestScopes,
+        personalGuest: true,
+        hostId: "abc123def456",
+      });
+      expect(yield* sessions.verify(hostGuest.token)).toMatchObject({
+        personalGuest: true,
+        hostId: "abc123def456",
+      });
     }).pipe(Effect.provide(layerSessionStore())),
   );
 
-  it.effect("revokes personal-key sessions when the configured key changes", () =>
+  it.effect("revokes legacy personal-key sessions at startup", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-personal-key-rotation-" });
-      const keyA = "personal-key-aaaaaaaaaaaaaaaaaaaaaaaaaa";
-      const keyB = "personal-key-bbbbbbbbbbbbbbbbbbbbbbbbbb";
-      const issueGuest = (layer: Effect.Success<ReturnType<typeof makeDiskPersonalKeyLayer>>) =>
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-personal-key-legacy-" });
+      const issueGuest = (layer: Effect.Success<ReturnType<typeof makeDiskSessionLayer>>) =>
         Effect.gen(function* () {
           const sessions = yield* SessionStore.SessionStore;
           return yield* sessions.issue({
@@ -146,21 +151,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
           });
         }).pipe(Effect.provide(layer), Effect.scoped);
 
-      const first = yield* makeDiskPersonalKeyLayer(baseDir, keyA);
+      const first = yield* makeDiskSessionLayer(baseDir);
       const issued = yield* issueGuest(first);
 
-      const unchanged = yield* makeDiskPersonalKeyLayer(baseDir, keyA);
-      yield* Effect.gen(function* () {
-        const sessions = yield* SessionStore.SessionStore;
-        expect(yield* sessions.verify(issued.token)).toMatchObject({ personalGuest: true });
-      }).pipe(Effect.provide(unchanged), Effect.scoped);
-
-      const rotated = yield* makeDiskPersonalKeyLayer(baseDir, keyB);
+      const restarted = yield* makeDiskSessionLayer(baseDir);
       yield* Effect.gen(function* () {
         const sessions = yield* SessionStore.SessionStore;
         const error = yield* sessions.verify(issued.token).pipe(Effect.flip);
         expect(error).toMatchObject({ _tag: "SessionTokenRevokedError" });
-      }).pipe(Effect.provide(rotated), Effect.scoped);
+      }).pipe(Effect.provide(restarted), Effect.scoped);
     }),
   );
 

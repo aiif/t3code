@@ -1,37 +1,65 @@
-import { EnvironmentId, PersonalRegistryHosts } from "@t3tools/contracts";
+// @effect-diagnostics globalDate:off -- Client timestamps come from the platform clock outside an Effect runtime.
+import {
+  PersonalAdminHostDetail,
+  PersonalAdminHosts,
+  PersonalHostKeyResult,
+  PersonalResolvedHost,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-export const PERSONAL_PORTAL_STORAGE_KEY = "t3.personal.portal";
+/** Admin credentials live under their own keys; they are never guest credentials. */
+export const PERSONAL_ADMIN_KEY_STORAGE = "t3.admin.key";
+const PERSONAL_ADMIN_RELAY_STORAGE = "t3.admin.relay";
 
-export interface PersonalPortalConfig {
+/** Guest host records: one entry per host key this device holds. */
+export const PERSONAL_HOSTS_STORAGE_KEY = "t3.personal.hosts";
+
+export interface PersonalAdminConfig {
   readonly relayUrl: string;
-  readonly key: string;
+  readonly adminKey: string;
 }
 
-export interface PersonalPortalRecord extends PersonalPortalConfig {
-  /** Environments this device already paired under this key. */
-  readonly pairedEnvironmentIds: ReadonlyArray<string>;
+export interface PersonalHostRecord {
+  readonly relayUrl: string;
+  readonly hostKey: string;
+  readonly hostId: string;
+  readonly environmentId: string;
+  readonly label: string | null;
+  readonly publicUrl: string;
+  readonly online: boolean;
+  readonly paused: boolean;
+  readonly lastError: string | null;
+  readonly updatedAt: string;
 }
 
-export interface PersonalPortalStorage {
+export interface PersonalStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
 }
 
-const PersonalPortalRecordSchema = Schema.Struct({
+const PersonalHostRecordSchema = Schema.Struct({
   relayUrl: Schema.String,
-  key: Schema.String,
-  pairedEnvironmentIds: Schema.Array(Schema.String),
+  hostKey: Schema.String,
+  hostId: Schema.String,
+  environmentId: Schema.String,
+  label: Schema.NullOr(Schema.String),
+  publicUrl: Schema.String,
+  online: Schema.Boolean,
+  paused: Schema.Boolean,
+  lastError: Schema.NullOr(Schema.String),
+  updatedAt: Schema.String,
 });
 
-const decodePersonalPortalRecord = Schema.decodeSync(
-  Schema.fromJsonString(PersonalPortalRecordSchema),
-);
-const decodePersonalRegistryHosts = Schema.decodeUnknownSync(PersonalRegistryHosts);
+const PersonalHostsSchema = Schema.Array(PersonalHostRecordSchema);
+const decodeHosts = Schema.decodeUnknownSync(Schema.fromJsonString(PersonalHostsSchema));
+const decodeResolved = Schema.decodeUnknownSync(PersonalResolvedHost);
+const decodeAdminHosts = Schema.decodeUnknownSync(PersonalAdminHosts);
+const decodeAdminDetail = Schema.decodeUnknownSync(PersonalAdminHostDetail);
+const decodeHostKey = Schema.decodeUnknownSync(PersonalHostKeyResult);
 
-export class PersonalPortalError extends Schema.TaggedError<PersonalPortalError>()(
-  "PersonalPortalError",
+export class PersonalAdminError extends Schema.TaggedError<PersonalAdminError>()(
+  "PersonalAdminError",
   {
     detail: Schema.String,
     status: Schema.optionalKey(Schema.Number),
@@ -42,9 +70,23 @@ export class PersonalPortalError extends Schema.TaggedError<PersonalPortalError>
   }
 }
 
-export const isPersonalPortalError = Schema.is(PersonalPortalError);
+export class PersonalHostError extends Schema.TaggedError<PersonalHostError>()(
+  "PersonalHostError",
+  {
+    detail: Schema.String,
+    status: Schema.optionalKey(Schema.Number),
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
 
-function defaultStorage(): PersonalPortalStorage | null {
+export const isPersonalAdminError = Schema.is(PersonalAdminError);
+
+export type PersonalFetch = (input: string, init: RequestInit) => Promise<Response>;
+
+function defaultStorage(): PersonalStorage | null {
   try {
     return globalThis.localStorage ?? null;
   } catch {
@@ -52,165 +94,290 @@ function defaultStorage(): PersonalPortalStorage | null {
   }
 }
 
-export function readPersonalPortalRecord(
-  storage: PersonalPortalStorage | null = defaultStorage(),
-): PersonalPortalRecord | null {
+function defaultFetch(): PersonalFetch {
+  return globalThis.fetch.bind(globalThis);
+}
+
+function normalizeRelayUrl(value: string): string {
+  return value.trim().replace(/\/+$/u, "");
+}
+
+export function readPersonalAdminConfig(
+  storage: PersonalStorage | null = defaultStorage(),
+): PersonalAdminConfig | null {
   if (storage === null) return null;
-  const raw = storage.getItem(PERSONAL_PORTAL_STORAGE_KEY);
-  if (raw === null || raw.trim() === "") return null;
-  try {
-    const decoded = decodePersonalPortalRecord(raw);
-    if (decoded.relayUrl.trim() === "" || decoded.key.trim() === "") return null;
-    return {
-      relayUrl: decoded.relayUrl.replace(/\/+$/u, ""),
-      key: decoded.key,
-      pairedEnvironmentIds: decoded.pairedEnvironmentIds,
-    };
-  } catch {
-    return null;
+  const adminKey = storage.getItem(PERSONAL_ADMIN_KEY_STORAGE)?.trim() ?? "";
+  if (adminKey === "") return null;
+  const relayUrl = normalizeRelayUrl(
+    storage.getItem(PERSONAL_ADMIN_RELAY_STORAGE) ?? globalThis.location?.origin ?? "",
+  );
+  return { relayUrl, adminKey };
+}
+
+export function savePersonalAdminConfig(
+  config: PersonalAdminConfig,
+  storage: PersonalStorage | null = defaultStorage(),
+): PersonalAdminConfig {
+  const relayUrl = normalizeRelayUrl(config.relayUrl);
+  const adminKey = config.adminKey.trim();
+  if (relayUrl === "" || adminKey === "") {
+    throw new PersonalAdminError({ detail: "A relay URL and the admin key are both required." });
   }
+  storage?.setItem(PERSONAL_ADMIN_KEY_STORAGE, adminKey);
+  storage?.setItem(PERSONAL_ADMIN_RELAY_STORAGE, relayUrl);
+  return { relayUrl, adminKey };
 }
 
-/** Saving under a new relay or key forgets which environments the old key had paired. */
-export function savePersonalPortalConfig(
-  config: PersonalPortalConfig,
-  storage: PersonalPortalStorage | null = defaultStorage(),
-): PersonalPortalRecord {
-  const relayUrl = config.relayUrl.trim().replace(/\/+$/u, "");
-  const key = config.key.trim();
-  if (relayUrl === "" || key === "") {
-    throw new PersonalPortalError({ detail: "A relay URL and a personal key are both required." });
-  }
-  const previous = readPersonalPortalRecord(storage);
-  const sameKey = previous !== null && previous.relayUrl === relayUrl && previous.key === key;
-  const record: PersonalPortalRecord = {
-    relayUrl,
-    key,
-    pairedEnvironmentIds: sameKey ? previous.pairedEnvironmentIds : [],
-  };
-  storage?.setItem(PERSONAL_PORTAL_STORAGE_KEY, JSON.stringify(record));
-  return record;
-}
-
-export function recordPairedEnvironments(
-  record: PersonalPortalRecord,
-  environmentIds: ReadonlyArray<string>,
-  storage: PersonalPortalStorage | null = defaultStorage(),
-): PersonalPortalRecord {
-  if (environmentIds.length === 0) return record;
-  const next: PersonalPortalRecord = {
-    ...record,
-    pairedEnvironmentIds: [...new Set([...record.pairedEnvironmentIds, ...environmentIds])],
-  };
-  storage?.setItem(PERSONAL_PORTAL_STORAGE_KEY, JSON.stringify(next));
-  return next;
-}
-
-export function forgetPersonalPortal(
-  storage: PersonalPortalStorage | null = defaultStorage(),
+export function forgetPersonalAdminConfig(
+  storage: PersonalStorage | null = defaultStorage(),
 ): void {
-  storage?.removeItem(PERSONAL_PORTAL_STORAGE_KEY);
+  storage?.removeItem(PERSONAL_ADMIN_KEY_STORAGE);
 }
 
-export type PortalFetch = (input: string, init: RequestInit) => Promise<Response>;
-
-/** `GET /v1/hosts` on the portal origin, authenticated with the personal key. */
-export async function discoverPersonalHosts(input: {
-  readonly relayUrl: string;
-  readonly key: string;
-  readonly fetchImpl?: PortalFetch;
-}): Promise<PersonalRegistryHosts["hosts"]> {
-  const fetchImpl = input.fetchImpl ?? globalThis.fetch.bind(globalThis);
-  const url = `${input.relayUrl.replace(/\/+$/u, "")}/v1/hosts`;
+async function adminRequest(
+  config: PersonalAdminConfig,
+  path: string,
+  init: RequestInit = {},
+  fetchImpl: PersonalFetch = defaultFetch(),
+): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetchImpl(url, {
-      headers: { authorization: `Bearer ${input.key}` },
+    response = await fetchImpl(`${normalizeRelayUrl(config.relayUrl)}/v1${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${config.adminKey}`,
+        ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+      },
       cache: "no-store",
     });
   } catch {
-    throw new PersonalPortalError({
+    throw new PersonalAdminError({
       detail: "Could not reach the relay. Check the URL and your connection.",
     });
   }
   if (response.status === 401) {
-    throw new PersonalPortalError({ detail: "The relay rejected this key.", status: 401 });
+    throw new PersonalAdminError({ detail: "The relay rejected this admin key.", status: 401 });
   }
   if (!response.ok) {
-    throw new PersonalPortalError({
+    throw new PersonalAdminError({
       detail: `The relay answered ${response.status}.`,
       status: response.status,
     });
   }
-  const decoded = decodePersonalRegistryHosts(await response.json());
+  if (response.status === 204) return {};
+  return response.json();
+}
+
+export async function listAdminHosts(input: {
+  readonly config: PersonalAdminConfig;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<PersonalAdminHosts["hosts"]> {
+  const decoded = decodeAdminHosts(
+    await adminRequest(input.config, "/admin/hosts", {}, input.fetchImpl),
+  );
   return decoded.hosts;
 }
 
-export interface FailedHost {
+export async function getAdminHost(input: {
+  readonly config: PersonalAdminConfig;
   readonly hostId: string;
-  readonly environmentId: string;
-  readonly message: string;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<PersonalAdminHostDetail> {
+  return decodeAdminDetail(
+    await adminRequest(
+      input.config,
+      `/admin/hosts/${encodeURIComponent(input.hostId)}/clients`,
+      {},
+      input.fetchImpl,
+    ),
+  );
 }
 
-export interface PersonalPortalSyncResult {
-  readonly hosts: PersonalRegistryHosts["hosts"];
-  readonly paired: ReadonlyArray<EnvironmentId>;
-  readonly failures: ReadonlyArray<FailedHost>;
-  /** Hosts already paired earlier; no exchange was attempted. */
-  readonly skipped: ReadonlyArray<string>;
+export async function rotateAdminHostKey(input: {
+  readonly config: PersonalAdminConfig;
+  readonly hostId: string;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<string> {
+  const decoded = decodeHostKey(
+    await adminRequest(
+      input.config,
+      `/admin/hosts/${encodeURIComponent(input.hostId)}/rotate-key`,
+      { method: "POST" },
+      input.fetchImpl,
+    ),
+  );
+  return decoded.hostKey;
 }
 
-export type PairPersonalHost = (input: {
-  readonly host: string;
-  readonly pairingCode: string;
-  readonly expectedEnvironmentId: EnvironmentId;
-}) => Promise<unknown>;
+export async function removeAdminHost(input: {
+  readonly config: PersonalAdminConfig;
+  readonly hostId: string;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<void> {
+  await adminRequest(
+    input.config,
+    `/admin/hosts/${encodeURIComponent(input.hostId)}/remove`,
+    { method: "POST" },
+    input.fetchImpl,
+  );
+}
 
-/**
- * Discovers every host in the key space and pairs the ones this device has not
- * paired under this key. One unreachable host must not stop the others.
- */
-export async function syncPersonalPortal(input: {
-  readonly config: PersonalPortalConfig;
-  readonly record: PersonalPortalRecord;
-  readonly pair: PairPersonalHost;
-  readonly fetchImpl?: PortalFetch;
-}): Promise<PersonalPortalSyncResult> {
-  const hosts = await discoverPersonalHosts({
-    relayUrl: input.config.relayUrl,
-    key: input.config.key,
-    ...(input.fetchImpl === undefined ? {} : { fetchImpl: input.fetchImpl }),
-  });
-  const paired = new Set(input.record.pairedEnvironmentIds);
-  const newlyPaired: Array<EnvironmentId> = [];
-  const failures: Array<FailedHost> = [];
-  const skipped: Array<string> = [];
-  const claimed = new Set<string>();
+export async function revokeAdminClient(input: {
+  readonly config: PersonalAdminConfig;
+  readonly hostId: string;
+  readonly sessionId: string;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<boolean> {
+  const result = (await adminRequest(
+    input.config,
+    `/admin/hosts/${encodeURIComponent(input.hostId)}/revoke-client`,
+    { method: "POST", body: JSON.stringify({ sessionId: input.sessionId }) },
+    input.fetchImpl,
+  )) as { readonly revoked?: unknown };
+  return result.revoked === true;
+}
 
+export function readPersonalHosts(
+  storage: PersonalStorage | null = defaultStorage(),
+): ReadonlyArray<PersonalHostRecord> {
+  if (storage === null) return [];
+  const raw = storage.getItem(PERSONAL_HOSTS_STORAGE_KEY);
+  if (raw === null || raw.trim() === "") return [];
+  try {
+    return decodeHosts(raw).filter(
+      (host) => host.relayUrl.trim() !== "" && host.hostKey.trim() !== "",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writePersonalHosts(
+  hosts: ReadonlyArray<PersonalHostRecord>,
+  storage: PersonalStorage | null,
+): void {
+  storage?.setItem(PERSONAL_HOSTS_STORAGE_KEY, JSON.stringify(hosts));
+}
+
+export function upsertPersonalHost(
+  record: PersonalHostRecord,
+  storage: PersonalStorage | null = defaultStorage(),
+): ReadonlyArray<PersonalHostRecord> {
+  const hosts = readPersonalHosts(storage);
+  const next = [
+    ...hosts.filter((host) => host.hostId !== record.hostId || host.relayUrl !== record.relayUrl),
+    record,
+  ];
+  writePersonalHosts(next, storage);
+  return next;
+}
+
+export function removePersonalHost(
+  input: { readonly hostId: string; readonly relayUrl: string },
+  storage: PersonalStorage | null = defaultStorage(),
+): ReadonlyArray<PersonalHostRecord> {
+  const next = readPersonalHosts(storage).filter(
+    (host) => host.hostId !== input.hostId || host.relayUrl !== normalizeRelayUrl(input.relayUrl),
+  );
+  writePersonalHosts(next, storage);
+  return next;
+}
+
+/** Resolves a host key to the host URL; the guest then pairs with that URL. */
+export async function resolvePersonalHost(input: {
+  readonly relayUrl: string;
+  readonly hostKey: string;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<PersonalResolvedHost> {
+  const relayUrl = normalizeRelayUrl(input.relayUrl);
+  const hostKey = input.hostKey.trim();
+  if (relayUrl === "" || hostKey === "") {
+    throw new PersonalHostError({ detail: "A relay URL and a host key are both required." });
+  }
+  const fetchImpl = input.fetchImpl ?? defaultFetch();
+  let response: Response;
+  try {
+    response = await fetchImpl(`${relayUrl}/v1/hosts/resolve`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${hostKey}` },
+      cache: "no-store",
+    });
+  } catch {
+    throw new PersonalHostError({
+      detail: "Could not reach the relay. Check the URL and your connection.",
+    });
+  }
+  if (response.status === 401) {
+    throw new PersonalHostError({
+      detail: "This host key is invalid or was rotated.",
+      status: 401,
+    });
+  }
+  if (!response.ok) {
+    throw new PersonalHostError({
+      detail: `The relay answered ${response.status}.`,
+      status: response.status,
+    });
+  }
+  return decodeResolved(await response.json());
+}
+
+export function personalHostRecord(input: {
+  readonly relayUrl: string;
+  readonly hostKey: string;
+  readonly resolved: PersonalResolvedHost;
+}): PersonalHostRecord {
+  return {
+    relayUrl: normalizeRelayUrl(input.relayUrl),
+    hostKey: input.hostKey.trim(),
+    hostId: input.resolved.hostId,
+    environmentId: input.resolved.environmentId,
+    label: input.resolved.label,
+    publicUrl: input.resolved.publicUrl,
+    online: input.resolved.online,
+    paused: input.resolved.paused,
+    lastError: null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** Refreshes online/paused state for saved hosts; a failed host keeps its last good state. */
+export async function refreshPersonalHosts(
+  input: {
+    readonly hosts?: ReadonlyArray<PersonalHostRecord>;
+    readonly fetchImpl?: PersonalFetch;
+    readonly storage?: PersonalStorage | null;
+  } = {},
+): Promise<ReadonlyArray<PersonalHostRecord>> {
+  const hosts = input.hosts ?? readPersonalHosts();
+  const refreshed: Array<PersonalHostRecord> = [];
   for (const host of hosts) {
-    if (claimed.has(host.environmentId)) continue;
-    claimed.add(host.environmentId);
-    if (paired.has(host.environmentId)) {
-      skipped.push(host.environmentId);
-      continue;
-    }
-    const environmentId = EnvironmentId.make(host.environmentId);
     try {
-      await input.pair({
-        host: host.publicUrl,
-        pairingCode: input.config.key,
-        expectedEnvironmentId: environmentId,
+      const resolved = await resolvePersonalHost({
+        relayUrl: host.relayUrl,
+        hostKey: host.hostKey,
+        ...(input.fetchImpl === undefined ? {} : { fetchImpl: input.fetchImpl }),
       });
-      newlyPaired.push(environmentId);
-      paired.add(host.environmentId);
+      refreshed.push({
+        ...host,
+        hostId: resolved.hostId,
+        environmentId: resolved.environmentId,
+        label: resolved.label,
+        publicUrl: resolved.publicUrl,
+        online: resolved.online,
+        paused: resolved.paused,
+        lastError: null,
+        updatedAt: new Date().toISOString(),
+      });
     } catch (cause) {
-      failures.push({
-        hostId: host.hostId,
-        environmentId: host.environmentId,
-        message: cause instanceof Error ? cause.message : String(cause),
+      refreshed.push({
+        ...host,
+        online: false,
+        lastError: cause instanceof Error ? cause.message : String(cause),
+        updatedAt: new Date().toISOString(),
       });
     }
   }
-
-  return { hosts, paired: newlyPaired, failures, skipped };
+  writePersonalHosts(refreshed, input.storage === undefined ? defaultStorage() : input.storage);
+  return refreshed;
 }

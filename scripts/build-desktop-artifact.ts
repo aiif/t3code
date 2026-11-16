@@ -1100,6 +1100,10 @@ export const DESKTOP_EXTRA_RESOURCES = [
     from: "apps/desktop/prod-resources/resource-monitor",
     to: "resource-monitor",
   },
+  {
+    from: "apps/desktop/prod-resources/frpc",
+    to: "frpc",
+  },
 ] as const;
 export const LINUX_CAPTURE_EXTRA_RESOURCES = [
   {
@@ -2435,6 +2439,43 @@ export const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* 
 
   if (input.platform !== "win") {
     yield* fs.chmod(destinationPath, 0o755);
+  }
+});
+
+export const stageFrpc = Effect.fn("stageFrpc")(function* (input: {
+  readonly repoRoot: string;
+  readonly stageResourcesDir: string;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly arch: typeof BuildArch.Type;
+  readonly verbose: boolean;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const executable = input.platform === "win" ? "frpc.exe" : "frpc";
+  const source = path.join(
+    input.repoRoot,
+    "apps/desktop/resources/frpc",
+    `${input.platform}-${input.arch}`,
+    executable,
+  );
+  yield* runCommand(
+    ChildProcess.make("node", [
+      path.join(input.repoRoot, "scripts/fetch-frpc.mjs"),
+      "--platform",
+      input.platform,
+      "--arch",
+      input.arch,
+      "--out",
+      path.join(input.repoRoot, "apps/desktop/resources/frpc"),
+      "--required",
+    ]),
+    { label: "fetch frpc", verbose: input.verbose },
+  );
+  const destinationDirectory = path.join(input.stageResourcesDir, "frpc");
+  yield* fs.makeDirectory(destinationDirectory, { recursive: true });
+  yield* fs.copyFile(source, path.join(destinationDirectory, executable));
+  if (input.platform !== "win") {
+    yield* fs.chmod(path.join(destinationDirectory, executable), 0o755);
   }
 });
 
@@ -3796,6 +3837,13 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   yield* Effect.log("[desktop-artifact] Staging release app...");
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
+  yield* stageFrpc({
+    repoRoot,
+    stageResourcesDir,
+    platform: options.platform,
+    arch: options.arch,
+    verbose: options.verbose,
+  });
   if (options.platform === "linux") {
     const extensionDir = path.join(stageAppDir, "apps/desktop/gnome-extension");
     yield* fs.makeDirectory(extensionDir, { recursive: true });

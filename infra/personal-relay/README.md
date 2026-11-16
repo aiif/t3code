@@ -1,27 +1,32 @@
 # Personal relay
 
-Self-hosted relay for personal-mode T3 Code. One VPS runs OpenResty, `frps`, and
-a small registry. Hosts stay behind NAT and dial out; phones install one PWA from
-the portal origin and reach every host through the wildcard domain.
+Self-hosted relay for the personal-network T3 Code fork. One VPS runs OpenResty,
+`frps`, and a small registry. Hosts stay behind NAT and dial out; guests use the
+desktop app or the Android APK with a host key. The portal at the root origin is
+the **admin console**, not a guest client.
 
 ```text
-phone / other desktop
+admin PWA (admin key)
         | https://t3.example.com
    OpenResty (80/443)
-        +-- /              -> /srv/t3-portal (PWA)
+        +-- /              -> /srv/t3-portal (admin console + app shell)
         +-- /v1/*          -> 127.0.0.1:8787 (registry)
         +-- *.t3.example.com -> 127.0.0.1:8080 (frps vhost)
                                   ^ frp control 7001
                              frpc on each host -> 127.0.0.1:3773
+
+guest desktop / Android APK
+   host key -> POST /v1/hosts/resolve -> https://<hostId>.t3.example.com
+   -> host /oauth/token (host key) -> bearer session -> operate that host
 ```
 
 ## What runs here
 
-| Piece            | Purpose                                       | Exposure           |
-| ---------------- | --------------------------------------------- | ------------------ |
-| `frps`           | Carries each host's HTTP + WebSocket traffic  | public `7001` only |
-| `registry`       | Host discovery, host tokens, Web Push fan-out | loopback `8787`    |
-| OpenResty vhosts | TLS for the portal and host wildcard          | public `80`/`443`  |
+| Piece            | Purpose                                            | Exposure           |
+| ---------------- | -------------------------------------------------- | ------------------ |
+| `frps`           | Carries each host's HTTP + WebSocket traffic       | public `7001` only |
+| `registry`       | Host registry, host keys, guest metadata, Web Push | loopback `8787`    |
+| OpenResty vhosts | TLS for the portal and host wildcard               | public `80`/`443`  |
 
 `8080` (frps vhost port) and `8787` (registry) are published on loopback only.
 The T3 server on each host keeps binding loopback; `frpc` is the only way in.
@@ -57,14 +62,21 @@ acme.sh --install-cert -d t3.example.com --ecc \
 ```sh
 cd infra/personal-relay
 cp .env.example .env
-# Fill in T3CODE_PERSONAL_KEY, T3CODE_PORTAL_URL, FRP_SERVER_ADDR, FRP_AUTH_TOKEN.
+# Fill in T3CODE_ADMIN_KEY, T3CODE_SECRET_KEY, T3CODE_PORTAL_URL,
+# FRP_SERVER_ADDR, FRP_AUTH_TOKEN.
 # Generate values with: openssl rand -base64 32   and   openssl rand -hex 24
 # Put the same FRP_AUTH_TOKEN into frps.toml.
-openssl rand -base64 32 # T3CODE_PERSONAL_KEY
+openssl rand -base64 32 # T3CODE_ADMIN_KEY (the old personal key value)
+openssl rand -base64 32 # T3CODE_SECRET_KEY
 openssl rand -hex 24    # FRP_AUTH_TOKEN
 docker compose up -d --build
 docker compose logs -f registry
 ```
+
+Back up `/var/lib/t3-registry` (or the `registry-data` volume) and `.env`
+before the first v2 start. The v1 database is migrated in place: host ids and
+environment ids survive, each host gets a new encrypted host key, and hosts
+re-register on their next start.
 
 If the existing OpenResty runs on the host rather than in Compose, the published
 loopback ports (`127.0.0.1:8080`, `127.0.0.1:8787`) are what it proxies to.
@@ -118,41 +130,67 @@ rsync -a --delete apps/web/dist/ /srv/t3-portal/
 
 ## Registry API
 
-Base: `https://t3.example.com/v1`. Every endpoint except `GET /health` and
-`GET /push/public-key` needs `Authorization: Bearer <personal key>`; host routes
-take the host token returned by registration.
+Base: `https://t3.example.com/v1`. `POST /hosts/register` is unauthenticated and
+rate-limited; the relay returns that host's key. Every other route needs
+`Authorization: Bearer <admin key | host key | host token>`.
 
-| Method | Path                | Credential   | Purpose                                                     |
-| ------ | ------------------- | ------------ | ----------------------------------------------------------- |
-| GET    | `/health`           | none         | Liveness                                                    |
-| POST   | `/hosts/register`   | personal key | Register/re-register; returns host id, token, URL, frp info |
-| POST   | `/hosts/heartbeat`  | host token   | Refresh liveness and label                                  |
-| POST   | `/hosts/unregister` | host token   | Remove the host                                             |
-| GET    | `/hosts`            | personal key | List hosts with online state                                |
-| POST   | `/push/subscribe`   | personal key | Store a Web Push subscription                               |
-| POST   | `/push/unsubscribe` | personal key | Remove one                                                  |
-| GET    | `/push/public-key`  | none         | VAPID public key                                            |
-| POST   | `/notify`           | personal key | Fan out a notification                                      |
+| Method | Path                             | Credential | Purpose                                                     |
+| ------ | -------------------------------- | ---------- | ----------------------------------------------------------- |
+| GET    | `/health`                        | none       | Liveness                                                    |
+| POST   | `/hosts/register`                | none       | Register/re-register; returns host id, host key, token, frp |
+| POST   | `/hosts/heartbeat`               | host token | Refresh liveness/pause; returns a rotated host key if any   |
+| POST   | `/hosts/unregister`              | host token | Remove the host                                             |
+| POST   | `/hosts/clients`                 | host token | Replace the guest-session snapshot                          |
+| POST   | `/hosts/rotate-key`              | host token | Owner-initiated key rotation                                |
+| POST   | `/hosts/resolve`                 | host key   | Turn a host key into the host URL + online/paused state     |
+| GET    | `/admin/hosts`                   | admin key  | List hosts with host keys and guest counts                  |
+| GET    | `/admin/hosts/:id`               | admin key  | One host                                                    |
+| GET    | `/admin/hosts/:id/clients`       | admin key  | One host and its guest sessions                             |
+| POST   | `/admin/hosts/:id/rotate-key`    | admin key  | Rotate and return the new key                               |
+| POST   | `/admin/hosts/:id/remove`        | admin key  | Remove the host and invalidate its key                      |
+| POST   | `/admin/hosts/:id/revoke-client` | admin key  | Queue a guest-session revoke for the host                   |
+| POST   | `/push/subscribe`                | admin/host | Store a Web Push subscription for that scope                |
+| POST   | `/push/unsubscribe`              | admin/host | Remove one                                                  |
+| GET    | `/push/public-key`               | none       | VAPID public key                                            |
+| POST   | `/notify`                        | host token | Fan out a notification scoped to that host                  |
 
 Behavior worth knowing:
 
-- The database stores `sha256(personal key)` only. Changing the key starts a new
-  key space.
-- Host tokens are derived from the personal key and host id, so they are never
-  stored and rotate with the key.
-- Heartbeats expire after 90 seconds (`HEARTBEAT_TTL_MS`).
-- Re-registering the same `environmentId` keeps the host id and token.
+- Host keys are random 32-byte values, encrypted at rest with
+  `T3CODE_SECRET_KEY`; the admin console decrypts them only through an
+  authenticated admin request.
+- Host tokens are random and stored as SHA-256 hashes. Re-registering returns a
+  fresh token.
+- The admin key is accepted only under `/v1/admin/*` and push subscribe; a host
+  `/oauth/token` never accepts it.
+- Heartbeats expire after 90 seconds (`HEARTBEAT_TTL_MS`). A paused host stays in
+  the registry and keeps its key but reports `online: false`.
+- Re-registering the same `environmentId` keeps the host id and host key.
 - Notifications deduplicate per `hostId:threadId:phase` for 30 seconds
   (`NOTIFY_DEDUPE_MS`) and never carry command output, prompts, or file content.
 - Subscriptions the push service answers `404`/`410` for are deleted.
 
-## Rotating the personal key
+## Rotating keys
 
-1. Update `T3CODE_PERSONAL_KEY` in `.env`, restart the registry.
-2. Update `T3CODE_PERSONAL_KEY` on every host, restart the host server.
-3. Each host revokes its old `personal-key` sessions at startup.
-4. Re-enter the key in the portal. Hosts re-register and keep their host ids only
-   if the registry's database survives; a new key space starts empty.
+**Host key (owner or admin).** Rotation writes a new encrypted key, increments
+its version, and returns it. The host receives the new key on its next heartbeat,
+replaces its guest grant, and revokes guest sessions created with the old key.
+
+**Admin key.** Replace `T3CODE_ADMIN_KEY`, restart the registry, and re-enter it
+in the admin console. Hosts and guest sessions are unaffected.
+
+## Migrating from v1
+
+1. Back up the registry SQLite file and `.env`.
+2. Rename `/root/t3-personal-key.txt`'s value to `T3CODE_ADMIN_KEY`; generate
+   `T3CODE_SECRET_KEY` and keep the old value out of host environments.
+3. Start registry v2. It migrates `spaces`/`hosts` in place, keeps each
+   hostId/environmentId, generates an encrypted host key, and marks hosts
+   offline until they re-register.
+4. Update each host. Its server revokes legacy `personal-key` guest sessions at
+   startup and seeds the host-key grant.
+5. Old portal `t3.personal.portal` storage is ignored. The admin console uses
+   `t3.admin.key` and asks for the admin key once.
 
 ## Troubleshooting
 

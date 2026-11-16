@@ -68,6 +68,8 @@ describe("personal guest RPC allowlist", () => {
 
   it("denies methods it has never heard of", () => {
     expect(personalGuestMayCallRpc("server.somethingNew")).toBe(false);
+    expect(personalGuestMayCallRpc("personal.startSharing")).toBe(false);
+    expect(personalGuestMayCallRpc("personal.rotateSharingKey")).toBe(false);
   });
 });
 

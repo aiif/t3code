@@ -99,6 +99,7 @@ import {
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
   PERSONAL_WS_METHODS,
+  PersonalNetworkError,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -2327,13 +2328,107 @@ export const layerWsRpc = (
                 ? relay.value.getStatus()
                 : Effect.succeed({
                     enabled: false,
+                    paused: false,
                     relayUrl: null,
                     hostId: null,
                     publicUrl: null,
                     label: null,
                     online: false,
+                    frpcRunning: false,
                     lastError: null,
+                    updatedAt: null,
                   }),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.startSharing]: (input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.startSharing(input)
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "start",
+                      detail: "Personal sharing is unavailable in this build.",
+                    }),
+                  ),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.stopSharing]: (_input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.stopSharing()
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "stop",
+                      detail: "Personal sharing is unavailable in this build.",
+                    }),
+                  ),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.pauseSharing]: (_input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.pauseSharing()
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "pause",
+                      detail: "Personal sharing is unavailable in this build.",
+                    }),
+                  ),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.resumeSharing]: (_input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.resumeSharing()
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "resume",
+                      detail: "Personal sharing is unavailable in this build.",
+                    }),
+                  ),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.rotateSharingKey]: (_input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.rotateKey()
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "rotate",
+                      detail: "Personal sharing is unavailable in this build.",
+                    }),
+                  ),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.revealSharingKey]: (_input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.revealKey()
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "reveal",
+                      detail: "Personal sharing is unavailable in this build.",
+                    }),
+                  ),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.resolveHostKey]: (input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.resolveHost(input)
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "resolve",
+                      detail: "Personal network is unavailable in this build.",
+                    }),
+                  ),
             ),
           ),
         [WS_METHODS.serverGetConfig]: (_input) =>

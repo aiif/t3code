@@ -22,6 +22,7 @@ export const ServerAuthBootstrapMethod = Schema.Literals([
   "desktop-bootstrap",
   "one-time-token",
   "personal-key",
+  "host-key",
 ]);
 export type ServerAuthBootstrapMethod = typeof ServerAuthBootstrapMethod.Type;
 
@@ -209,6 +210,8 @@ export const AuthBrowserSessionResult = Schema.Struct({
   expiresAt: Schema.DateTimeUtc,
   /** Older servers omit this. A personal-key session is a guest session. */
   personalGuest: Schema.optionalKey(Schema.Boolean),
+  /** The host whose key created this session; never trusted for authorization. */
+  hostId: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type AuthBrowserSessionResult = typeof AuthBrowserSessionResult.Type;
 
@@ -254,6 +257,7 @@ export const AuthAccessTokenResult = Schema.Struct({
   scope: TrimmedNonEmptyString,
   /** A personal-key session is a guest session; older servers omit this. */
   personal_guest: Schema.optionalKey(Schema.Boolean),
+  host_id: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type AuthAccessTokenResult = typeof AuthAccessTokenResult.Type;
 
@@ -534,6 +538,8 @@ export const AuthSessionState = Schema.Struct({
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
   /** Set for personal-key sessions; older servers never send it. */
   personalGuest: Schema.optionalKey(Schema.Boolean),
+  /** The host whose key created this guest session. */
+  hostId: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type AuthSessionState = typeof AuthSessionState.Type;
 

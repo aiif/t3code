@@ -1,7 +1,6 @@
 import type {
   EnvironmentId,
   OrchestrationV2DomainEvent,
-  PersonalRelayState,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -14,7 +13,6 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as HttpClient from "effect/http/HttpClient";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -27,13 +25,7 @@ import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore
 
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import {
-  type PersonalNotifyInput,
-  PersonalRelay,
-  PersonalRelayClient,
-  layerClient as layerRelayClient,
-} from "./PersonalRelay.ts";
-import { personalKeyValue } from "../auth/personalKey.ts";
+import { PersonalRelay } from "./PersonalRelay.ts";
 
 /** Phases that interrupt a person; `starting`, `running`, and `stale` stay quiet. */
 const PERSONAL_NOTIFICATION_PHASES = [
@@ -47,21 +39,6 @@ const COOLDOWN_MS = 2 * 60 * 1_000;
 
 function isNotifiablePhase(phase: AgentAwarenessPhase): boolean {
   return (PERSONAL_NOTIFICATION_PHASES as ReadonlyArray<string>).includes(phase);
-}
-
-/** The wire payload; it must never carry prompts, file content, or command output. */
-export function personalNotificationPayload(
-  notification: PersonalNotifyInput,
-): PersonalNotifyInput {
-  return {
-    hostId: notification.hostId,
-    environmentId: notification.environmentId,
-    threadId: notification.threadId,
-    phase: notification.phase,
-    projectTitle: notification.projectTitle,
-    threadTitle: notification.threadTitle,
-    hostLabel: notification.hostLabel,
-  };
 }
 
 export class PersonalNotifier extends Context.Service<
@@ -102,8 +79,15 @@ export interface NotifierDependencies {
   readonly loadProject: (input: {
     readonly thread: AwarenessThread;
   }) => Effect.Effect<Option.Option<{ readonly title: string }>>;
-  readonly relayStatus: Effect.Effect<PersonalRelayState>;
-  readonly notify: (input: PersonalNotifyInput) => Effect.Effect<boolean>;
+  readonly sharingOnline: Effect.Effect<boolean>;
+  readonly notify: (input: {
+    readonly environmentId: EnvironmentId;
+    readonly threadId: ThreadId;
+    readonly phase: "waiting_for_approval" | "waiting_for_input" | "completed" | "failed";
+    readonly projectTitle: string;
+    readonly threadTitle: string;
+    readonly hostLabel: string | null;
+  }) => Effect.Effect<void>;
   readonly now: Effect.Effect<number>;
 }
 
@@ -112,14 +96,13 @@ export interface NotifierDependencies {
  * the same thread still alerts, while a repeated update of the same wait does
  * not.
  */
-export const notifyThread = Effect.fn("PersonalNotifier.notifyThread")(function* (
+const notifyThread = Effect.fn("PersonalNotifier.notifyThread")(function* (
   threadId: ThreadId,
   deps: NotifierDependencies,
   cooldown: Ref.Ref<ReadonlyMap<string, number>>,
 ) {
   yield* Effect.gen(function* () {
-    const status: PersonalRelayState = yield* deps.relayStatus;
-    if (!status.enabled || !status.online || status.hostId === null) return;
+    if (!(yield* deps.sharingOnline)) return;
     const thread = yield* deps.loadThread(threadId);
     if (Option.isNone(thread) || thread.value.archivedAt !== null) return;
     const project = yield* deps.loadProject({ thread: thread.value });
@@ -138,10 +121,9 @@ export const notifyThread = Effect.fn("PersonalNotifier.notifyThread")(function*
     yield* Ref.update(cooldown, (current) => new Map(current).set(key, now));
 
     yield* deps.notify({
-      hostId: status.hostId,
       environmentId: deps.environmentId,
       threadId,
-      phase: state.phase as PersonalNotifyInput["phase"],
+      phase: state.phase as "waiting_for_approval" | "waiting_for_input" | "completed" | "failed",
       projectTitle: state.projectTitle,
       threadTitle: state.threadTitle,
       hostLabel: deps.hostLabel,
@@ -160,7 +142,6 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;
   const projects = yield* ProjectService.ProjectService;
   const relay = yield* PersonalRelay;
-  const client = yield* PersonalRelayClient;
   const environmentId = yield* environment.getEnvironmentId;
   const cooldown = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
 
@@ -184,12 +165,10 @@ const make = Effect.gen(function* () {
             Effect.map((project) => Option.map(project, (value) => ({ title: value.title }))),
             Effect.catchCause(() => Effect.succeedNone),
           ),
-        relayStatus: relay.getStatus(),
-        notify: (input) =>
-          client.notify(input).pipe(
-            Effect.as(true),
-            Effect.catchCause(() => Effect.succeed(false)),
-          ),
+        sharingOnline: relay
+          .getStatus()
+          .pipe(Effect.map((status) => status.enabled && !status.paused && status.online)),
+        notify: (input) => relay.notify(input),
         now: DateTime.now.pipe(Effect.map((now) => now.epochMilliseconds)),
       },
       cooldown,
@@ -217,10 +196,7 @@ const make = Effect.gen(function* () {
   return PersonalNotifier.of({ drain: worker.drain });
 });
 
-/**
- * Only runs when personal mode is on: a missing relay URL, key, or enabled flag
- * yields a notifier that never fires, so startup never depends on the relay.
- */
+/** Personal-mode builds only; other builds get a notifier that never fires. */
 export const layer: Layer.Layer<
   PersonalNotifier,
   never,
@@ -230,23 +206,12 @@ export const layer: Layer.Layer<
   | ThreadManagement.ThreadManagementService
   | ProjectService.ProjectService
   | PersonalRelay
-  | HttpClient.HttpClient
 > = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
-    const relayUrl = config.personalRelayUrl?.trim();
-    const personalKey = personalKeyValue(config);
-    if (
-      config.personalEnabled !== true ||
-      relayUrl === undefined ||
-      relayUrl.length === 0 ||
-      personalKey === undefined
-    ) {
+    if (config.personalMode !== true) {
       return Layer.succeed(PersonalNotifier, { drain: Effect.void });
     }
-    return Layer.effect(
-      PersonalNotifier,
-      make.pipe(Effect.provide(layerRelayClient({ relayUrl, personalKey }))),
-    );
+    return Layer.effect(PersonalNotifier, make);
   }),
 );

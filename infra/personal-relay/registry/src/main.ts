@@ -15,7 +15,13 @@ function log(message: string, detail?: unknown): void {
 
 const config = resolveRegistryConfig();
 await NodeFSP.mkdir(config.dataDir, { recursive: true });
-const store = new RegistryStore(NodePath.join(config.dataDir, "registry.sqlite"));
+const store = new RegistryStore(NodePath.join(config.dataDir, "registry.sqlite"), config.secretKey);
+for (const host of store.migratedHosts) {
+  log("Migrated host to a host key; it re-registers on its next start.", {
+    hostId: host.hostId,
+    environmentId: host.environmentId,
+  });
+}
 const keys = await loadOrCreateVapidKeys(config.dataDir);
 
 const service = new RegistryService({
@@ -25,7 +31,8 @@ const service = new RegistryService({
     subject: config.vapidSubject,
     log,
   }),
-  personalKey: config.personalKey,
+  adminKey: config.adminKey,
+  secretKey: config.secretKey,
   portalUrl: config.portalUrl,
   hostDomain: config.hostDomain,
   frpServerAddr: config.frpServerAddr,
@@ -39,6 +46,7 @@ const service = new RegistryService({
 const server = createRegistryServer({
   service,
   vapidPublicKey: keys.publicKey,
+  allowedOrigins: config.allowedOrigins,
   log,
 });
 
@@ -57,5 +65,6 @@ server.listen(config.port, config.host, () => {
     host: config.host,
     port: config.port,
     portalUrl: config.portalUrl,
+    schemaVersion: 2,
   });
 });

@@ -1,59 +1,68 @@
-# Personal mode
+# Personal network
 
-Personal mode turns a set of machines into one private network behind a single
-key. A phone or another computer installs one web app from your relay and sees
-every host registered with that key. Each host keeps running its own T3 Code
-server: projects, agents, terminals, files, and checkpoints stay on that machine.
+Personal network connects your own machines without a cloud account. Each host
+registers directly with your relay and gets a **host key**. A guest — the
+desktop app or the native Android APK — enters that host key and operates that
+one machine. Each host key is independent: one key never reaches another host.
 
-This is for a deployment where you are the only owner. Every device that has the
-key is fully trusted: it can read every project on every host and drive any
-agent. Project visibility is not a security boundary.
+The admin console at the relay's root origin manages hosts, host keys, and guest
+sessions. It uses a separate **admin key** and cannot open projects by itself.
 
-## Joining a host
+## Sharing a computer
 
-Run this once on each machine that should be reachable, then restart its T3 Code
-server if it does not restart automatically:
+1. Open **Settings → Connections → Personal network**.
+2. Set the relay URL (default `https://relay.example.com`) and a label such as
+   "Home PC".
+3. Choose **Register**. The relay returns this computer's host key.
+4. **Reveal** or **Copy** the key and give it to the devices that should reach
+   this computer.
+
+While the desktop app is running — window or tray — and sharing is on, the host
+stays registered, heartbeats, and keeps `frpc` connected, so guests can find and
+use it. Closing the window hides it to the tray; sharing keeps running. Only
+tray **Quit** stops the server and makes the host offline.
+
+**Pause sharing** hides the host from guests without quitting; the host key stays
+valid, so **Resume sharing** needs no new key. **Stop sharing** unregisters the
+host and invalidates its key.
+
+**Rotate key** replaces the host key. Guests using the old key get rejected and
+must enter the new one. The relay also offers rotation from the admin console.
+
+`frpc` must be on `PATH` or at `T3CODE_FRPC_PATH`. A missing or crashed `frpc`
+shows an error in the panel and retries.
+
+Headless machines can share from the CLI:
 
 ```sh
-t3 personal join \
-  --relay https://t3.example.com \
-  --key "<your personal key>" \
-  --label "Home PC"
+t3 personal join --relay https://relay.example.com --label "Studio PC"
+t3 personal status
+t3 personal disable
 ```
 
-It writes the relay URL, key, and label into the machine's `service.env` and
-restarts the background service. `t3 personal status` shows what the host last
-reported to the relay. `t3 personal disable` stops the connector; the relay
-reports the host offline once its heartbeat expires.
+The CLI registers directly and stores the host key in the server's state
+directory. Open the desktop app's settings to copy it.
 
-The T3 server still listens only on loopback. A small `frpc` process connects
-out to the relay and carries HTTP and WebSocket traffic for the host's
-subdomain; the relay never reaches into your network.
+## Adding a computer
 
-## Entering the key on a phone
+1. In **Personal network → Add a computer**, paste a host key from the other
+   machine.
+2. The app resolves the key through the relay, pairs with that host, and saves
+   it as another environment.
 
-1. Open the portal origin (`https://t3.example.com`) and install it as an app, or
-   install the native Android APK from the release page.
-2. Enter the key once. The portal or app fetches the host list from the relay and
-   pairs every host in that key space.
-3. Hosts added later appear the next time the portal or app is foregrounded or
-   comes back online. The key stays on that device so it can pair them without
-   asking again.
+Each host is a separate environment. Several can be connected and used at the
+same time; there is no single active host. The existing Connections list shows
+their online state and lets you remove one.
 
-The Android app is the native React Native client, not a WebView. In **Add
-environment**, the **Personal network** section takes the relay URL and key and
-discovers hosts the same way the portal does. Personal-key sessions show a
-**Guest** badge in the environment list.
+On Android, open **Add environment → Personal network**, enter the relay URL and
+the host key, then **Add computer**. The same list supports several hosts,
+refresh, and remove.
 
-Each host gets a stable subdomain (`https://<hostId>.t3.example.com`). Direct
-links to a host work too: opening `/pair#token=<key>` on that subdomain sets a
-session cookie for that host in the browser.
+## What a guest can do
 
-## What a personal-key session can do
+A host-key session is a **guest** session. It can:
 
-A session created from the key is a **guest** session. It can:
-
-- see every project and thread on the host;
+- see every project and thread on that host;
 - read messages, reasoning, tool output, diffs, files, and attachments;
 - launch threads, send messages, queue and steer;
 - approve agent requests and answer questions;
@@ -66,49 +75,42 @@ It cannot:
 - create, rename, or delete projects;
 - change server settings or manage providers and authentication;
 - open a terminal or write files;
-- use the direct Git UI, branch, push, or open pull requests (agents on the host
-  can still run Git);
+- use the direct Git UI, branch, push, or open pull requests;
 - manage access, pairing links, scheduled tasks, browser previews, or devices;
-- answer MCP or peer-link connections.
+- use `/mcp` or peer links.
 
-The sidebar shows a **Guest** badge when the current session came from the
-personal key.
+The sidebar shows a **Guest** badge for a host-key session. The owner's local
+desktop and browser keep full access.
+
+## Admin console
+
+Open the relay origin in a browser and enter the admin key. The console lists:
+
+- every registered host, its label, online/paused state, last heartbeat, and
+  public URL;
+- that host's host key (reveal/copy only on request);
+- the guest sessions the host reported;
+- **Rotate key** and **Remove**.
+
+The admin key is stored under `t3.admin.key`, separately from any guest key. It
+is rejected by every host's `/oauth/token` and cannot operate a project as a
+guest. To use a host, enter that host's key in a guest client.
 
 ## Notifications
 
-Enable notifications from the prompt the portal shows; it disappears once you
-answer or the browser has already granted permission. Turn them off from the
-portal's site permissions in the browser. The portal registers a Web Push
-subscription with the relay, and each host posts a notification when an agent:
+The desktop app receives notifications for the hosts it is connected to. Web
+Push subscriptions are scoped to a host or to the admin console. Notifications
+carry a host label, thread title, and project title only — never prompts,
+command output, or file content.
 
-- needs approval;
-- needs input;
-- finishes;
-- fails.
+## Security model
 
-Notifications carry a host label, thread title, and project title only. They
-never include prompts, command output, or file content. A click opens the thread
-on that host. Notifications are deduplicated and rate-limited per thread and
-phase.
-
-Web Push belongs to the portal PWA. The native Android app does not register for
-these background notifications; install the portal PWA alongside it if you want
-alerts while the app is closed.
-
-## Rotating the key
-
-1. Change the key in the relay's environment and restart the relay.
-2. Change `T3CODE_PERSONAL_KEY` on every host and restart it. Each host detects
-   the new key at startup and revokes the guest sessions the old key created.
-3. Re-enter the key in every portal and app. Devices that lost the key stop
-   working immediately.
-
-Registering under a new key starts a new key space, so hosts get new subdomains.
-
-## Limits worth knowing
-
-- The relay terminates TLS; traffic is not end-to-end encrypted.
-- Removing a device from the network means rotating the key. There is no
-  per-device approval.
-- The owner's local browser and desktop app keep the startup token and full
-  access. Personal mode does not narrow them.
+- A host key is fully trusted for that one host, including every project on it.
+  Give it only to people who should operate that machine.
+- The admin key is the relay's root credential. Keep it off hosts and guests.
+- Host keys are random 32-byte values, encrypted at rest on the relay, and
+  revocable.
+- The relay terminates TLS and stores metadata only; project traffic goes
+  through `frps` to the host.
+- Removing a guest means rotating the host key. The host applies the rotation and
+  revokes old guest sessions.

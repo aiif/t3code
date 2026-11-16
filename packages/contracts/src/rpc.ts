@@ -85,7 +85,15 @@ import {
   EnvironmentAuthorizationError,
 } from "./auth.ts";
 import { ClientActivityReportInput } from "./background.ts";
-import { PERSONAL_WS_METHODS, PersonalRelayState } from "./personal.ts";
+import {
+  PERSONAL_WS_METHODS,
+  PersonalHostKeyResult,
+  PersonalNetworkError,
+  PersonalRelayState,
+  PersonalResolveHostInput,
+  PersonalResolvedHost,
+  PersonalShareInput,
+} from "./personal.ts";
 import {
   FilesystemGetMetadataInput,
   FilesystemGetMetadataResult,
@@ -660,6 +668,48 @@ const WsPersonalRelayStatusRpc = Rpc.make(PERSONAL_WS_METHODS.relayStatus, {
   payload: Schema.Struct({}),
   success: PersonalRelayState,
   error: EnvironmentAuthorizationError,
+});
+
+const WsPersonalStartSharingRpc = Rpc.make(PERSONAL_WS_METHODS.startSharing, {
+  payload: PersonalShareInput,
+  success: PersonalRelayState,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalStopSharingRpc = Rpc.make(PERSONAL_WS_METHODS.stopSharing, {
+  payload: Schema.Struct({}),
+  success: PersonalRelayState,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalPauseSharingRpc = Rpc.make(PERSONAL_WS_METHODS.pauseSharing, {
+  payload: Schema.Struct({}),
+  success: PersonalRelayState,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalResumeSharingRpc = Rpc.make(PERSONAL_WS_METHODS.resumeSharing, {
+  payload: Schema.Struct({}),
+  success: PersonalRelayState,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalRotateSharingKeyRpc = Rpc.make(PERSONAL_WS_METHODS.rotateSharingKey, {
+  payload: Schema.Struct({}),
+  success: PersonalHostKeyResult,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalRevealSharingKeyRpc = Rpc.make(PERSONAL_WS_METHODS.revealSharingKey, {
+  payload: Schema.Struct({}),
+  success: PersonalHostKeyResult,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalResolveHostKeyRpc = Rpc.make(PERSONAL_WS_METHODS.resolveHostKey, {
+  payload: PersonalResolveHostInput,
+  success: PersonalResolvedHost,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
@@ -2122,6 +2172,13 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsPersonalRelayStatusRpc,
+  WsPersonalStartSharingRpc,
+  WsPersonalStopSharingRpc,
+  WsPersonalPauseSharingRpc,
+  WsPersonalResumeSharingRpc,
+  WsPersonalRotateSharingKeyRpc,
+  WsPersonalRevealSharingKeyRpc,
+  WsPersonalResolveHostKeyRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,

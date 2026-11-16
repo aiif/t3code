@@ -50,6 +50,9 @@ node_modules/
 # pnpm content-addressable store; never belongs in the repo.
 .pnpm-store/
 
+# Downloaded by scripts/fetch-frpc.mjs for the desktop bundle.
+/apps/desktop/resources/frpc/
+
 /packages/ssh/.ssh-launcher-test-*/
 
 # Local goal/planning notes

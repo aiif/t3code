@@ -1,85 +1,78 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import { beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
-const { secureStore } = vi.hoisted(() => ({
-  secureStore: new Map<string, string>(),
-}));
-
-vi.mock("expo-secure-store", () => ({
-  getItem: (key: string) => secureStore.get(key) ?? null,
-  setItem: (key: string, value: string) => {
-    secureStore.set(key, value);
-  },
-  deleteItem: (key: string) => {
-    secureStore.delete(key);
-  },
-}));
+vi.mock("expo-secure-store", () => {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => void values.set(key, value),
+  };
+});
 
 import {
-  forgetPersonalNetwork,
-  readPersonalNetworkRecord,
-  savePersonalNetworkConfig,
-  syncPersonalNetwork,
+  addPersonalNetworkHost,
+  readPersonalNetworkHosts,
+  refreshPersonalNetworkHosts,
+  removePersonalNetworkHost,
 } from "./personalNetwork";
 
-const KEY = "personal-key-for-tests-0123456789abcdef";
+const RELAY = "https://t3.example.test";
+const HOST_KEY = "host-key-for-tests-0123456789abcdef";
 
-const host = (overrides: Record<string, unknown> = {}) => ({
+const jsonResponse = (body: unknown, status = 200) =>
+  ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+
+const resolved = {
   hostId: "abcdef123456",
   environmentId: "env-home",
   label: "Home",
   publicUrl: "https://abcdef123456.t3.example.test",
   online: true,
-  lastSeenAt: "2026-11-15T10:00:00.000Z",
-  ...overrides,
-});
+  paused: false,
+};
 
-beforeEach(() => {
-  secureStore.clear();
+it("adds, refreshes, and removes one host per key", async () => {
+  vi.stubGlobal("fetch", async () => jsonResponse(resolved));
+  const pair = vi.fn(async () => ({ ok: true, error: null }));
+
+  const host = await addPersonalNetworkHost({ relayUrl: RELAY, hostKey: HOST_KEY, pair });
+  expect(pair).toHaveBeenCalledWith({
+    host: resolved.publicUrl,
+    pairingCode: HOST_KEY,
+    expectedEnvironmentId: resolved.environmentId,
+  });
+  expect(readPersonalNetworkHosts()).toEqual([
+    expect.objectContaining({ hostId: resolved.hostId, environmentId: resolved.environmentId }),
+  ]);
+
+  const refreshed = await refreshPersonalNetworkHosts();
+  expect(refreshed[0]).toMatchObject({ online: true, paused: false, lastError: null });
+
+  expect(removePersonalNetworkHost(host)).toEqual([]);
   vi.unstubAllGlobals();
 });
 
-it("stores the key and paired hosts, then forgets them", () => {
-  expect(readPersonalNetworkRecord()).toBeNull();
-
-  savePersonalNetworkConfig({ relayUrl: "https://t3.example.test/", key: KEY });
-  expect(readPersonalNetworkRecord()).toEqual({
-    relayUrl: "https://t3.example.test",
-    key: KEY,
-    pairedEnvironmentIds: [],
-  });
-
-  forgetPersonalNetwork();
-  expect(readPersonalNetworkRecord()).toBeNull();
+it("reports a rejected key without storing it", async () => {
+  vi.stubGlobal("fetch", async () => jsonResponse({}, 401));
+  await expect(
+    addPersonalNetworkHost({
+      relayUrl: RELAY,
+      hostKey: HOST_KEY,
+      pair: async () => ({ ok: true, error: null }),
+    }),
+  ).rejects.toMatchObject({ status: 401 });
+  expect(readPersonalNetworkHosts()).toEqual([]);
+  vi.unstubAllGlobals();
 });
 
-it("discovers hosts and pairs only the ones this device has not paired", async () => {
-  savePersonalNetworkConfig({ relayUrl: "https://t3.example.test", key: KEY });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ hosts: [host()] }),
-    })),
-  );
-
-  const paired: string[] = [];
-  const result = await syncPersonalNetwork({
-    pair: async ({ host: publicUrl, pairingCode, expectedEnvironmentId }) => {
-      paired.push(`${expectedEnvironmentId}@${publicUrl}#${pairingCode}`);
-      return EnvironmentId.make("env-home");
-    },
-  });
-
-  expect(paired).toEqual([`env-home@https://abcdef123456.t3.example.test#${KEY}`]);
-  expect(result?.paired).toEqual([EnvironmentId.make("env-home")]);
-  expect(readPersonalNetworkRecord()?.pairedEnvironmentIds).toEqual(["env-home"]);
-
-  const second = await syncPersonalNetwork({
-    pair: async () => {
-      throw new Error("should not pair an already paired host");
-    },
-  });
-  expect(second?.skipped).toEqual(["env-home"]);
+it("stops adding when the host refuses the key", async () => {
+  vi.stubGlobal("fetch", async () => jsonResponse(resolved));
+  await expect(
+    addPersonalNetworkHost({
+      relayUrl: RELAY,
+      hostKey: HOST_KEY,
+      pair: async () => ({ ok: false, error: "refused" }),
+    }),
+  ).rejects.toThrow("refused");
+  expect(readPersonalNetworkHosts()).toEqual([]);
+  vi.unstubAllGlobals();
 });

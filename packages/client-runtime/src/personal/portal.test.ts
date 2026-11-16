@@ -1,20 +1,29 @@
-import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  PERSONAL_PORTAL_STORAGE_KEY,
-  discoverPersonalHosts,
-  forgetPersonalPortal,
-  readPersonalPortalRecord,
-  recordPairedEnvironments,
-  savePersonalPortalConfig,
-  syncPersonalPortal,
-  type PersonalPortalStorage,
+  PERSONAL_ADMIN_KEY_STORAGE,
+  PERSONAL_HOSTS_STORAGE_KEY,
+  forgetPersonalAdminConfig,
+  getAdminHost,
+  listAdminHosts,
+  personalHostRecord,
+  readPersonalAdminConfig,
+  readPersonalHosts,
+  refreshPersonalHosts,
+  removeAdminHost,
+  removePersonalHost,
+  resolvePersonalHost,
+  rotateAdminHostKey,
+  savePersonalAdminConfig,
+  upsertPersonalHost,
+  type PersonalStorage,
 } from "./portal.js";
 
-const KEY = "personal-key-for-tests-0123456789abcdef";
+const ADMIN_KEY = "admin-key-for-tests-0123456789abcdef";
+const HOST_KEY = "host-key-for-tests-0123456789abcdef";
+const RELAY = "https://t3.example.test";
 
-function memoryStorage(): PersonalPortalStorage {
+function memoryStorage(): PersonalStorage {
   const values = new Map<string, string>();
   return {
     getItem: (key) => values.get(key) ?? null,
@@ -23,180 +32,210 @@ function memoryStorage(): PersonalPortalStorage {
   };
 }
 
-const hostsResponse = (hosts: ReadonlyArray<Record<string, unknown>>) => ({
-  ok: true,
-  status: 200,
-  json: async () => ({ hosts }),
-});
+const jsonResponse = (body: unknown, status = 200) =>
+  ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
 
-const host = (overrides: Record<string, unknown> = {}) => ({
+const resolved = {
   hostId: "abcdef123456",
   environmentId: "env-home",
   label: "Home",
   publicUrl: "https://abcdef123456.t3.example.test",
   online: true,
-  lastSeenAt: "2026-11-15T10:00:00.000Z",
-  ...overrides,
-});
+  paused: false,
+};
 
-describe("personal portal storage", () => {
-  it("round-trips the key and forgets it", () => {
+describe("admin storage", () => {
+  it("keeps the admin key under its own key and forgets it", () => {
     const storage = memoryStorage();
-    expect(readPersonalPortalRecord(storage)).toBeNull();
-
-    savePersonalPortalConfig({ relayUrl: "https://t3.example.test/", key: KEY }, storage);
-    expect(readPersonalPortalRecord(storage)).toEqual({
-      relayUrl: "https://t3.example.test",
-      key: KEY,
-      pairedEnvironmentIds: [],
-    });
-
-    forgetPersonalPortal(storage);
-    expect(readPersonalPortalRecord(storage)).toBeNull();
-  });
-
-  it("keeps paired environments only while the relay and key stay the same", () => {
-    const storage = memoryStorage();
-    const first = savePersonalPortalConfig(
-      { relayUrl: "https://t3.example.test", key: KEY },
-      storage,
-    );
-    recordPairedEnvironments(first, ["env-home"], storage);
-
-    const same = savePersonalPortalConfig(
-      { relayUrl: "https://t3.example.test", key: KEY },
-      storage,
-    );
-    expect(same.pairedEnvironmentIds).toEqual(["env-home"]);
-
-    const rotated = savePersonalPortalConfig(
-      { relayUrl: "https://t3.example.test", key: "another-personal-key-0123456789abcdef" },
-      storage,
-    );
-    expect(rotated.pairedEnvironmentIds).toEqual([]);
-  });
-
-  it("ignores a corrupt record", () => {
-    const storage = memoryStorage();
-    storage.setItem(PERSONAL_PORTAL_STORAGE_KEY, "{not json");
-    expect(readPersonalPortalRecord(storage)).toBeNull();
+    expect(readPersonalAdminConfig(storage)).toBeNull();
+    savePersonalAdminConfig({ relayUrl: RELAY, adminKey: ADMIN_KEY }, storage);
+    expect(storage.getItem(PERSONAL_ADMIN_KEY_STORAGE)).toBe(ADMIN_KEY);
+    expect(readPersonalAdminConfig(storage)).toEqual({ relayUrl: RELAY, adminKey: ADMIN_KEY });
+    forgetPersonalAdminConfig(storage);
+    expect(readPersonalAdminConfig(storage)).toBeNull();
   });
 });
 
-describe("host discovery", () => {
-  it("lists hosts with the personal key", async () => {
+describe("admin api", () => {
+  it("sends the admin key and decodes hosts", async () => {
     const calls: Array<{ url: string; authorization: string | null }> = [];
-    const hosts = await discoverPersonalHosts({
-      relayUrl: "https://t3.example.test/",
-      key: KEY,
+    const hosts = await listAdminHosts({
+      config: { relayUrl: RELAY, adminKey: ADMIN_KEY },
       fetchImpl: async (url, init) => {
-        calls.push({
-          url,
-          authorization: new Headers(init.headers).get("authorization"),
+        calls.push({ url, authorization: new Headers(init.headers).get("authorization") });
+        return jsonResponse({
+          hosts: [
+            {
+              hostId: "abcdef123456",
+              environmentId: "env-home",
+              label: "Home",
+              platform: "win32",
+              online: true,
+              paused: false,
+              lastSeenAt: "2026-11-16T00:00:00.000Z",
+              publicUrl: resolved.publicUrl,
+              hostKey: HOST_KEY,
+              clientsCount: 0,
+              createdAt: "2026-11-15T00:00:00.000Z",
+            },
+          ],
         });
-        return hostsResponse([host()]) as unknown as Response;
       },
     });
-
     expect(calls).toEqual([
-      {
-        url: "https://t3.example.test/v1/hosts",
-        authorization: `Bearer ${KEY}`,
-      },
+      { url: `${RELAY}/v1/admin/hosts`, authorization: `Bearer ${ADMIN_KEY}` },
     ]);
-    expect(hosts).toHaveLength(1);
-    expect(hosts[0]).toMatchObject({ hostId: "abcdef123456", online: true });
+    expect(hosts[0]?.hostKey).toBe(HOST_KEY);
   });
 
-  it("reports a rejected key and an unreachable relay distinctly", async () => {
+  it("reads clients, rotates, and removes through admin-only routes", async () => {
+    const requests: Array<{ url: string; method: string }> = [];
+    const fetchImpl = async (url: string, init: RequestInit) => {
+      requests.push({ url, method: init.method ?? "GET" });
+      if (url.endsWith("/clients")) {
+        return jsonResponse({
+          host: {
+            hostId: "abcdef123456",
+            environmentId: "env-home",
+            label: "Home",
+            platform: "win32",
+            online: true,
+            paused: false,
+            lastSeenAt: "2026-11-16T00:00:00.000Z",
+            publicUrl: resolved.publicUrl,
+            hostKey: HOST_KEY,
+            clientsCount: 1,
+            createdAt: "2026-11-15T00:00:00.000Z",
+          },
+          clients: [
+            {
+              sessionId: "session-1",
+              clientLabel: "Phone",
+              platform: "mobile",
+              firstSeenAt: "2026-11-16T00:00:00.000Z",
+              lastSeenAt: "2026-11-16T00:05:00.000Z",
+              revokedAt: null,
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/rotate-key")) return jsonResponse({ hostKey: "rotated-host-key" });
+      return jsonResponse({ removed: true });
+    };
+
+    const detail = await getAdminHost({
+      config: { relayUrl: RELAY, adminKey: ADMIN_KEY },
+      hostId: "abcdef123456",
+      fetchImpl,
+    });
+    expect(detail.clients[0]?.clientLabel).toBe("Phone");
+    expect(
+      await rotateAdminHostKey({
+        config: { relayUrl: RELAY, adminKey: ADMIN_KEY },
+        hostId: "abcdef123456",
+        fetchImpl,
+      }),
+    ).toBe("rotated-host-key");
+    await removeAdminHost({
+      config: { relayUrl: RELAY, adminKey: ADMIN_KEY },
+      hostId: "abcdef123456",
+      fetchImpl,
+    });
+    expect(requests.map((request) => request.method)).toEqual(["GET", "POST", "POST"]);
+  });
+});
+
+describe("guest hosts", () => {
+  it("resolves a host key and stores one record per host", async () => {
+    const storage = memoryStorage();
+    const host = await resolvePersonalHost({
+      relayUrl: `${RELAY}/`,
+      hostKey: HOST_KEY,
+      fetchImpl: async () => jsonResponse(resolved),
+    });
+    expect(host).toEqual(resolved);
+    const record = personalHostRecord({ relayUrl: RELAY, hostKey: HOST_KEY, resolved: host });
+    upsertPersonalHost(record, storage);
+    upsertPersonalHost(record, storage);
+    expect(readPersonalHosts(storage)).toHaveLength(1);
+    expect(readPersonalHosts(storage)[0]).toMatchObject({
+      hostId: resolved.hostId,
+      hostKey: HOST_KEY,
+      online: true,
+    });
+  });
+
+  it("rejects an invalid key and an unreachable relay distinctly", async () => {
     await expect(
-      discoverPersonalHosts({
-        relayUrl: "https://t3.example.test",
-        key: KEY,
-        fetchImpl: async () =>
-          ({ ok: false, status: 401, json: async () => ({}) }) as unknown as Response,
+      resolvePersonalHost({
+        relayUrl: RELAY,
+        hostKey: HOST_KEY,
+        fetchImpl: async () => jsonResponse({}, 401),
       }),
     ).rejects.toMatchObject({ status: 401 });
 
     await expect(
-      discoverPersonalHosts({
-        relayUrl: "https://t3.example.test",
-        key: KEY,
+      resolvePersonalHost({
+        relayUrl: RELAY,
+        hostKey: HOST_KEY,
         fetchImpl: async () => {
           throw new Error("offline");
         },
       }),
-    ).rejects.toMatchObject({ _tag: "PersonalPortalError" });
+    ).rejects.toMatchObject({ _tag: "PersonalHostError" });
   });
-});
 
-describe("portal sync", () => {
-  const config = { relayUrl: "https://t3.example.test", key: KEY };
-
-  it("pairs only hosts this device has not paired", async () => {
-    const paired: string[] = [];
-    const record = { ...config, pairedEnvironmentIds: ["env-known"] };
-    const result = await syncPersonalPortal({
-      config,
-      record,
-      fetchImpl: async () =>
-        hostsResponse([
-          host({ environmentId: "env-known", hostId: "aaaaaaaaaaaa" }),
-          host({ environmentId: "env-home", hostId: "bbbbbbbbbbbb" }),
-        ]) as unknown as Response,
-      pair: async (input) => {
-        paired.push(`${input.expectedEnvironmentId}@${input.host}`);
-        return EnvironmentId.make("env-home");
-      },
+  it("refreshes each host independently and keeps the last good state on failure", async () => {
+    const storage = memoryStorage();
+    const first = personalHostRecord({ relayUrl: RELAY, hostKey: HOST_KEY, resolved });
+    const second = personalHostRecord({
+      relayUrl: RELAY,
+      hostKey: `${HOST_KEY}-b`,
+      resolved: { ...resolved, hostId: "ffffffffffff", environmentId: "env-b" },
     });
+    upsertPersonalHost(first, storage);
+    upsertPersonalHost(second, storage);
 
-    expect(paired).toEqual(["env-home@https://abcdef123456.t3.example.test"]);
-    expect(result.paired).toEqual([EnvironmentId.make("env-home")]);
-    expect(result.skipped).toEqual(["env-known"]);
-    expect(result.failures).toEqual([]);
-  });
-
-  it("pairs an environment once even if the registry lists it twice", async () => {
-    let calls = 0;
-    const result = await syncPersonalPortal({
-      config,
-      record: { ...config, pairedEnvironmentIds: [] },
-      fetchImpl: async () =>
-        hostsResponse([host(), host({ hostId: "ffffffffffff" })]) as unknown as Response,
-      pair: async () => {
-        calls += 1;
-        return EnvironmentId.make("env-home");
-      },
-    });
-
-    expect(calls).toBe(1);
-    expect(result.paired).toHaveLength(1);
-  });
-
-  it("keeps going when one host is offline", async () => {
-    const result = await syncPersonalPortal({
-      config,
-      record: { ...config, pairedEnvironmentIds: [] },
-      fetchImpl: async () =>
-        hostsResponse([
-          host({ environmentId: "env-offline", hostId: "aaaaaaaaaaaa", online: false }),
-          host({ environmentId: "env-home", hostId: "bbbbbbbbbbbb" }),
-        ]) as unknown as Response,
-      pair: async (input) => {
-        if (input.expectedEnvironmentId === EnvironmentId.make("env-offline")) {
-          throw new Error("host unreachable");
+    const refreshed = await refreshPersonalHosts({
+      hosts: readPersonalHosts(storage),
+      fetchImpl: async (url, init) => {
+        const key = new Headers(init.headers).get("authorization");
+        if (url.endsWith("/resolve") && key === `Bearer ${HOST_KEY}`) {
+          return jsonResponse({ ...resolved, online: false, paused: true });
         }
-        return EnvironmentId.make("env-home");
+        throw new Error("host unreachable");
       },
     });
+    expect(refreshed.find((host) => host.hostId === resolved.hostId)).toMatchObject({
+      online: false,
+      paused: true,
+      lastError: null,
+    });
+    expect(refreshed.find((host) => host.hostId === "ffffffffffff")).toMatchObject({
+      online: false,
+      lastError: "Could not reach the relay. Check the URL and your connection.",
+    });
+  });
 
-    expect(result.paired).toEqual([EnvironmentId.make("env-home")]);
-    expect(result.failures).toEqual([
-      {
-        hostId: "aaaaaaaaaaaa",
-        environmentId: "env-offline",
-        message: "host unreachable",
-      },
-    ]);
+  it("removes only the requested host", () => {
+    const storage = memoryStorage();
+    const first = personalHostRecord({ relayUrl: RELAY, hostKey: HOST_KEY, resolved });
+    upsertPersonalHost(first, storage);
+    upsertPersonalHost(
+      personalHostRecord({
+        relayUrl: RELAY,
+        hostKey: `${HOST_KEY}-b`,
+        resolved: { ...resolved, hostId: "ffffffffffff" },
+      }),
+      storage,
+    );
+    removePersonalHost({ hostId: first.hostId, relayUrl: RELAY }, storage);
+    expect(readPersonalHosts(storage).map((host) => host.hostId)).toEqual(["ffffffffffff"]);
+  });
+
+  it("ignores a corrupt host list", () => {
+    const storage = memoryStorage();
+    storage.setItem(PERSONAL_HOSTS_STORAGE_KEY, "{not json");
+    expect(readPersonalHosts(storage)).toEqual([]);
   });
 });

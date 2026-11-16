@@ -1,19 +1,20 @@
-# Fork releases: Windows x64 and Android arm64
+# Fork releases: Windows x64, macOS arm64, and Android arm64
 
 > Fork-only procedure. The upstream release train is [`release.md`](./release.md);
 > it publishes six desktop targets, CLI archives, npm, web, and mobile store builds
 > and requires upstream infrastructure.
 
 [`.github/workflows/release-fork.yml`](../../.github/workflows/release-fork.yml) runs on a
-`v*.*.*` tag push and publishes one GitHub Release with exactly two installables:
+`v*.*.*` tag push and publishes one GitHub Release with exactly three installables:
 
 - Windows x64 NSIS installer (`T3-Code-<version>-x64.exe`)
+- macOS arm64 DMG (`T3-Code-<version>-arm64.dmg`)
 - Native Android arm64 APK (`T3-Code-<version>-android-arm64.apk`) for `arm64-v8a`,
   which covers current flagship phones such as Xiaomi's Snapdragon models
 
-The release also carries the Windows updater manifest (`latest.yml`) and its
-blockmap so installed desktop apps can auto-update. macOS, Linux, iOS, and source
-archives are not attached.
+The release also carries the Windows and macOS updater manifests (`latest.yml`,
+`latest-mac.yml`) and the Windows blockmap so installed desktop apps can
+auto-update. Linux, iOS, and source archives are not attached.
 
 GitHub always shows its auto-generated "Source code (zip/tar.gz)" links on a
 release page. The API has no switch to hide them; the workflow simply does not
@@ -23,20 +24,25 @@ It also builds Linux x64 internally, but only for its CLI archive: the Windows
 installer embeds that archive as the WSL runtime. Linux artifacts never reach the
 release.
 
-## Personal mode
+## Personal network
 
-Both installables are built in personal mode from `GOAL.md`:
+Both desktop installers and the Android APK are built in personal mode from
+`GOAL.md`:
 
 - The desktop bundle sets `VITE_T3CODE_PERSONAL_ONLY=1`, hiding T3 Connect and
-  pointing copied links at the portal.
+  pointing copied links at the portal. The desktop app shares itself from
+  **Settings → Connections → Personal network** and receives a host key directly
+  from the relay. Closing the window hides to the tray; sharing keeps running.
 - The Android app sets `T3CODE_PERSONAL_ONLY=1` and
-  `T3CODE_PERSONAL_RELAY_URL`. The native app shows the personal-network setup
-  (relay URL plus key), discovers every host registered under the key, pairs them
-  through the normal bearer flow, and shows a guest badge on those sessions. It is
-  still the upstream React Native app, not a WebView or a PWA shortcut.
+  `T3CODE_PERSONAL_RELAY_URL`. It is a first-class guest client: enter a host key
+  under **Add environment → Personal network**, resolve it through the relay, and
+  add several independent hosts. It is the upstream React Native app, not a
+  WebView or a PWA shortcut.
+- The portal at `https://relay.example.com` is the admin console. It uses the admin key
+  and manages hosts, host keys, and guest metadata; it does not pair as a guest.
 
 The portal URL defaults to `https://relay.example.com`. Override it with the repository
-variable `T3CODE_PERSONAL_PORTAL_URL`; both the desktop and Android builds read it.
+variable `T3CODE_PERSONAL_PORTAL_URL`; the desktop, web, and Android builds read it.
 
 ## Repository setup
 
@@ -66,24 +72,23 @@ The same tag also starts the upstream `Release` workflow, but its `resolve_commi
 job requires `pingdotgg/t3code`, so that run skips every job and publishes nothing.
 
 The workflow uses GitHub-hosted runners. Expect roughly 30-60 minutes for the
-Windows job on a cold cache and 15-30 minutes for the Android job.
+Windows job on a cold cache and 15-30 minutes each for the macOS and Android jobs.
 
-## Personal-mode host configuration
+## Personal-network host configuration
 
-The desktop installer contains the server and web client, but it cannot contain your
-personal key. To use an install as a host, configure the server runtime with
-`T3CODE_PERSONAL_ENABLED=1`, `T3CODE_PERSONAL_KEY`, and
-`T3CODE_PERSONAL_RELAY_URL`; `t3 personal join` writes the same values for a CLI
-service. The portal PWA and the Android app are the clients.
+The desktop installer contains the server and web client, but it cannot contain a
+host key. Register from **Settings → Connections → Personal network**; the relay
+returns the key and the app stores it owner-only in the T3 state directory.
+`t3 personal join --relay https://relay.example.com --label "Home PC"` does the same
+for a headless service.
 
 ## Android signing
 
-Without a release keystore the APK is signed with the generated template debug key,
-which installs but is public. Android refuses to update an installed app signed by a
-different key, so keep one keystore for every release.
-
-- Secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
-  `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
+This fork is self-use. The APK is built with Gradle's template debug/local key and
+is attached directly; there is no production keystore and no signing secret. Android
+still requires a signature, so the APK installs by sideload. Updating an installed
+app requires the same key, so keep using the same build chain for every release. Do
+not add release signing secrets unless the owner asks for them.
 
 The workflow aligns `versionName` and `versionCode` with the tag and builds only
 `arm64-v8a`; that keeps the APK small and matches current flagship phones. Older
@@ -107,15 +112,16 @@ workflow sets the updater repository to the repository that runs it, so do not s
 
 ## Android
 
-The APK is the native `apps/mobile` React Native app. It contains the personal-mode
-setup and guest badge described above; it is not the hosted PWA. Install the APK on
-an arm64 phone, open **Add environment**, enter the relay URL and personal key once,
-and every host in the key space appears. The portal PWA remains available at
-`https://relay.example.com` for browsers and iPhones.
+The APK is the native `apps/mobile` React Native app. It contains the personal
+network guest flow and guest badge described above; it is not the hosted PWA.
+Install the APK on an arm64 phone, open **Add environment → Personal network**,
+enter the relay URL and a host key, and add as many hosts as needed. The portal
+remains available at `https://relay.example.com` as the admin console.
 
 ## Troubleshooting
 
 - If the Android job fails after code changes, run it locally with
   `pnpm --filter @t3tools/mobile exec expo prebuild --clean --platform android --no-install`
   before looking at Gradle.
-- `macos-15-intel` is no longer used by this workflow.
+- The macOS job builds an unsigned arm64 DMG when Apple secrets are absent; Gatekeeper
+  warns on first open.

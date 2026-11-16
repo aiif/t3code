@@ -80,6 +80,7 @@ import {
   takeLegacyLocalStorage,
 } from "./methods/legacyLocalStorage.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
+import { setPersonalShareState } from "./methods/personalShare.ts";
 import {
   getCliCommandState,
   installCliCommand,
@@ -113,6 +114,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(restartAudioService);
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);
+  yield* ipc.handle(setPersonalShareState);
   yield* ipc.handle(getConnectionCatalog);
   yield* ipc.handle(getSnapShotState);
   yield* ipc.handle(setupSnapShot);

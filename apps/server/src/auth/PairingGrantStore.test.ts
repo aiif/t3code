@@ -6,7 +6,6 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
@@ -21,10 +20,7 @@ import * as PairingGrantStore from "./PairingGrantStore.ts";
 
 const layerServerConfig = (
   overrides?: Partial<
-    Pick<
-      ServerConfig.ServerConfig["Service"],
-      "desktopBootstrapToken" | "desktopBootstrapSecret" | "personalKey"
-    >
+    Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken" | "desktopBootstrapSecret">
   >,
 ) =>
   Layer.effect(
@@ -42,10 +38,7 @@ const layerServerConfig = (
 
 const layerPairingGrantStore = (
   overrides?: Partial<
-    Pick<
-      ServerConfig.ServerConfig["Service"],
-      "desktopBootstrapToken" | "desktopBootstrapSecret" | "personalKey"
-    >
+    Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken" | "desktopBootstrapSecret">
   >,
 ) =>
   PairingGrantStore.layer.pipe(
@@ -54,17 +47,20 @@ const layerPairingGrantStore = (
   );
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStore.layer", (it) => {
-  it.effect("seeds a reusable personal-key grant with guest scopes", () => {
-    const personalKey = "personal-key-for-tests-0123456789abcdef";
+  it.effect("seeds a reusable host-key grant with guest scopes", () => {
+    const hostKey = "host-key-for-tests-0123456789abcdef";
+    const hostId = "abc123def456";
     return Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
-      const first = yield* bootstrapCredentials.consume(personalKey);
-      const second = yield* bootstrapCredentials.consume(personalKey);
+      yield* bootstrapCredentials.setHostKeyGrant({ hostKey, hostId });
+      const first = yield* bootstrapCredentials.consume(hostKey);
+      const second = yield* bootstrapCredentials.consume(hostKey);
 
       for (const grant of [first, second]) {
         expect(grant).toMatchObject({
-          method: "personal-key",
-          subject: "personal-key",
+          method: "host-key",
+          subject: `host-key:${hostId}`,
+          hostId,
           personalGuest: true,
           scopes: AuthPersonalGuestScopes,
         });
@@ -73,10 +69,25 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStor
       expect(yield* bootstrapCredentials.listActive()).toEqual([]);
       // A key from another environment is just an unknown credential.
       const wrong = yield* Effect.flip(
-        bootstrapCredentials.consume("another-personal-key-0123456789abcdef"),
+        bootstrapCredentials.consume("another-host-key-0123456789abcdef"),
       );
       expect(wrong._tag).toBe("UnknownBootstrapCredentialError");
-    }).pipe(Effect.provide(layerPairingGrantStore({ personalKey: Redacted.make(personalKey) })));
+
+      // A key for another host is not accepted here, even if it is valid there.
+      yield* bootstrapCredentials.setHostKeyGrant({ hostKey, hostId: "ffffffffffff" });
+      const switched = yield* bootstrapCredentials.consume(hostKey);
+      expect(switched.hostId).toBe("ffffffffffff");
+      expect(
+        (yield* Effect.flip(bootstrapCredentials.consume("another-host-key-0123456789abcdef")))
+          ._tag,
+      ).toBe("UnknownBootstrapCredentialError");
+
+      // Clearing the grant revokes the key immediately.
+      yield* bootstrapCredentials.clearHostKeyGrant();
+      expect((yield* Effect.flip(bootstrapCredentials.consume(hostKey)))._tag).toBe(
+        "UnknownBootstrapCredentialError",
+      );
+    }).pipe(Effect.provide(layerPairingGrantStore()));
   });
 
   it.effect("accepts lowercase one-time tokens exactly once", () =>

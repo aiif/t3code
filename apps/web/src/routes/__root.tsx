@@ -24,6 +24,7 @@ import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { PersonalModeGate } from "../components/personal/PersonalModeGate";
+import { PersonalShareCoordinator } from "../components/PersonalShareCoordinator";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -183,6 +184,7 @@ function RootRouteBranch() {
   const appHosts = (
     <>
       {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
+      {primaryEnvironmentAuthenticated ? <PersonalShareCoordinator /> : null}
       {primaryEnvironmentAuthenticated || localEnvironmentDisabled ? (
         <DesktopWebLinkCoordinator />
       ) : null}

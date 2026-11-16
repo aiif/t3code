@@ -2,7 +2,8 @@ import type { PushSender } from "./push.ts";
 import { RegistryService } from "./registry.ts";
 import { RegistryStore } from "./store.ts";
 
-export const TEST_PERSONAL_KEY = "personal-key-for-tests-0123456789abcdef";
+export const TEST_ADMIN_KEY = "admin-key-for-tests-0123456789abcdef";
+export const TEST_SECRET_KEY = Buffer.alloc(32, 7);
 
 export interface TestRegistry {
   readonly store: RegistryStore;
@@ -16,8 +17,9 @@ export function makeTestRegistry(options?: {
   readonly sender?: PushSender;
   readonly heartbeatTtlMs?: number;
   readonly notifyDedupeMs?: number;
+  readonly path?: string;
 }): TestRegistry {
-  const store = new RegistryStore(":memory:");
+  const store = new RegistryStore(options?.path ?? ":memory:", TEST_SECRET_KEY);
   const sent: Array<{ readonly endpoint: string; readonly payload: unknown }> = [];
   let now = 1_700_000_000_000;
   const sender: PushSender = options?.sender ?? {
@@ -29,7 +31,8 @@ export function makeTestRegistry(options?: {
   const service = new RegistryService({
     store,
     sender,
-    personalKey: TEST_PERSONAL_KEY,
+    adminKey: TEST_ADMIN_KEY,
+    secretKey: TEST_SECRET_KEY,
     portalUrl: "https://t3.example.test",
     hostDomain: "t3.example.test",
     frpServerAddr: "203.0.113.10",
@@ -51,24 +54,25 @@ export function makeTestRegistry(options?: {
 }
 
 export function registerTestHost(registry: TestRegistry, environmentId = "env-a") {
-  const spaceId = registry.service.authenticatePersonalKey(TEST_PERSONAL_KEY);
-  return registry.service.registerHost(spaceId, {
+  return registry.service.registerHost({
     environmentId,
     label: "Home PC",
+    platform: "win32",
   });
 }
 
 export function subscribeTestDevice(
   registry: TestRegistry,
   endpoint = "https://push.example.test/subscription/one",
+  credential: string = TEST_ADMIN_KEY,
 ) {
-  const spaceId = registry.service.authenticatePersonalKey(TEST_PERSONAL_KEY);
-  registry.service.subscribe(spaceId, {
+  const scope = registry.service.authenticateAnyKey(credential);
+  registry.service.subscribe(scope, {
     subscription: {
       endpoint,
       keys: { p256dh: "p256dh-value", auth: "auth-value" },
     },
     userAgent: "test",
   });
-  return spaceId;
+  return scope;
 }

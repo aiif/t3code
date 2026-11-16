@@ -109,8 +109,6 @@ export class ServerConfig extends Context.Service<
     readonly logWebSocketEvents: boolean;
     readonly tailscaleServeEnabled: boolean;
     readonly tailscaleServePort: number;
-    /** Root credential for personal mode; every device with it is a trusted guest. */
-    readonly personalKey?: Redacted.Redacted<string> | undefined;
     readonly personalRelayUrl?: string | undefined;
     readonly personalLabel?: string | undefined;
     /** frpc binary; defaults to `frpc` on PATH. */
@@ -119,6 +117,8 @@ export class ServerConfig extends Context.Service<
     readonly personalEnabled?: boolean | undefined;
     /** Reports `remote-reachable` while still binding loopback. */
     readonly personalMode?: boolean | undefined;
+    /** A fork build that hides cloud features and shows personal network setup. */
+    readonly personalOnly?: boolean | undefined;
   }
 >()("t3/config/ServerConfig") {
   static readonly layerTest = (
@@ -279,12 +279,12 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     devAllowedOrigins: [],
     noBrowser: false,
     startupPresentation: "browser",
-    personalKey: undefined,
     personalRelayUrl: undefined,
     personalLabel: undefined,
     personalFrpcPath: undefined,
     personalEnabled: false,
     personalMode: false,
+    personalOnly: false,
   });
 });
 
