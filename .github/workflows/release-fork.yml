@@ -169,7 +169,7 @@ jobs:
       ref: ${{ github.sha }}
       release_channel: stable
       label: macOS arm64
-      runner: blacksmith-12vcpu-macos-26
+      runner: macos-14
       platform: mac
       target: dmg
       arch: arm64
