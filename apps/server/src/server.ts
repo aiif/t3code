@@ -894,6 +894,9 @@ const layerMakeRoutes = Layer.mergeAll(
     ),
   ),
   Layer.provide(CloudSpeech.layer.pipe(Layer.provide(SecretResolver.layer))),
+  // The personal RPC handlers resolve the service by tag, so the route layer
+  // must provide it; a sibling merge in the application layer is not enough.
+  Layer.provide(layerPersonalMode),
   Layer.provide(layerServerSettings),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),

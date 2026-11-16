@@ -6,6 +6,7 @@ import {
   upsertPersonalHost,
   type PersonalHostRecord,
 } from "@t3tools/client-runtime/personal/portal";
+import * as Cause from "effect/Cause";
 import { useEffect, useState } from "react";
 
 import { connectPairing as connectPairingCommand } from "../../connection/onboarding";
@@ -31,7 +32,7 @@ const DEFAULT_RELAY_URL = import.meta.env.VITE_HOSTED_APP_URL?.trim() || "https:
 
 type CommandResult<T> =
   | { readonly _tag: "Success"; readonly value: T }
-  | { readonly _tag: "Failure" };
+  | { readonly _tag: "Failure"; readonly cause: Cause.Cause<unknown> };
 
 function resultValue<T>(result: CommandResult<T>): T | null {
   return result._tag === "Success" ? result.value : null;
@@ -39,8 +40,10 @@ function resultValue<T>(result: CommandResult<T>): T | null {
 
 function failureMessage(result: CommandResult<unknown>): string | null {
   if (result._tag === "Success") return null;
-  const failure = result as { readonly cause?: { readonly message?: string } };
-  return failure.cause?.message ?? "The host did not answer.";
+  const error = Cause.squash(result.cause);
+  return error instanceof Error && error.message.trim().length > 0
+    ? error.message
+    : "The host did not answer.";
 }
 
 export function PersonalNetworkSettings() {
