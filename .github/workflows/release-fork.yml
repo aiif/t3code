@@ -257,7 +257,7 @@ jobs:
 
       - name: Prebuild Android project
         working-directory: apps/mobile
-        run: pnpm exec expo prebuild --clean --platform android --no-install --pnpm
+        run: pnpm exec expo prebuild --clean --platform android --no-install
 
       - name: Align Android version with the tag
         shell: bash
