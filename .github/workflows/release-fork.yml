@@ -26,6 +26,7 @@ on:
       - "v*.*.*"
       - "!v*-nightly.*"
       - "!v*-preview.*"
+  workflow_dispatch:
 
 concurrency:
   group: fork-release
