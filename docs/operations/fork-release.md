@@ -1,20 +1,24 @@
-# Fork releases: Windows x64, macOS arm64, and Android arm64
+# Fork releases: Windows x64 and Android arm64 (macOS opt-in)
 
 > Fork-only procedure. The upstream release train is [`release.md`](./release.md);
 > it publishes six desktop targets, CLI archives, npm, web, and mobile store builds
 > and requires upstream infrastructure.
 
 [`.github/workflows/release-fork.yml`](../../.github/workflows/release-fork.yml) runs on a
-`v*.*.*` tag push and publishes one GitHub Release with exactly three installables:
+`v*.*.*` tag push and publishes one GitHub Release with:
 
 - Windows x64 NSIS installer (`T3-Code-<version>-x64.exe`)
-- macOS arm64 DMG (`T3-Code-<version>-arm64.dmg`)
 - Native Android arm64 APK (`T3-Code-<version>-android-arm64.apk`) for `arm64-v8a`,
   which covers current flagship phones such as Xiaomi's Snapdragon models
 
-The release also carries the Windows and macOS updater manifests (`latest.yml`,
-`latest-mac.yml`) and the Windows blockmap so installed desktop apps can
-auto-update. Linux, iOS, and source archives are not attached.
+macOS arm64 is opt-in. Set the repository variable `T3CODE_FORK_BUILD_MACOS=1` to
+also build `T3-Code-<version>-arm64.dmg` and publish `latest-mac.yml`. With the
+variable unset, the macOS job is skipped and existing macOS installs get no new
+updater manifest from that release.
+
+The release also carries the Windows updater manifest (`latest.yml`) and the
+Windows blockmap so installed desktop apps can auto-update. Linux, iOS, and source
+archives are not attached.
 
 GitHub always shows its auto-generated "Source code (zip/tar.gz)" links on a
 release page. The API has no switch to hide them; the workflow simply does not
@@ -64,9 +68,13 @@ quality checks. Let normal CI pass on the commit before tagging it. The tagged c
 must contain `release-fork.yml`, because GitHub runs the workflow file from that commit.
 
 The tag's commit is built exactly. A version with a suffix, such as `v0.1.10-beta.1`,
-is published as a GitHub prerelease. The release stays a draft until both installers
-are uploaded, so desktop auto-update never sees a half-published version. Re-run
+is published as a GitHub prerelease. The release stays a draft until every expected
+asset is uploaded, so desktop auto-update never sees a half-published version. Re-run
 failed jobs from the Actions tab; the release upload steps replace existing assets.
+
+The macOS job is disabled by default. Enable it for the next release with
+`gh variable set T3CODE_FORK_BUILD_MACOS --body 1 -R <owner>/<repo>`, or from
+**Settings > Secrets and variables > Actions > Variables**.
 
 The same tag also starts the upstream `Release` workflow, but its `resolve_commit`
 job requires `pingdotgg/t3code`, so that run skips every job and publishes nothing.

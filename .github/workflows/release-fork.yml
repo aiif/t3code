@@ -3,9 +3,11 @@ name: Fork release
 # Fork-only release train: one tag push publishes:
 #
 # - T3-Code-<version>-x64.exe, the Windows x64 NSIS installer.
-# - T3-Code-<version>-arm64.dmg, the macOS arm64 disk image.
 # - T3-Code-<version>-android-arm64.apk, the native React Native app from
 #   apps/mobile, built for arm64-v8a (current flagship Android phones).
+#
+# The macOS arm64 DMG is opt-in: set the repository variable
+# T3CODE_FORK_BUILD_MACOS=1 to build it and attach it with latest-mac.yml.
 #
 # Linux and iOS artifacts are not published. Linux x64 is built internally
 # because the Windows installer embeds its CLI archive as the WSL runtime; that
@@ -161,6 +163,7 @@ jobs:
 
   desktop_mac_arm64:
     name: Desktop macOS arm64
+    if: vars.T3CODE_FORK_BUILD_MACOS == '1'
     needs: [prepare, bundle]
     uses: ./.github/workflows/release-desktop.yml
     secrets: inherit
@@ -312,7 +315,7 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [prepare, desktop_win_x64, desktop_mac_arm64, android_arm64]
+    needs: [prepare, desktop_win_x64, android_arm64]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -338,6 +341,7 @@ jobs:
           path: release-assets
 
       - name: Download macOS artifact
+        if: vars.T3CODE_FORK_BUILD_MACOS == '1'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: desktop-mac-arm64
@@ -354,17 +358,23 @@ jobs:
       # architecture, and electron-updater reads the unsuffixed name.
       - name: Prepare release assets
         shell: bash
+        env:
+          BUILD_MACOS: ${{ vars.T3CODE_FORK_BUILD_MACOS }}
         run: |
           set -euo pipefail
           rm -f release-assets/builder-debug.yml
           if [[ -f release-assets/latest-win-x64.yml ]]; then
             mv release-assets/latest-win-x64.yml release-assets/latest.yml
           fi
-          if [[ -f release-assets/latest-mac-arm64.yml ]]; then
-            mv release-assets/latest-mac-arm64.yml release-assets/latest-mac.yml
+          patterns=("T3-Code-*-x64.exe" "T3-Code-*-android-arm64.apk" "latest.yml")
+          if [[ "${BUILD_MACOS}" == "1" ]]; then
+            if [[ -f release-assets/latest-mac-arm64.yml ]]; then
+              mv release-assets/latest-mac-arm64.yml release-assets/latest-mac.yml
+            fi
+            patterns+=("T3-Code-*-arm64.dmg" "latest-mac.yml")
           fi
 
-          for pattern in "T3-Code-*-x64.exe" "T3-Code-*-arm64.dmg" "T3-Code-*-android-arm64.apk" "latest.yml" "latest-mac.yml"; do
+          for pattern in "${patterns[@]}"; do
             compgen -G "release-assets/$pattern" >/dev/null || {
               echo "::error::Missing expected release asset: $pattern"
               exit 1
