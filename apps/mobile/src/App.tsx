@@ -105,6 +105,8 @@ import {
 import { pruneNewTaskFlowStates } from "./features/threads/new-task-flow-state";
 import { pruneNewTaskBranchCheckouts } from "./features/threads/NewTaskDraftRouteScreen";
 import { installAppUpdateChecks } from "./features/updates/app-updates";
+import { installPersonalNetworkSync } from "./features/personal/personalNetworkRuntime";
+import { configuredHostedAppUrl } from "./features/personal/mode";
 
 import "../global.css";
 
@@ -135,11 +137,14 @@ function getAppStateFromPath(path: string, options: Parameters<typeof getStateFr
 
 const appLinking = {
   prefixes: [
-    Linking.createURL("/"),
-    "t3code://",
-    "t3code-dev://",
-    "t3code-preview://",
-    DEFAULT_HOSTED_APP_URL,
+    ...new Set([
+      Linking.createURL("/"),
+      "t3code://",
+      "t3code-dev://",
+      "t3code-preview://",
+      DEFAULT_HOSTED_APP_URL,
+      configuredHostedAppUrl(),
+    ]),
   ],
   config: { initialRouteName: "Home" },
   filter: (url: string) => shouldHandleAppLink(url, hasCloudPublicConfig()),
@@ -212,6 +217,7 @@ const appServiceDisposers = [
   installAgentNotificationNavigation(linkToAppPath),
   installAppShortcuts(linkToAppPath),
   installAppUpdateChecks(),
+  installPersonalNetworkSync(),
   installShowcaseCapture(rootPathnameFromState),
 ];
 disposeOnFoundationReplace(typeof module === "undefined" ? undefined : module.hot, () => {

@@ -26,6 +26,8 @@ import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { isPersonalOnlyBuild, personalNetworkAvailable } from "../personal/mode";
+import { PersonalNetworkSection } from "../personal/PersonalNetworkSection";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
 import { autoConnectReport, devAutoConnectAttemptAtom } from "./devAutoConnect";
 import { splitEnvironmentSections } from "./environmentSections";
@@ -203,6 +205,8 @@ function PairingForm({
         }}
       >
         <View collapsable={false} className="gap-6.5">
+          {personalNetworkAvailable() ? <PersonalNetworkSection onPair={onConnectPress} /> : null}
+
           <PairingScanCard
             cameraActive={cameraPermission?.granted === true && screenFocused && !scanComplete}
             onScan={handleQrScan}
@@ -251,7 +255,7 @@ function PairingForm({
             </Text>
           </View>
 
-          {hasCloudPublicConfig() ? <T3ConnectSection /> : null}
+          {hasCloudPublicConfig() && !isPersonalOnlyBuild() ? <T3ConnectSection /> : null}
         </View>
       </ScrollView>
     </SettingsScreen>

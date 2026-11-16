@@ -20,6 +20,7 @@ import { cn } from "../../lib/cn";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 import { serverEnvironment } from "../../state/server";
 import { environmentPresentations } from "../../state/presentation";
+import { useEnvironmentPersonalGuest } from "../../state/session";
 import { ConnectionDiagnosisDetails, useConnectionDiagnosis } from "./ConnectionDiagnosisDetails";
 import { ConnectionFormField } from "./ConnectionFormField";
 import { ConnectionStatusDot } from "./ConnectionStatusDot";
@@ -59,6 +60,7 @@ export function ConnectionEnvironmentRow(props: {
     environmentPresentations.presentationAtom(props.environment.environmentId),
   );
   const canRetry = presentation !== null && hasSavedBearerRoute(presentation.entry);
+  const personalGuest = useEnvironmentPersonalGuest(props.environment.environmentId);
   const { diagnosis, state: connectionState } = useConnectionDiagnosis(
     props.environment.environmentId,
     presentation,
@@ -120,6 +122,11 @@ export function ConnectionEnvironmentRow(props: {
             >
               {props.environment.environmentLabel}
             </Text>
+            {personalGuest ? (
+              <Text className="shrink-0 rounded-full bg-subtle px-1.5 py-0.5 text-2xs font-t3-bold uppercase text-foreground-muted">
+                Guest
+              </Text>
+            ) : null}
           </View>
           {!props.environment.isRelayManaged && props.environment.displayUrl.trim() ? (
             <Text className="text-xs text-foreground-muted" numberOfLines={1}>

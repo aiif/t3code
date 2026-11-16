@@ -34,6 +34,14 @@ function sessionStateAtomFor(environmentId: EnvironmentId | null) {
     : environmentSession.sessionStateAtom(environmentId);
 }
 
+/** A personal-key session can drive work but cannot administer the host. */
+export function useEnvironmentPersonalGuest(environmentId: EnvironmentId | null): boolean {
+  return useAtomValue(sessionStateAtomFor(environmentId), (result) => {
+    const session = AsyncResult.getOrElse(result, () => null);
+    return result._tag !== "Failure" && session?.personalGuest === true;
+  });
+}
+
 // Both hooks select a boolean: every revalidation emits a new result, and most consumers are
 // list rows.
 export function useEnvironmentScope(

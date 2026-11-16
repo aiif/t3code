@@ -464,6 +464,11 @@ const config: ExpoConfig = {
   ],
   extra: {
     appVariant: APP_VARIANT,
+    // Personal-mode builds hide T3 Connect and show the personal network setup.
+    personalOnly: repoEnv.T3CODE_PERSONAL_ONLY === "1",
+    personalRelayUrl: repoEnv.T3CODE_PERSONAL_RELAY_URL?.trim() || null,
+    hostedAppUrl:
+      repoEnv.T3CODE_HOSTED_APP_URL?.trim() || repoEnv.T3CODE_PERSONAL_RELAY_URL?.trim() || null,
     secretsFeatureEnabled: ["1", "true"].includes(
       process.env.T3CODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
     ),

@@ -10,7 +10,7 @@ import {
   savePersonalPortalConfig,
   syncPersonalPortal,
   type PersonalPortalStorage,
-} from "./portal";
+} from "./portal.js";
 
 const KEY = "personal-key-for-tests-0123456789abcdef";
 

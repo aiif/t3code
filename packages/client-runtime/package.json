@@ -139,6 +139,10 @@
       "types": "./src/platform/index.ts",
       "default": "./src/platform/index.ts"
     },
+    "./personal/portal": {
+      "types": "./src/personal/portal.ts",
+      "default": "./src/personal/portal.ts"
+    },
     "./providerSkills": {
       "types": "./src/providerSkills.ts",
       "default": "./src/providerSkills.ts"

@@ -1,5 +1,12 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-
+import {
+  type PersonalPortalRecord,
+  isPersonalPortalError,
+  readPersonalPortalRecord,
+  recordPairedEnvironments,
+  savePersonalPortalConfig,
+  syncPersonalPortal,
+} from "@t3tools/client-runtime/personal/portal";
 import type { ReactNode } from "react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
@@ -8,14 +15,6 @@ import {
   enablePersonalNotifications,
   personalNotificationPermission,
 } from "../../personal/notifications";
-import {
-  type PersonalPortalRecord,
-  isPersonalPortalError,
-  readPersonalPortalRecord,
-  recordPairedEnvironments,
-  savePersonalPortalConfig,
-  syncPersonalPortal,
-} from "../../personal/portal";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";

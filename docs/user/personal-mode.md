@@ -32,12 +32,18 @@ subdomain; the relay never reaches into your network.
 
 ## Entering the key on a phone
 
-1. Open the portal origin (`https://t3.example.com`) and install it as an app.
-2. Enter the key once. The portal fetches the host list from the relay and pairs
-   every host in that key space.
-3. Hosts added later appear the next time the portal is foregrounded or comes
-   back online. The key stays in that browser so it can pair them without asking
-   again.
+1. Open the portal origin (`https://t3.example.com`) and install it as an app, or
+   install the native Android APK from the release page.
+2. Enter the key once. The portal or app fetches the host list from the relay and
+   pairs every host in that key space.
+3. Hosts added later appear the next time the portal or app is foregrounded or
+   comes back online. The key stays on that device so it can pair them without
+   asking again.
+
+The Android app is the native React Native client, not a WebView. In **Add
+environment**, the **Personal network** section takes the relay URL and key and
+discovers hosts the same way the portal does. Personal-key sessions show a
+**Guest** badge in the environment list.
 
 Each host gets a stable subdomain (`https://<hostId>.t3.example.com`). Direct
 links to a host work too: opening `/pair#token=<key>` on that subdomain sets a
@@ -84,6 +90,10 @@ Notifications carry a host label, thread title, and project title only. They
 never include prompts, command output, or file content. A click opens the thread
 on that host. Notifications are deduplicated and rate-limited per thread and
 phase.
+
+Web Push belongs to the portal PWA. The native Android app does not register for
+these background notifications; install the portal PWA alongside it if you want
+alerts while the app is closed.
 
 ## Rotating the key
 
