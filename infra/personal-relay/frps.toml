@@ -1,0 +1,14 @@
+# frps: the only public listener besides 80/443.
+# OpenResty proxies https://<hostId>.t3.<domain> to vhostHTTPPort on loopback.
+bindPort = 7001
+vhostHTTPPort = 8080
+
+auth.method = "token"
+# Must equal FRP_AUTH_TOKEN in ../.env. Changing it needs every host re-registered.
+auth.token = "CHANGE_ME_FRP_AUTH_TOKEN"
+
+# Hosts may only expose HTTP vhosts; they cannot open arbitrary relay ports.
+allowPorts = []
+
+transport.maxPoolCount = 10
+userConnTimeout = 10

@@ -10,6 +10,7 @@ import {
   type ServerAuthSessionMethod,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -23,9 +24,11 @@ import * as Option from "effect/Option";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as AuthPersonalKeyState from "../persistence/AuthPersonalKeyState.ts";
 import * as AuthSessions from "../persistence/AuthSessions.ts";
 import * as PayloadSigner from "./PayloadSigner.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
+import { PERSONAL_KEY_SUBJECT, personalKeyValue } from "./personalKey.ts";
 import {
   REUSABLE_DEV_SESSION_EXPIRES_AT,
   REUSABLE_DEV_SESSION_PREFIX,
@@ -60,6 +63,8 @@ export interface VerifiedSession {
   readonly runtimeModeCeiling?: RuntimeMode;
   /** An MCP client that is another T3 Code environment's peer link. */
   readonly peerLink?: true;
+  /** A personal-key session: can drive work, cannot administer the host. */
+  readonly personalGuest?: true;
 }
 
 export interface VerifiedWebSocketTicket extends VerifiedSession {
@@ -395,6 +400,7 @@ export class SessionStore extends Context.Service<
       readonly proofKeyThumbprint?: string;
       readonly runtimeModeCeiling?: RuntimeMode;
       readonly peerLink?: boolean;
+      readonly personalGuest?: boolean;
       readonly replaceActiveForSubjectAndMethod?: boolean;
       readonly replaceSessionId?: AuthSessionId;
     }) => Effect.Effect<IssuedSession, SessionCredentialInternalError>;
@@ -459,6 +465,8 @@ const SessionClaims = Schema.Struct({
   rtc: Schema.optionalKey(RuntimeMode),
   /** Signed, so a client cannot shed its peer link's limits. */
   plk: Schema.optionalKey(Schema.Literal(1)),
+  /** Signed, so a personal-key session cannot shed its guest limits. */
+  pg: Schema.optionalKey(Schema.Literal(1)),
   iat: Schema.Number,
   exp: Schema.Number,
 });
@@ -515,6 +523,7 @@ const make = Effect.gen(function* () {
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
   const authSessions = yield* AuthSessions.AuthSessionRepository;
+  const personalKeyState = yield* AuthPersonalKeyState.AuthPersonalKeyStateRepository;
   const signer = yield* PayloadSigner.fromSecret(
     yield* secretStore.getOrCreateRandom(SIGNING_SECRET_NAME, 32),
   );
@@ -558,6 +567,45 @@ const make = Effect.gen(function* () {
         ),
       );
   }
+
+  // A changed or removed personal key revokes the guest sessions the old key
+  // created; otherwise rotation would leave them valid until they expire.
+  const syncPersonalKeySessions = Effect.gen(function* () {
+    const personalKey = personalKeyValue(serverConfig);
+    const stored = yield* personalKeyState.get();
+    if (personalKey === undefined) {
+      if (Option.isSome(stored)) {
+        yield* authSessions.revokeBySubject({
+          subject: PERSONAL_KEY_SUBJECT,
+          revokedAt: yield* DateTime.now,
+        });
+        yield* personalKeyState.clear();
+      }
+      return;
+    }
+    const digest = yield* Digest.Digest;
+    const fingerprint = yield* digest.digestHex(
+      Digest.sha256,
+      new TextEncoder().encode(`t3-personal-key:${personalKey}`),
+    );
+    if (Option.isSome(stored) && stored.value.fingerprint === fingerprint) return;
+    const revokedAt = yield* DateTime.now;
+    const revoked = yield* authSessions.revokeBySubject({
+      subject: PERSONAL_KEY_SUBJECT,
+      revokedAt,
+    });
+    yield* personalKeyState.set({ fingerprint, updatedAt: revokedAt });
+    if (revoked.length > 0) {
+      yield* Effect.logInfo("Revoked personal-key sessions for a changed personal key.", {
+        revoked: revoked.length,
+      });
+    }
+  });
+  yield* syncPersonalKeySessions.pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Could not check the personal key fingerprint.", { cause }),
+    ),
+  );
 
   const emitUpsert = (clientSession: AuthClientSession) =>
     PubSub.publish(changesPubSub, {
@@ -682,6 +730,7 @@ const make = Effect.gen(function* () {
         ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),
         ...(input?.runtimeModeCeiling ? { rtc: input.runtimeModeCeiling } : {}),
         ...(input?.peerLink === true ? { plk: 1 as const } : {}),
+        ...(input?.personalGuest === true ? { pg: 1 as const } : {}),
         iat: issuedAt.epochMilliseconds,
         exp: expiresAt.epochMilliseconds,
       };
@@ -865,6 +914,7 @@ const make = Effect.gen(function* () {
         ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
         ...(claims.rtc ? { runtimeModeCeiling: claims.rtc } : {}),
         ...(claims.plk === 1 ? { peerLink: true as const } : {}),
+        ...(claims.pg === 1 ? { personalGuest: true as const } : {}),
       } satisfies VerifiedSession;
     },
   );
@@ -1161,4 +1211,7 @@ const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(SessionStore, make).pipe(Layer.provideMerge(AuthSessions.layer));
+export const layer = Layer.effect(SessionStore, make).pipe(
+  Layer.provideMerge(AuthSessions.layer),
+  Layer.provideMerge(AuthPersonalKeyState.layer),
+);

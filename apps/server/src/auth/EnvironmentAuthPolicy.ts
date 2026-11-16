@@ -20,8 +20,11 @@ export class EnvironmentAuthPolicy extends Context.Service<
 
 /** The auth policy a server started with `config` runs under. */
 export function resolveServerAuthPolicy(
-  config: Pick<ServerConfig.ServerConfig["Service"], "mode" | "host">,
+  config: Pick<ServerConfig.ServerConfig["Service"], "mode" | "host" | "personalMode">,
 ): ServerAuthPolicy {
+  // Personal mode is reached through the relay, which answers as this
+  // environment from another origin; the listener itself stays on loopback.
+  if (config.personalMode === true) return "remote-reachable";
   if (isRemoteReachableHost(config.host)) return "remote-reachable";
   return config.mode === "desktop" ? "desktop-managed-local" : "loopback-browser";
 }
@@ -32,12 +35,14 @@ export const make = Effect.gen(function* () {
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const policy = resolveServerAuthPolicy(config);
 
-  const bootstrapMethods: ServerAuthDescriptor["bootstrapMethods"] =
-    policy === "desktop-managed-local"
-      ? ["desktop-bootstrap"]
+  const bootstrapMethods: ServerAuthDescriptor["bootstrapMethods"] = [
+    ...(policy === "desktop-managed-local"
+      ? (["desktop-bootstrap"] as const)
       : config.mode === "desktop" && policy === "remote-reachable"
-        ? ["desktop-bootstrap", "one-time-token"]
-        : ["one-time-token"];
+        ? (["desktop-bootstrap", "one-time-token"] as const)
+        : (["one-time-token"] as const)),
+    ...(config.personalKey === undefined ? [] : (["personal-key"] as const)),
+  ];
 
   const descriptor: ServerAuthDescriptor = {
     policy,

@@ -173,6 +173,45 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   lan: Config.Boolean("T3CODE_LAN").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  personalKey: Config.Redacted("T3CODE_PERSONAL_KEY").pipe(
+    Config.map((key) => Redacted.make(Redacted.value(key).trim())),
+    Config.mapEffect((key) =>
+      Redacted.value(key).length === 0 || Redacted.value(key).length >= 32
+        ? Effect.succeed(key)
+        : Effect.fail(
+            new Config.ConfigError(
+              new Schema.SchemaError(
+                new SchemaIssue.InvalidValue({
+                  message: "T3CODE_PERSONAL_KEY must contain at least 32 characters.",
+                }),
+              ),
+            ),
+          ),
+    ),
+    Config.option,
+    Config.map(Option.filter((key) => Redacted.value(key).length > 0)),
+    Config.map(Option.getOrUndefined),
+  ),
+  personalRelayUrl: Config.String("T3CODE_PERSONAL_RELAY_URL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  personalLabel: Config.String("T3CODE_PERSONAL_LABEL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  personalFrpcPath: Config.String("T3CODE_FRPC_PATH").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  personalEnabled: Config.Boolean("T3CODE_PERSONAL_ENABLED").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  personalMode: Config.Boolean("T3CODE_PERSONAL_MODE").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
 });
 
 const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
@@ -449,6 +488,23 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
+  // Configuring a key is the opt-in for personal mode. An explicit flag still
+  // wins, so `T3CODE_PERSONAL_ENABLED=0` can park the connector without
+  // removing the key.
+  const personalKey = env.personalKey;
+  const personalKeyConfigured = personalKey !== undefined;
+  const personalMode = Option.getOrElse(
+    Option.fromUndefinedOr(env.personalMode),
+    () => personalKeyConfigured,
+  );
+  const personalEnabled = Option.getOrElse(
+    Option.fromUndefinedOr(env.personalEnabled),
+    () => personalMode,
+  );
+  const personalRelayUrl = env.personalRelayUrl?.trim() || undefined;
+  const personalLabel = env.personalLabel?.trim() || undefined;
+  const personalFrpcPath = env.personalFrpcPath?.trim() || undefined;
+
   const otel = yield* OtelEnvironment.load;
 
   const signalExport: SignalExport = {
@@ -531,6 +587,12 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     logWebSocketEvents,
     tailscaleServeEnabled,
     tailscaleServePort,
+    ...(personalKey === undefined ? {} : { personalKey }),
+    ...(personalRelayUrl === undefined ? {} : { personalRelayUrl }),
+    ...(personalLabel === undefined ? {} : { personalLabel }),
+    ...(personalFrpcPath === undefined ? {} : { personalFrpcPath }),
+    personalEnabled,
+    personalMode,
   };
 
   return config;

@@ -1,4 +1,5 @@
 import {
+  AuthPersonalGuestScopes,
   AuthStandardClientScopes,
   type AuthClientMetadata,
   type AuthConnectDevice,
@@ -32,6 +33,11 @@ import * as Stream from "effect/Stream";
 import * as ServerConfig from "../config.ts";
 import * as AuthConnectDevices from "../persistence/AuthConnectDevices.ts";
 import * as AuthPairingLinks from "../persistence/AuthPairingLinks.ts";
+import {
+  PERSONAL_KEY_BOOTSTRAP_METHOD,
+  PERSONAL_KEY_SUBJECT,
+  personalKeyValue,
+} from "./personalKey.ts";
 
 export interface BootstrapGrant {
   readonly method: ServerAuthBootstrapMethod;
@@ -40,6 +46,8 @@ export interface BootstrapGrant {
   readonly label?: string;
   readonly proofKeyThumbprint?: string;
   readonly expiresAt: DateTime.DateTime;
+  /** A personal-key grant; the session may drive work but not administer the host. */
+  readonly personalGuest?: boolean;
 }
 
 export class UnknownBootstrapCredentialError extends Schema.TaggedError<UnknownBootstrapCredentialError>()(
@@ -343,6 +351,8 @@ const toPairingLink = (row: AuthPairingLinks.AuthPairingLinkRecord): AuthPairing
 });
 const DESKTOP_BOOTSTRAP_TTL_HOURS = Duration.hours(24);
 const DEV_STARTUP_TTL_HOURS = Duration.hours(24);
+// A personal key is the root credential; its grant never expires in practice.
+const PERSONAL_KEY_TTL = Duration.days(3650);
 const PAIRING_TOKEN_REJECTION_LIMIT =
   Math.floor(256 / PAIRING_CODE_ALPHABET.length) * PAIRING_CODE_ALPHABET.length;
 
@@ -422,6 +432,21 @@ const make = Effect.gen(function* () {
       }),
       // Reloads and expired bearer sessions must be able to re-exchange the desktop seed.
       remainingUses: "unbounded",
+    });
+  }
+
+  // The raw key lives only in this in-memory grant, like the desktop bootstrap seed.
+  // Persisting it would make the database a way to recover the root credential.
+  const personalKey = personalKeyValue(config);
+  if (personalKey !== undefined) {
+    const now = yield* DateTime.now;
+    yield* seedGrant(personalKey, {
+      method: PERSONAL_KEY_BOOTSTRAP_METHOD,
+      scopes: AuthPersonalGuestScopes,
+      subject: PERSONAL_KEY_SUBJECT,
+      expiresAt: DateTime.add(now, { milliseconds: Duration.toMillis(PERSONAL_KEY_TTL) }),
+      remainingUses: "unbounded",
+      personalGuest: true,
     });
   }
 
@@ -621,6 +646,7 @@ const make = Effect.gen(function* () {
                 ...(grant.proofKeyThumbprint
                   ? { proofKeyThumbprint: grant.proofKeyThumbprint }
                   : {}),
+                ...(grant.personalGuest ? { personalGuest: true } : {}),
                 expiresAt: grant.expiresAt,
               } satisfies BootstrapGrant,
             },

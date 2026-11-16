@@ -1,0 +1,93 @@
+# Sample OpenResty include for personal mode.
+#
+#   /etc/openresty/conf.d/t3.conf
+#
+# Add `include conf.d/*.conf;` to the http block only if the existing config
+# does not already include this directory. Never edit the other domain's vhost.
+# Validate with `openresty -t`, then `openresty -s reload` (graceful).
+
+# Included files sit in http context. The name is prefixed so an existing
+# $connection_upgrade map in the other domain does not collide.
+map $http_upgrade $t3_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name t3.example.com *.t3.example.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name t3.example.com;
+
+    ssl_certificate     /etc/openresty/certs/t3.example.com/fullchain.pem;
+    ssl_certificate_key /etc/openresty/certs/t3.example.com/privkey.pem;
+
+    root /srv/t3-portal;
+    index index.html;
+
+    location /v1/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 60s;
+    }
+
+    # The service worker and manifest must never be cached across deploys.
+    location = /sw.js {
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /manifest.webmanifest {
+        default_type application/manifest+json;
+        add_header Cache-Control "no-cache";
+    }
+
+    # Hashed client assets are immutable; index.html is not.
+    location /assets/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location / {
+        add_header Cache-Control "no-cache";
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ~^(?<host_id>[a-z0-9-]+)\.t3\.example\.com$;
+
+    ssl_certificate     /etc/openresty/certs/t3.example.com/fullchain.pem;
+    ssl_certificate_key /etc/openresty/certs/t3.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $t3_connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_buffering off;
+        client_max_body_size 200m;
+    }
+}

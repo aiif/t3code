@@ -93,6 +93,12 @@ export const RevokeAuthSessionsByProofKeyInput = Schema.Struct({
 });
 export type RevokeAuthSessionsByProofKeyInput = typeof RevokeAuthSessionsByProofKeyInput.Type;
 
+export const RevokeAuthSessionsBySubjectInput = Schema.Struct({
+  subject: Schema.String,
+  revokedAt: Schema.DateTimeUtcFromString,
+});
+export type RevokeAuthSessionsBySubjectInput = typeof RevokeAuthSessionsBySubjectInput.Type;
+
 export const SetAuthSessionLastConnectedAtInput = Schema.Struct({
   sessionId: AuthSessionId,
   lastConnectedAt: Schema.DateTimeUtcFromString,
@@ -131,6 +137,9 @@ export class AuthSessionRepository extends Context.Service<
     ) => Effect.Effect<Option.Option<string>, AuthSessionRepositoryError>;
     readonly revokeByProofKey: (
       input: RevokeAuthSessionsByProofKeyInput,
+    ) => Effect.Effect<ReadonlyArray<AuthSessionId>, AuthSessionRepositoryError>;
+    readonly revokeBySubject: (
+      input: RevokeAuthSessionsBySubjectInput,
     ) => Effect.Effect<ReadonlyArray<AuthSessionId>, AuthSessionRepositoryError>;
   }
 >()("t3/persistence/AuthSessions/AuthSessionRepository") {}
@@ -374,6 +383,19 @@ export const make = Effect.gen(function* () {
       `,
   });
 
+  const revokeBySubjectRows = SqlSchema.findAll({
+    Request: RevokeAuthSessionsBySubjectInput,
+    Result: Schema.Struct({ sessionId: AuthSessionId }),
+    execute: ({ subject, revokedAt }) =>
+      sql`
+        UPDATE auth_sessions
+        SET revoked_at = ${revokedAt}
+        WHERE subject = ${subject}
+          AND revoked_at IS NULL
+        RETURNING session_id AS "sessionId"
+      `,
+  });
+
   const revokeOtherSessionRows = SqlSchema.findAll({
     Request: RevokeOtherAuthSessionsInput,
     Result: Schema.Struct({ sessionId: AuthSessionId }),
@@ -546,6 +568,17 @@ export const make = Effect.gen(function* () {
       Effect.map((rows) => rows.map((row) => row.sessionId)),
     );
 
+  const revokeBySubject: AuthSessionRepository["Service"]["revokeBySubject"] = (input) =>
+    revokeBySubjectRows(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "AuthSessionRepository.revokeBySubject:query",
+          "AuthSessionRepository.revokeBySubject:decodeRows",
+        ),
+      ),
+      Effect.map((rows) => rows.map((row) => row.sessionId)),
+    );
+
   return {
     create,
     createReplacingActive,
@@ -557,6 +590,7 @@ export const make = Effect.gen(function* () {
     setLastConnectedAt,
     getProofKeyThumbprint,
     revokeByProofKey,
+    revokeBySubject,
   } satisfies AuthSessionRepository["Service"];
 });
 

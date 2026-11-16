@@ -2,6 +2,7 @@ import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   authScopeResponse,
+  AuthPersonalGuestScopes,
   AuthStandardClientScopes,
   connectDeviceVerificationCode,
 } from "@t3tools/contracts";
@@ -938,6 +939,111 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
       }).pipe(
         Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
       ),
+    );
+  },
+);
+
+it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
+  "EnvironmentAuth personal key",
+  (it) => {
+    const personalKey = "personal-key-for-tests-0123456789abcdef";
+
+    it.effect("exchanges the key for a guest bearer token", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const access = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+          personalKey,
+          undefined,
+          requestMetadata,
+        );
+
+        expect(access.personal_guest).toBe(true);
+        expect(access.token_type).toBe("Bearer");
+        expect(new Set(access.scope.split(" "))).toEqual(new Set(AuthPersonalGuestScopes));
+
+        const session = yield* serverAuth.authenticateHttpRequest(
+          makeBearerRequest(access.access_token),
+        );
+        expect(session).toMatchObject({
+          personalGuest: true,
+          subject: "personal-key",
+          scopes: AuthPersonalGuestScopes,
+        });
+
+        const state = yield* serverAuth.getSessionState(makeBearerRequest(access.access_token));
+        expect(state).toMatchObject({ authenticated: true, personalGuest: true });
+      }).pipe(Effect.provide(layerEnvironmentAuth({ personalKey: Redacted.make(personalKey) }))),
+    );
+
+    it.effect("exchanges the key for a guest cookie", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        const exchange = yield* serverAuth.createBrowserSession(personalKey, requestMetadata);
+
+        expect(exchange.response.personalGuest).toBe(true);
+        const session = yield* serverAuth.authenticateHttpRequest(
+          makeCookieRequest(sessions.cookieName, exchange.sessionToken),
+        );
+        expect(session).toMatchObject({
+          personalGuest: true,
+          subject: "personal-key",
+        });
+      }).pipe(Effect.provide(layerEnvironmentAuth({ personalKey: Redacted.make(personalKey) }))),
+    );
+
+    it.effect("refuses personal guest sessions at /mcp", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const access = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+          personalKey,
+          undefined,
+          requestMetadata,
+        );
+        const error = yield* serverAuth
+          .authenticateMcpClient(makeBearerRequest(access.access_token))
+          .pipe(Effect.flip);
+        expect(error).toMatchObject({
+          _tag: "ServerAuthInvalidCredentialError",
+          diagnostic: "Personal-key sessions cannot be used with /mcp.",
+        });
+      }).pipe(Effect.provide(layerEnvironmentAuth({ personalKey: Redacted.make(personalKey) }))),
+    );
+
+    it.effect("leaves the owner's bootstrap credentials untouched", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const pairing = yield* serverAuth.issuePairingCredential();
+        const access = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+          pairing.credential,
+          undefined,
+          requestMetadata,
+        );
+        expect(access.personal_guest).toBeUndefined();
+        const session = yield* serverAuth.authenticateHttpRequest(
+          makeBearerRequest(access.access_token),
+        );
+        expect(session.personalGuest).toBeUndefined();
+        expect(session.scopes).toEqual(AuthStandardClientScopes);
+        expect(
+          yield* serverAuth
+            .authenticateMcpClient(makeBearerRequest(access.access_token))
+            .pipe(Effect.flip),
+        ).toMatchObject({
+          _tag: "ServerAuthInvalidCredentialError",
+          diagnostic: "Only MCP client sessions are accepted here.",
+        });
+      }).pipe(Effect.provide(layerEnvironmentAuth({ personalKey: Redacted.make(personalKey) }))),
+    );
+
+    it.effect("rejects the key when none is configured", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const error = yield* serverAuth
+          .exchangeBootstrapCredentialForAccessToken(personalKey, undefined, requestMetadata)
+          .pipe(Effect.flip);
+        expect(error).toMatchObject({ _tag: "ServerAuthInvalidCredentialError" });
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
   },
 );

@@ -1,4 +1,4 @@
-import { AuthStandardClientScopes } from "@t3tools/contracts";
+import { AuthPersonalGuestScopes, AuthStandardClientScopes } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -6,6 +6,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
@@ -20,7 +21,10 @@ import * as PairingGrantStore from "./PairingGrantStore.ts";
 
 const layerServerConfig = (
   overrides?: Partial<
-    Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken" | "desktopBootstrapSecret">
+    Pick<
+      ServerConfig.ServerConfig["Service"],
+      "desktopBootstrapToken" | "desktopBootstrapSecret" | "personalKey"
+    >
   >,
 ) =>
   Layer.effect(
@@ -38,7 +42,10 @@ const layerServerConfig = (
 
 const layerPairingGrantStore = (
   overrides?: Partial<
-    Pick<ServerConfig.ServerConfig["Service"], "desktopBootstrapToken" | "desktopBootstrapSecret">
+    Pick<
+      ServerConfig.ServerConfig["Service"],
+      "desktopBootstrapToken" | "desktopBootstrapSecret" | "personalKey"
+    >
   >,
 ) =>
   PairingGrantStore.layer.pipe(
@@ -47,6 +54,31 @@ const layerPairingGrantStore = (
   );
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStore.layer", (it) => {
+  it.effect("seeds a reusable personal-key grant with guest scopes", () => {
+    const personalKey = "personal-key-for-tests-0123456789abcdef";
+    return Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const first = yield* bootstrapCredentials.consume(personalKey);
+      const second = yield* bootstrapCredentials.consume(personalKey);
+
+      for (const grant of [first, second]) {
+        expect(grant).toMatchObject({
+          method: "personal-key",
+          subject: "personal-key",
+          personalGuest: true,
+          scopes: AuthPersonalGuestScopes,
+        });
+      }
+      // The grant is not a pairing link; it never appears in the access list.
+      expect(yield* bootstrapCredentials.listActive()).toEqual([]);
+      // A key from another environment is just an unknown credential.
+      const wrong = yield* Effect.flip(
+        bootstrapCredentials.consume("another-personal-key-0123456789abcdef"),
+      );
+      expect(wrong._tag).toBe("UnknownBootstrapCredentialError");
+    }).pipe(Effect.provide(layerPairingGrantStore({ personalKey: Redacted.make(personalKey) })));
+  });
+
   it.effect("accepts lowercase one-time tokens exactly once", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;

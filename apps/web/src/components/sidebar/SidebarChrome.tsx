@@ -14,6 +14,8 @@ import {
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
+import { usePrimaryEnvironmentId } from "../../state/environments";
+import { useEnvironmentSessionState } from "../../state/session";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -47,6 +49,9 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const primarySession = useEnvironmentSessionState(primaryEnvironmentId);
+  const personalGuest = primarySession.data?.personalGuest === true;
   const backdropVariant = resolveSidebarStageBackdropVariant(
     stageLabel,
     environmentIdentificationMode,
@@ -85,6 +90,18 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
           <div className="ml-1 flex h-7 items-center">
             <Badge data-environment-identification="pill" size="sm" variant="secondary">
               {pillLabel}
+            </Badge>
+          </div>
+        ) : null}
+        {personalGuest ? (
+          <div className="flex h-7 items-center">
+            <Badge
+              data-personal-guest="true"
+              size="sm"
+              title="Personal-key session: you can drive agents but not administer this host."
+              variant="outline"
+            >
+              Guest
             </Badge>
           </div>
         ) : null}

@@ -23,6 +23,7 @@ import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachine
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
+import { PersonalModeGate } from "../components/personal/PersonalModeGate";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -53,6 +54,7 @@ import { GUEST_PAGE_PATH } from "../guestPage";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { useHostedPromptLinkLanding } from "../components/promptLinks/HostedPromptLinkLanding";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
+import { isPersonalOnly } from "../personal/mode";
 import { useAtomValue } from "@effect/atom-react";
 import { primaryServerConfigAtom, primaryServerWelcomeAtom } from "../state/server";
 import { readProject } from "../state/entities";
@@ -147,6 +149,7 @@ function RootRouteBranch() {
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
   // A sync IPC read; the setting only changes across a relaunch.
   const [localEnvironmentDisabled] = useState(isLocalEnvironmentDisabled);
+  const personalOnly = isPersonalOnly();
   // Once true, stays true: a visit to /welcome means the bootstrap already chose a route.
   const [returningFromWelcome, setReturningFromWelcome] = useState(pathname === "/welcome");
   if (pathname === "/welcome" && !returningFromWelcome) setReturningFromWelcome(true);
@@ -184,8 +187,12 @@ function RootRouteBranch() {
         <DesktopWebLinkCoordinator />
       ) : null}
       {isElectron ? <RunningThreadKeepAlive /> : null}
-      <RelayClientInstallDialog />
-      <ConnectOnboardingDialog />
+      {personalOnly ? null : (
+        <>
+          <RelayClientInstallDialog />
+          <ConnectOnboardingDialog />
+        </>
+      )}
       <SshPasswordPromptDialog />
       <SnapShotCoordinator />
       <ReopenClosedViewShortcut />
@@ -209,28 +216,30 @@ function RootRouteBranch() {
   );
 
   return (
-    <>
-      <ChatGptWelcomeCoordinator />
-      {isWelcome ? (
-        <>
-          {appHosts}
-          {appShell}
-        </>
-      ) : (
-        <FirstRunGate
-          enabled={primaryEnvironmentAuthenticated}
-          hostedStatic={authGateState.status === "hosted-static"}
-        >
-          {appHosts}
-          {primaryEnvironmentAuthenticated ? (
-            <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
-          ) : null}
-          {appShell}
-        </FirstRunGate>
-      )}
-      {/* Above both shells and the router, so drafts survive navigation, including to /welcome. */}
-      <ThemeEditorHost />
-    </>
+    <PersonalModeGate hosted={authGateState.status === "hosted-static"}>
+      <>
+        <ChatGptWelcomeCoordinator />
+        {isWelcome ? (
+          <>
+            {appHosts}
+            {appShell}
+          </>
+        ) : (
+          <FirstRunGate
+            enabled={primaryEnvironmentAuthenticated}
+            hostedStatic={authGateState.status === "hosted-static"}
+          >
+            {appHosts}
+            {primaryEnvironmentAuthenticated ? (
+              <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
+            ) : null}
+            {appShell}
+          </FirstRunGate>
+        )}
+        {/* Above both shells and the router, so drafts survive navigation, including to /welcome. */}
+        <ThemeEditorHost />
+      </>
+    </PersonalModeGate>
   );
 }
 

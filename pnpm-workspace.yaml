@@ -2,6 +2,7 @@ packages:
   - apps/*
   - evals
   - infra/*
+  - infra/personal-relay/registry
   - oxlint-plugin-t3code
   - packages/*
   - scripts

@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -58,6 +59,43 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           layerEnvironmentAuthPolicy({
             mode: "desktop",
             host: "0.0.0.0",
+          }),
+        ),
+      ),
+    );
+
+    it.effect("reports remote-reachable with a personal key while still binding loopback", () =>
+      Effect.gen(function* () {
+        const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
+        const descriptor = yield* policy.getDescriptor();
+
+        expect(descriptor.policy).toBe("remote-reachable");
+        expect(descriptor.bootstrapMethods).toEqual(["one-time-token", "personal-key"]);
+      }).pipe(
+        Effect.provide(
+          layerEnvironmentAuthPolicy({
+            mode: "web",
+            host: "127.0.0.1",
+            personalMode: true,
+            personalKey: Redacted.make("personal-key-for-tests-0123456789abcdef"),
+          }),
+        ),
+      ),
+    );
+
+    it.effect("keeps loopback policy without personal mode even when a key is configured", () =>
+      Effect.gen(function* () {
+        const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
+        const descriptor = yield* policy.getDescriptor();
+
+        expect(descriptor.policy).toBe("loopback-browser");
+        expect(descriptor.bootstrapMethods).toEqual(["one-time-token", "personal-key"]);
+      }).pipe(
+        Effect.provide(
+          layerEnvironmentAuthPolicy({
+            mode: "web",
+            host: "127.0.0.1",
+            personalKey: Redacted.make("personal-key-for-tests-0123456789abcdef"),
           }),
         ),
       ),

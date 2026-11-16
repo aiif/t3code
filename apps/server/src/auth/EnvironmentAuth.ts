@@ -97,6 +97,8 @@ export interface AuthenticatedSession {
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly proofKeyThumbprint?: string;
   readonly expiresAt?: DateTime.DateTime;
+  /** A personal-key session: can drive work, cannot administer the host. */
+  readonly personalGuest?: true;
 }
 
 const serverAuthInternalErrorContext = {
@@ -810,6 +812,7 @@ export const make = Effect.gen(function* () {
         scopes: session.scopes,
         ...(session.proofKeyThumbprint ? { proofKeyThumbprint: session.proofKeyThumbprint } : {}),
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+        ...(session.personalGuest ? { personalGuest: true as const } : {}),
       })),
     );
 
@@ -898,6 +901,7 @@ export const make = Effect.gen(function* () {
             ...authScopeResponse(session.scopes),
             sessionMethod: session.method,
             ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
+            ...(session.personalGuest ? { personalGuest: true } : {}),
           }) satisfies AuthSessionState,
       ),
       Effect.catchIf(isServerAuthCredentialError, () =>
@@ -951,6 +955,7 @@ export const make = Effect.gen(function* () {
         method: "browser-session-cookie",
         subject: grant.subject,
         scopes: grant.scopes,
+        ...(grant.personalGuest ? { personalGuest: true } : {}),
         ...(previousSession?.method === "browser-session-cookie"
           ? { replaceSessionId: previousSession.sessionId }
           : {}),
@@ -966,6 +971,7 @@ export const make = Effect.gen(function* () {
         ...authScopeResponse(session.scopes),
         sessionMethod: session.method,
         expiresAt: DateTime.toUtc(session.expiresAt),
+        ...(grant.personalGuest ? { personalGuest: true } : {}),
       } satisfies AuthBrowserSessionResult,
       sessionToken: session.token,
     } satisfies BootstrapExchangeResult;
@@ -973,7 +979,7 @@ export const make = Effect.gen(function* () {
 
   type ResolvedBootstrapGrant = Pick<
     PairingGrantStore.BootstrapGrant,
-    "scopes" | "subject" | "label"
+    "scopes" | "subject" | "label" | "personalGuest"
   > & {
     readonly method: PairingGrantStore.BootstrapGrant["method"] | "reusable-dev-token";
   };
@@ -1062,11 +1068,12 @@ export const make = Effect.gen(function* () {
             if (grantedScopes.length === 0) {
               return yield* new ServerAuthScopeNotGrantedError({});
             }
-            return yield* sessions
+            const session = yield* sessions
               .issue({
                 method: input?.proofKeyThumbprint ? "dpop-access-token" : "bearer-access-token",
                 subject: grant.subject,
                 scopes: grantedScopes,
+                ...(grant.personalGuest ? { personalGuest: true } : {}),
                 ...(input?.proofKeyThumbprint
                   ? {
                       proofKeyThumbprint: input.proofKeyThumbprint,
@@ -1084,9 +1091,10 @@ export const make = Effect.gen(function* () {
                   (cause) => new ServerAuthAuthenticatedAccessTokenIssueError({ cause }),
                 ),
               );
+            return { session, personalGuest: grant.personalGuest === true };
           }),
         ),
-        Effect.flatMap((session) =>
+        Effect.flatMap(({ session, personalGuest }) =>
           DateTime.now.pipe(
             Effect.map(
               (now) =>
@@ -1101,6 +1109,7 @@ export const make = Effect.gen(function* () {
                     ),
                   ),
                   scope: encodeOAuthScope(session.scopes),
+                  ...(personalGuest ? { personal_guest: true } : {}),
                 }) satisfies AuthAccessTokenResult,
             ),
           ),
@@ -1514,6 +1523,7 @@ export const make = Effect.gen(function* () {
               ? { proofKeyThumbprint: session.proofKeyThumbprint }
               : {}),
             ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+            ...(session.personalGuest ? { personalGuest: true as const } : {}),
           };
         }
       }
@@ -1527,20 +1537,26 @@ export const make = Effect.gen(function* () {
     return sessions.verify(token).pipe(
       mapSessionVerificationErrors,
       Effect.flatMap((session) =>
-        session.subject === MCP_CLIENT_SUBJECT && session.method === "bearer-access-token"
-          ? Effect.succeed({
-              sessionId: session.sessionId,
-              label: session.client.label ?? "MCP client",
-              access: session.scopes.includes(AuthOrchestrationOperateScope)
-                ? (session.runtimeModeCeiling ?? "approval-required")
-                : "read-only",
-              peerLink: session.peerLink === true,
-            } satisfies McpClientSession)
-          : Effect.fail(
+        session.personalGuest === true
+          ? Effect.fail(
               new ServerAuthInvalidCredentialError({
-                diagnostic: "Only MCP client sessions are accepted here.",
+                diagnostic: "Personal-key sessions cannot be used with /mcp.",
               }),
-            ),
+            )
+          : session.subject === MCP_CLIENT_SUBJECT && session.method === "bearer-access-token"
+            ? Effect.succeed({
+                sessionId: session.sessionId,
+                label: session.client.label ?? "MCP client",
+                access: session.scopes.includes(AuthOrchestrationOperateScope)
+                  ? (session.runtimeModeCeiling ?? "approval-required")
+                  : "read-only",
+                peerLink: session.peerLink === true,
+              } satisfies McpClientSession)
+            : Effect.fail(
+                new ServerAuthInvalidCredentialError({
+                  diagnostic: "Only MCP client sessions are accepted here.",
+                }),
+              ),
       ),
       Effect.withSpan("EnvironmentAuth.authenticateMcpClient"),
     );

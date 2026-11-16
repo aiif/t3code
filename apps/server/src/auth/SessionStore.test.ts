@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId } from "@t3tools/contracts";
+import { AuthPersonalGuestScopes, EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -21,6 +21,7 @@ import * as SessionStore from "./SessionStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import { base64UrlDecodeUtf8, base64UrlEncode } from "./utils.ts";
 import * as PayloadSigner from "./PayloadSigner.ts";
+import { PERSONAL_KEY_SUBJECT } from "./personalKey.ts";
 
 const layerServerConfig = (overrides?: Partial<ServerConfig.ServerConfig["Service"]>) =>
   Layer.effect(
@@ -84,7 +85,85 @@ const makeDiskSessionStoreLayer = Effect.fn("makeDiskSessionStoreLayer")(functio
   );
 });
 
+const makeDiskPersonalKeyLayer = Effect.fn("makeDiskPersonalKeyLayer")(function* (
+  baseDir: string,
+  personalKey: string,
+) {
+  const devUrl = new URL("http://127.0.0.1:5173");
+  const paths = yield* ServerConfig.deriveServerPaths(baseDir, devUrl, {
+    baseDirIsExplicit: true,
+  });
+  yield* ServerConfig.ensureServerDirectories(paths);
+  return SessionStore.layer.pipe(
+    Layer.provide(SqlitePersistence.layerFromPath(paths.dbPath)),
+    Layer.provide(ServerSecretStore.layer),
+    Layer.provide(layerServerEnvironment(EnvironmentId.make(baseDir))),
+    Layer.provide(
+      layerServerConfig({
+        ...paths,
+        baseDir,
+        mode: "web",
+        devUrl,
+        personalKey: Redacted.make(personalKey),
+      }),
+    ),
+  );
+});
+
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.layer", (it) => {
+  it.effect("signs the guest claim into personal-key sessions only", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const guest = yield* sessions.issue({
+        subject: PERSONAL_KEY_SUBJECT,
+        scopes: AuthPersonalGuestScopes,
+        personalGuest: true,
+      });
+      expect(yield* sessions.verify(guest.token)).toMatchObject({
+        subject: "personal-key",
+        personalGuest: true,
+        scopes: AuthPersonalGuestScopes,
+      });
+
+      const owner = yield* sessions.issue({ subject: "owner" });
+      expect((yield* sessions.verify(owner.token)).personalGuest).toBeUndefined();
+    }).pipe(Effect.provide(layerSessionStore())),
+  );
+
+  it.effect("revokes personal-key sessions when the configured key changes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-personal-key-rotation-" });
+      const keyA = "personal-key-aaaaaaaaaaaaaaaaaaaaaaaaaa";
+      const keyB = "personal-key-bbbbbbbbbbbbbbbbbbbbbbbbbb";
+      const issueGuest = (layer: Effect.Success<ReturnType<typeof makeDiskPersonalKeyLayer>>) =>
+        Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          return yield* sessions.issue({
+            subject: PERSONAL_KEY_SUBJECT,
+            scopes: AuthPersonalGuestScopes,
+            personalGuest: true,
+          });
+        }).pipe(Effect.provide(layer), Effect.scoped);
+
+      const first = yield* makeDiskPersonalKeyLayer(baseDir, keyA);
+      const issued = yield* issueGuest(first);
+
+      const unchanged = yield* makeDiskPersonalKeyLayer(baseDir, keyA);
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        expect(yield* sessions.verify(issued.token)).toMatchObject({ personalGuest: true });
+      }).pipe(Effect.provide(unchanged), Effect.scoped);
+
+      const rotated = yield* makeDiskPersonalKeyLayer(baseDir, keyB);
+      yield* Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const error = yield* sessions.verify(issued.token).pipe(Effect.flip);
+        expect(error).toMatchObject({ _tag: "SessionTokenRevokedError" });
+      }).pipe(Effect.provide(rotated), Effect.scoped);
+    }),
+  );
+
   it.effect.each(["revoke", "revokeAllExcept", "replace"] as const)(
     "invalidates every connection for a session on %s and leaves other sessions active",
     (operation) =>

@@ -425,6 +425,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
+        personalEnabled: false,
+        personalMode: false,
       });
     }),
   );
@@ -504,6 +506,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         logWebSocketEvents: true,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
+        personalEnabled: false,
+        personalMode: false,
       });
     }),
   );
@@ -741,6 +745,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
+        personalEnabled: false,
+        personalMode: false,
       });
     }),
   );

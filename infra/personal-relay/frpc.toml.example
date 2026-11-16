@@ -1,0 +1,15 @@
+# Sample frpc configuration. `t3 personal join` writes this file for you.
+# Every host must keep localIP loopback so the T3 server never binds publicly.
+serverAddr = "relay.example.com"
+serverPort = 7001
+loginFailExit = false
+
+auth.method = "token"
+auth.token = "CHANGE_ME_FRP_AUTH_TOKEN"
+
+[[proxies]]
+name = "t3-<hostId>"
+type = "http"
+localIP = "127.0.0.1"
+localPort = 3773
+customDomains = ["<hostId>.t3.toreal.site"]

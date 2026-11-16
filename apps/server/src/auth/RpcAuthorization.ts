@@ -23,6 +23,7 @@ import {
   AuthRelayWriteScope,
   AuthTerminalOperateScope,
   ORCHESTRATION_V2_WS_METHODS,
+  PERSONAL_WS_METHODS,
   AuthTerminalReadScope,
   type AuthEnvironmentScope,
   EnvironmentAuthorizationError,
@@ -34,6 +35,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
+import { personalGuestMayCallRpc, personalGuestMayDispatch } from "./personalGuestPolicy.ts";
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
@@ -217,6 +219,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeServerConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerLifecycle]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeAuthAccess]: AuthAccessReadScope,
+  [PERSONAL_WS_METHODS.relayStatus]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope {
@@ -283,22 +286,50 @@ const requiredScopesForRpcCall = (
 };
 
 /**
- * `onAuthorized` runs once after an authorized request succeeds; for a stream
- * RPC, that is when the stream completes. Every RPC passes through here, so it
- * is the one place to observe requests without wrapping each handler.
+ * Every RPC passes through here. `onAuthorized` runs once after an authorized
+ * request succeeds; a personal-key session is additionally checked against the
+ * guest allowlist before its scopes.
  */
 export const layer = (
   scopes: ReadonlyArray<AuthEnvironmentScope>,
   onAuthorized?: (method: string, payload: unknown) => Effect.Effect<void>,
+  options?: { readonly personalGuest?: boolean },
 ) =>
   Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) => {
     const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload);
+    if (options?.personalGuest === true) {
+      const denied = personalGuestDenial(rpc._tag, payload, requiredScopes[0]);
+      if (denied !== null) return Effect.fail(denied);
+    }
     const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
     if (requiredScope !== undefined) return Effect.fail(rpcAuthorizationError(requiredScope));
     return onAuthorized === undefined
       ? effect
       : Effect.tap(effect, () => onAuthorized(rpc._tag, payload));
   });
+
+function personalGuestDenial(
+  method: string,
+  payload: unknown,
+  requiredScope: AuthEnvironmentScope | undefined,
+): EnvironmentAuthorizationError | null {
+  const scope = requiredScope ?? AuthOrchestrationOperateScope;
+  if (!personalGuestMayCallRpc(method)) {
+    return new EnvironmentAuthorizationError({
+      message: `Personal-key sessions cannot call ${method}.`,
+      ...authScopeRequiredResponse(scope),
+    });
+  }
+  if (method !== ORCHESTRATION_V2_WS_METHODS.dispatchCommand) return null;
+  const commandType = (payload as { readonly type?: unknown } | null)?.type;
+  if (typeof commandType === "string" && personalGuestMayDispatch(commandType)) {
+    return null;
+  }
+  return new EnvironmentAuthorizationError({
+    message: `Personal-key sessions cannot send ${typeof commandType === "string" ? commandType : "this command"}.`,
+    ...authScopeRequiredResponse(AuthOrchestrationOperateScope),
+  });
+}
 
 /** Retrying can install or restart tools even though ordinary listing is readable. */
 export const requiredScopeForDeviceList = (input: DeviceListInput): AuthEnvironmentScope =>

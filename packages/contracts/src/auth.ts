@@ -18,7 +18,11 @@ export const ServerAuthPolicy = Schema.Literals([
 ]);
 export type ServerAuthPolicy = typeof ServerAuthPolicy.Type;
 
-export const ServerAuthBootstrapMethod = Schema.Literals(["desktop-bootstrap", "one-time-token"]);
+export const ServerAuthBootstrapMethod = Schema.Literals([
+  "desktop-bootstrap",
+  "one-time-token",
+  "personal-key",
+]);
 export type ServerAuthBootstrapMethod = typeof ServerAuthBootstrapMethod.Type;
 
 export const ServerAuthSessionMethod = Schema.Literals([
@@ -166,6 +170,17 @@ export const AuthStandardClientScopes = [
   AuthRelayWriteScope,
 ] as const;
 
+/**
+ * A personal-key session may drive work but not administer the host: no
+ * settings, providers, access, terminal, preview, diagnostics, Git writes,
+ * filesystem writes, relay management, or project lifecycle.
+ */
+export const AuthPersonalGuestScopes = [
+  AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+  AuthFilesystemReadScope,
+] as const satisfies ReadonlyArray<AuthEnvironmentScope>;
+
 export const AuthTokenExchangeGrantType =
   "urn:ietf:params:oauth:grant-type:token-exchange" as const;
 export const AuthAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
@@ -192,6 +207,8 @@ export const AuthBrowserSessionResult = Schema.Struct({
   ...authScopeResponseFields,
   sessionMethod: ServerAuthSessionMethod,
   expiresAt: Schema.DateTimeUtc,
+  /** Older servers omit this. A personal-key session is a guest session. */
+  personalGuest: Schema.optionalKey(Schema.Boolean),
 });
 export type AuthBrowserSessionResult = typeof AuthBrowserSessionResult.Type;
 
@@ -235,6 +252,8 @@ export const AuthAccessTokenResult = Schema.Struct({
   token_type: Schema.Literals(["Bearer", "DPoP"]),
   expires_in: Schema.Number,
   scope: TrimmedNonEmptyString,
+  /** A personal-key session is a guest session; older servers omit this. */
+  personal_guest: Schema.optionalKey(Schema.Boolean),
 });
 export type AuthAccessTokenResult = typeof AuthAccessTokenResult.Type;
 
@@ -513,6 +532,8 @@ export const AuthSessionState = Schema.Struct({
   permissions: authScopeResponseFields.permissions,
   sessionMethod: Schema.optionalKey(ServerAuthSessionMethod),
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** Set for personal-key sessions; older servers never send it. */
+  personalGuest: Schema.optionalKey(Schema.Boolean),
 });
 export type AuthSessionState = typeof AuthSessionState.Type;
 

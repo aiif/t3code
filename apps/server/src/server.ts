@@ -169,6 +169,8 @@ import {
   decodeRuntimeConfig,
   RELAY_URL_SECRET,
 } from "./cloud/config.ts";
+import * as PersonalRelay from "./personal/PersonalRelay.ts";
+import * as PersonalNotifier from "./personal/PersonalNotifier.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as EnvironmentAuthPolicy from "./auth/EnvironmentAuthPolicy.ts";
 import * as CloudHttp from "./cloud/http.ts";
@@ -550,6 +552,9 @@ const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(
 );
 
 const layerServerEnvironment = ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer));
+
+const layerPersonalRelay = PersonalRelay.layer.pipe(Layer.provide(layerServerEnvironment));
+const layerPersonalMode = PersonalNotifier.layer.pipe(Layer.provideMerge(layerPersonalRelay));
 
 const layerAuth = EnvironmentAuth.layer.pipe(
   Layer.provideMerge(layerPersistence),
@@ -1103,6 +1108,11 @@ const layerMakeServer = Layer.unwrap(
     const layerCloudDesiredLinkReconcile = Layer.effectDiscard(
       Effect.gen(function* () {
         const cloudLink = yield* CloudLink.CloudLink;
+        // Personal mode is relay-only: never restore a T3 Connect link or managed tunnel.
+        if ((yield* ServerConfig.ServerConfig).personalEnabled === true) {
+          yield* Deferred.succeed(cloudLinkParked, undefined).pipe(Effect.orDie);
+          return;
+        }
         // CloudLink unlinks on startup when the policy turns Connect off; nothing to restore.
         if (!ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy)) {
           yield* Deferred.succeed(cloudLinkParked, undefined).pipe(Effect.orDie);
@@ -1337,6 +1347,16 @@ const layerMakeServer = Layer.unwrap(
       layerTailscaleServe,
       layerCloudDesiredLinkReconcile,
       HeapSnapshot.layer,
+      layerPersonalMode,
+    ).pipe(
+      // Effect layers are lazy; resolving the service starts the relay and
+      // notifier workers even when no client asks for their status.
+      Layer.tap((context) =>
+        Effect.flatMap(PersonalRelay.PersonalRelay, (relay) => relay.getStatus()).pipe(
+          Effect.asVoid,
+          Effect.provideContext(context),
+        ),
+      ),
     );
 
     return layerServerApplication.pipe(
