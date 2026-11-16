@@ -169,7 +169,7 @@ jobs:
       ref: ${{ github.sha }}
       release_channel: stable
       label: macOS arm64
-      runner: macos-14
+      runner: macos-13
       platform: mac
       target: dmg
       arch: arm64
