@@ -1,0 +1,118 @@
+name: Publish t3cf npm packages
+
+# Publishing is explicit: a cf-relay-v* tag or a manual main-branch dispatch.
+# A normal merge never triggers this workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, for example 0.1.9 (required for a manual run)"
+        required: true
+        type: string
+  push:
+    tags:
+      - "cf-relay-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-t3cf
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish t3cf
+    if: github.repository == 'pingdotgg/t3code' && (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 40
+    environment:
+      name: npm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: true
+
+      - name: Resolve the version
+        id: version
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+          TAG_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "push" && "$TAG_NAME" == cf-relay-v* ]]; then
+            version="${TAG_NAME#cf-relay-v}"
+          else
+            version="${DISPATCH_VERSION:-}"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::A manual publish needs a version like 0.1.9, or push a cf-relay-v0.1.9 tag."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing t3cf@$version"
+
+      - name: Refuse to overwrite a published version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # An existing version means the tag or input is wrong; npm would reject it later anyway.
+          if npm view "t3cf@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::t3cf@$VERSION already exists on npm."
+            exit 1
+          fi
+
+      - name: Build the packages
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: node infra/personal-relay-cloudflare/scripts/build-npm-package.mjs --version "$VERSION"
+
+      - name: Configure npm auth
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${NPM_TOKEN:-}" ]]; then
+            echo "::error::The npm environment needs an NPM_TOKEN secret with publish rights for t3cf."
+            exit 1
+          fi
+          npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+
+      - name: Publish t3cf
+        working-directory: infra/personal-relay-cloudflare/dist/npm
+        run: npm publish --provenance --access public
+
+      - name: Publish create-t3cf
+        working-directory: infra/personal-relay-cloudflare/dist/create
+        run: npm publish --provenance --access public
+
+      - name: Record the tarball sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat infra/personal-relay-cloudflare/dist/npm-pack-report.json
+          {
+            echo "### t3cf npm packages"
+            echo
+            echo "Version: \`${{ steps.version.outputs.version }}\`"
+            echo
+            echo '```json'
+            cat infra/personal-relay-cloudflare/dist/npm-pack-report.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
