@@ -10,8 +10,8 @@ import * as Redacted from "effect/Redacted";
 import type { PersonalHostFile } from "./hostSharingState.ts";
 
 export const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
-export const MIN_HEARTBEAT_INTERVAL_MS = 15_000;
-export const MAX_HEARTBEAT_INTERVAL_MS = 120_000;
+const MIN_HEARTBEAT_INTERVAL_MS = 15_000;
+const MAX_HEARTBEAT_INTERVAL_MS = 120_000;
 export const QUICK_TUNNEL_TIMEOUT_MS = 30_000;
 
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[ -/]*[0-~]/g;
