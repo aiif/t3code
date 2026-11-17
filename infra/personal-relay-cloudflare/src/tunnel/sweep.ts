@@ -6,7 +6,6 @@ export interface TunnelSweepOptions {
   readonly now: number;
 }
 
-/** Lane P fills in orphan cleanup details; the interface above is frozen. */
 export async function sweepTunnels(options: TunnelSweepOptions): Promise<void> {
   await options.provisioner.sweep({
     activeHostIds: options.activeHostIds,
