@@ -315,7 +315,10 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: [prepare, desktop_win_x64, android_arm64]
+    needs: [prepare, desktop_win_x64, android_arm64, desktop_mac_arm64]
+    # The macOS job is opt-in. Wait for it when it runs, but do not skip the
+    # release when the variable is unset.
+    if: always() && needs.prepare.result == 'success' && needs.desktop_win_x64.result == 'success' && needs.android_arm64.result == 'success' && (needs.desktop_mac_arm64.result == 'success' || needs.desktop_mac_arm64.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
