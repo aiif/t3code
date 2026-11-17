@@ -2,10 +2,12 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 
 import {
   clearPersonalHostFile,
-  PersonalHostFile,
+  decodePersonalHostFile,
+  type PersonalHostFile,
   readPersonalHostFile,
   writePersonalHostFile,
 } from "./hostSharingState.ts";
@@ -21,12 +23,14 @@ const host = (overrides: Partial<PersonalHostFile> = {}): PersonalHostFile => ({
   hostKeyVersion: 1,
   hostToken: "abcdef123456.host-token",
   publicUrl: "https://abcdef123456.t3.example.test",
-  frp: {
+  connector: {
+    kind: "frp",
     serverAddr: "203.0.113.10",
     serverPort: 7001,
     authToken: "frp-auth-token",
     domain: "abcdef123456.t3.example.test",
   },
+  heartbeatIntervalMs: 30_000,
   updatedAt: "2026-11-16T00:00:00.000Z",
   ...overrides,
 });
@@ -47,6 +51,81 @@ it.layer(NodeServices.layer)("personal host state", (it) => {
 
       yield* clearPersonalHostFile({ stateDir });
       expect((yield* readPersonalHostFile({ stateDir }))._tag).toBe("None");
+    }),
+  );
+
+  it.effect("round-trips a cloudflare connector with the relay key", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-personal-host-cf-" });
+      const cloudflare = host({
+        publicUrl: "",
+        relayKey: "relay-key-for-tests-0123456789",
+        connector: {
+          kind: "cloudflare-tunnel",
+          mode: "named",
+          tunnelToken: "tunnel-token-for-tests",
+          hostname: "abcdef123456.example.test",
+        },
+        heartbeatIntervalMs: 60_000,
+      });
+      yield* writePersonalHostFile({ stateDir, state: cloudflare });
+
+      const read = yield* readPersonalHostFile({ stateDir });
+      expect(read).toEqual(Option.some(cloudflare));
+      if (read._tag === "Some") {
+        expect(read.value.connector).toEqual(cloudflare.connector);
+        expect(read.value.relayKey).toBe("relay-key-for-tests-0123456789");
+      }
+    }),
+  );
+
+  it.effect("normalizes a legacy frp file and rewrites it in the connector shape", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-personal-host-legacy-" });
+      yield* fs.makeDirectory(`${stateDir}/personal`, { recursive: true });
+      const file = `${stateDir}/personal/personal-host.json`;
+      yield* fs.writeFileString(
+        file,
+        JSON.stringify({
+          enabled: true,
+          paused: false,
+          relayUrl: "https://t3.example.test",
+          label: "Home PC",
+          hostId: "abcdef123456",
+          hostKey: "legacy-host-key",
+          hostKeyVersion: 1,
+          hostToken: "abcdef123456.host-token",
+          publicUrl: "https://abcdef123456.t3.example.test",
+          frp: {
+            serverAddr: "203.0.113.10",
+            serverPort: 7001,
+            authToken: "frp-auth-token",
+            domain: "abcdef123456.t3.example.test",
+          },
+          updatedAt: "2026-11-16T00:00:00.000Z",
+        }),
+      );
+
+      const read = yield* readPersonalHostFile({ stateDir });
+      expect(read._tag).toBe("Some");
+      if (read._tag === "None") return;
+      expect(read.value.connector).toEqual({
+        kind: "frp",
+        serverAddr: "203.0.113.10",
+        serverPort: 7001,
+        authToken: "frp-auth-token",
+        domain: "abcdef123456.t3.example.test",
+      });
+      expect(read.value.heartbeatIntervalMs).toBe(30_000);
+      expect(read.value.hostKey).toBe("legacy-host-key");
+
+      yield* writePersonalHostFile({ stateDir, state: read.value });
+      const rewritten = yield* fs.readFileString(file);
+      expect(rewritten).toContain('"connector"');
+      expect(rewritten).not.toContain('"frp":{');
+      expect(decodePersonalHostFile(rewritten)).toEqual(read);
     }),
   );
 

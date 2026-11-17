@@ -1,0 +1,218 @@
+import { describe, expect, it } from "@effect/vitest";
+import type { PersonalConnector } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as Ref from "effect/Ref";
+import * as Sink from "effect/Sink";
+import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+
+import type { PersonalHostFile } from "./hostSharingState.ts";
+import {
+  ConnectorProcess,
+  decodePersonalRelayStatusFile,
+  layerConnectorProcess,
+  registerBeforeUnregister,
+  toPersonalRelayState,
+} from "./PersonalRelay.ts";
+
+interface CapturedCommand {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly env: Readonly<Record<string, unknown>> | undefined;
+}
+
+const quick: PersonalConnector = { kind: "cloudflare-tunnel", mode: "quick" };
+const named: PersonalConnector = {
+  kind: "cloudflare-tunnel",
+  mode: "named",
+  tunnelToken: "tunnel-token-secret",
+  hostname: "abcdef123456.example.test",
+};
+
+const spawnInput = {
+  port: 3773,
+  configPath: "/state/personal/frpc.toml",
+  frpcPath: "frpc",
+  cloudflaredPath: "cloudflared",
+} as const;
+
+const spawnerLayer = (input: {
+  readonly stderr: Stream.Stream<Uint8Array>;
+  readonly captured: Array<CapturedCommand>;
+}) =>
+  Layer.succeed(
+    ChildProcessSpawner.ChildProcessSpawner,
+    ChildProcessSpawner.make((command) =>
+      Effect.sync(() => {
+        const standard = command as unknown as {
+          readonly command: string;
+          readonly args: ReadonlyArray<string>;
+          readonly options: { readonly env?: Record<string, unknown> };
+        };
+        input.captured.push({
+          command: standard.command,
+          args: standard.args,
+          env: standard.options.env,
+        });
+        return ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: Effect.never,
+          isRunning: Effect.succeed(true),
+          kill: () => Effect.void,
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.empty,
+          stderr: input.stderr,
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        });
+      }),
+    ),
+  );
+
+const connectorLayer = (input: Parameters<typeof spawnerLayer>[0]) =>
+  layerConnectorProcess.pipe(Layer.provide(spawnerLayer(input)));
+
+describe("ConnectorProcess", () => {
+  it.effect("waits for cloudflared's quick tunnel address", () => {
+    const captured: Array<CapturedCommand> = [];
+    const stderr = Stream.make(
+      new TextEncoder().encode("\u001b[32mINF\u001b[0m |  Requesting a quick tunnel  |\n"),
+      new TextEncoder().encode(
+        "\u001b[32mINF\u001b[0m |  https://fresh-name-42.trycloudflare.com  |\n",
+      ),
+    );
+    return Effect.gen(function* () {
+      const processes = yield* ConnectorProcess;
+      const handle = yield* processes.spawn({ ...spawnInput, connector: quick });
+      expect(yield* handle.publicUrl).toBe("https://fresh-name-42.trycloudflare.com");
+      expect(captured[0]?.command).toBe("cloudflared");
+      expect(captured[0]?.args).toContain("http://127.0.0.1:3773");
+      expect(captured[0]?.env?.["TUNNEL_TOKEN"]).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(connectorLayer({ stderr, captured })));
+  });
+
+  it.effect("passes a named tunnel token through the environment, never argv", () => {
+    const captured: Array<CapturedCommand> = [];
+    return Effect.gen(function* () {
+      const processes = yield* ConnectorProcess;
+      const handle = yield* processes.spawn({ ...spawnInput, connector: named });
+      expect(yield* handle.publicUrl).toBeNull();
+      expect(captured[0]?.command).toBe("cloudflared");
+      expect(captured[0]?.args).toEqual(["--no-autoupdate", "tunnel", "run"]);
+      expect(Redacted.value(captured[0]?.env?.["TUNNEL_TOKEN"] as Redacted.Redacted<string>)).toBe(
+        "tunnel-token-secret",
+      );
+      expect(captured[0]?.args.join(" ")).not.toContain("tunnel-token-secret");
+    }).pipe(Effect.scoped, Effect.provide(connectorLayer({ stderr: Stream.empty, captured })));
+  });
+});
+
+describe("relay switching", () => {
+  it.effect("registers with the new relay before unregistering the old one", () =>
+    Effect.gen(function* () {
+      const events = yield* Ref.make<ReadonlyArray<string>>([]);
+      const registration = yield* registerBeforeUnregister({
+        previousRelayUrl: "https://old.example.test",
+        nextRelayUrl: "https://new.example.test",
+        register: Ref.update(events, (current) => [...current, "register"]).pipe(
+          Effect.as("registered"),
+        ),
+        unregister: (relayUrl) =>
+          Ref.update(events, (current) => [...current, `unregister:${relayUrl}`]),
+      });
+      expect(registration).toBe("registered");
+      expect(yield* Ref.get(events)).toEqual(["register", "unregister:https://old.example.test"]);
+    }),
+  );
+
+  it.effect("leaves the old relay registered when the new registration fails", () =>
+    Effect.gen(function* () {
+      const events = yield* Ref.make<ReadonlyArray<string>>([]);
+      const exit = yield* registerBeforeUnregister({
+        previousRelayUrl: "https://old.example.test",
+        nextRelayUrl: "https://new.example.test",
+        register: Ref.update(events, (current) => [...current, "register"]).pipe(
+          Effect.andThen(Effect.fail("missing enrollment key")),
+        ),
+        unregister: (relayUrl) =>
+          Ref.update(events, (current) => [...current, `unregister:${relayUrl}`]),
+      }).pipe(Effect.exit);
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(yield* Ref.get(events)).toEqual(["register"]);
+    }),
+  );
+
+  it.effect("does not unregister when the relay URL is unchanged", () =>
+    Effect.gen(function* () {
+      const events = yield* Ref.make<ReadonlyArray<string>>([]);
+      yield* registerBeforeUnregister({
+        previousRelayUrl: "https://same.example.test",
+        nextRelayUrl: "https://same.example.test",
+        register: Ref.update(events, (current) => [...current, "register"]),
+        unregister: () => Ref.update(events, (current) => [...current, "unregister"]),
+      });
+      expect(yield* Ref.get(events)).toEqual(["register"]);
+    }),
+  );
+});
+
+const hostFile = (overrides: Partial<PersonalHostFile> = {}): PersonalHostFile => ({
+  enabled: true,
+  paused: false,
+  relayUrl: "https://relay.example.test",
+  label: "Home PC",
+  hostId: "abcdef123456",
+  hostKey: "host-key-secret",
+  hostKeyVersion: 1,
+  hostToken: "host-token-secret",
+  publicUrl: "",
+  relayKey: "relay-key-secret",
+  connector: named,
+  heartbeatIntervalMs: 60_000,
+  updatedAt: "2026-11-17T00:00:00.000Z",
+  ...overrides,
+});
+
+describe("relay status", () => {
+  it("reports the connector without any credential", () => {
+    const status = toPersonalRelayState(hostFile());
+    expect(status.connectorKind).toBe("cloudflare-tunnel");
+    expect(status.connectorMode).toBe("named");
+    expect(status.connectorRunning).toBe(false);
+    const serialized = JSON.stringify(status);
+    expect(serialized).not.toContain("relay-key-secret");
+    expect(serialized).not.toContain("tunnel-token-secret");
+    expect(serialized).not.toContain("host-key-secret");
+    expect(serialized).not.toContain("host-token-secret");
+    expect(toPersonalRelayState(null).connectorKind).toBeNull();
+    expect(toPersonalRelayState(hostFile({ connector: quick })).connectorMode).toBe("quick");
+  });
+
+  it("reads a legacy status file that still has frpcRunning", () => {
+    const decoded = decodePersonalRelayStatusFile(
+      JSON.stringify({
+        enabled: true,
+        paused: false,
+        relayUrl: "https://t3.example.test",
+        hostId: "abcdef123456",
+        publicUrl: "https://abcdef123456.t3.example.test",
+        label: "Home PC",
+        online: true,
+        frpcRunning: true,
+        lastError: null,
+        updatedAt: "2026-11-16T00:00:00.000Z",
+      }),
+    );
+    expect(Option.isSome(decoded)).toBe(true);
+    if (Option.isNone(decoded)) return;
+    expect(decoded.value.connectorKind).toBe("frp");
+    expect(decoded.value.connectorMode).toBeNull();
+    expect(decoded.value.connectorRunning).toBe(true);
+  });
+});
