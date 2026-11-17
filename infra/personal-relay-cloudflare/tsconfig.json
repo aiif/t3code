@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "WebWorker"],
+    "types": ["@cloudflare/workers-types", "node"],
+    // Plain TypeScript on purpose: the Worker has no Effect dependency.
+    "plugins": []
+  },
+  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+}

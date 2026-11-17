@@ -49,6 +49,15 @@
       // knip run beside it in check:changed must not report.
       "ignore": ["npm-launcher/**", ".knip-test-*/**"],
     },
+    "infra/personal-relay-cloudflare": {
+      // Wrangler loads worker.ts by path and the deploy wrappers are run by node.
+      "entry": [
+        "src/worker.ts",
+        "src/index.ts",
+        "scripts/deploy.mjs",
+        "scripts/build-npm-package.mjs",
+      ],
+    },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
       "entry": [

@@ -2,9 +2,112 @@ import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
+export const PersonalConnectorKind = Schema.Literals(["frp", "cloudflare-tunnel"]);
+export type PersonalConnectorKind = typeof PersonalConnectorKind.Type;
+
+export const PersonalConnectorMode = Schema.Literals(["named", "quick"]);
+export type PersonalConnectorMode = typeof PersonalConnectorMode.Type;
+
+/** The frp settings a VPS relay returns inside its legacy registration response. */
+export const PersonalFrpSettings = Schema.Struct({
+  serverAddr: TrimmedNonEmptyString,
+  serverPort: Schema.Number,
+  authToken: TrimmedNonEmptyString,
+  domain: TrimmedNonEmptyString,
+});
+export type PersonalFrpSettings = typeof PersonalFrpSettings.Type;
+
+export const PersonalFrpConnector = Schema.Struct({
+  kind: Schema.Literal("frp"),
+  serverAddr: TrimmedNonEmptyString,
+  serverPort: Schema.Number,
+  authToken: TrimmedNonEmptyString,
+  domain: TrimmedNonEmptyString,
+});
+export type PersonalFrpConnector = typeof PersonalFrpConnector.Type;
+
+export const PersonalCloudflareNamedConnector = Schema.Struct({
+  kind: Schema.Literal("cloudflare-tunnel"),
+  mode: Schema.Literal("named"),
+  tunnelToken: TrimmedNonEmptyString,
+  hostname: TrimmedNonEmptyString,
+});
+export type PersonalCloudflareNamedConnector = typeof PersonalCloudflareNamedConnector.Type;
+
+export const PersonalCloudflareQuickConnector = Schema.Struct({
+  kind: Schema.Literal("cloudflare-tunnel"),
+  mode: Schema.Literal("quick"),
+});
+export type PersonalCloudflareQuickConnector = typeof PersonalCloudflareQuickConnector.Type;
+
+/**
+ * The connector a relay assigns to a host. `frp` keeps the VPS relay working;
+ * `cloudflare-tunnel` named runs a remotely-managed tunnel and quick reports a
+ * temporary `trycloudflare.com` URL through heartbeats.
+ */
+export const PersonalConnector = Schema.Union([
+  PersonalFrpConnector,
+  PersonalCloudflareNamedConnector,
+  PersonalCloudflareQuickConnector,
+]);
+export type PersonalConnector = typeof PersonalConnector.Type;
+
+export const PersonalHostRegistration = Schema.Struct({
+  hostId: TrimmedNonEmptyString,
+  hostKey: TrimmedNonEmptyString,
+  hostKeyVersion: Schema.Number,
+  hostToken: TrimmedNonEmptyString,
+  environmentId: TrimmedNonEmptyString,
+  label: Schema.NullOr(Schema.String),
+  /** Empty in quick mode until the host reports its tunnel URL. */
+  publicUrl: Schema.String,
+  connector: PersonalConnector,
+  heartbeatIntervalMs: Schema.Number,
+});
+export type PersonalHostRegistration = typeof PersonalHostRegistration.Type;
+
+/** The VPS relay's registration response, normalized to a connector by the host. */
+export const PersonalLegacyHostRegistration = Schema.Struct({
+  hostId: TrimmedNonEmptyString,
+  hostKey: TrimmedNonEmptyString,
+  hostKeyVersion: Schema.Number,
+  hostToken: TrimmedNonEmptyString,
+  environmentId: TrimmedNonEmptyString,
+  label: Schema.NullOr(Schema.String),
+  publicUrl: Schema.String,
+  frp: PersonalFrpSettings,
+  heartbeatIntervalMs: Schema.Number,
+});
+export type PersonalLegacyHostRegistration = typeof PersonalLegacyHostRegistration.Type;
+
+export const PersonalHostRegistrationResponse = Schema.Union([
+  PersonalHostRegistration,
+  PersonalLegacyHostRegistration,
+]);
+export type PersonalHostRegistrationResponse = typeof PersonalHostRegistrationResponse.Type;
+
+export const PersonalHeartbeatInput = Schema.Struct({
+  label: Schema.NullOr(Schema.String),
+  online: Schema.Boolean,
+  hostKeyVersion: Schema.Number,
+  /** Quick mode reports the current `trycloudflare.com` URL; named mode omits it. */
+  publicUrl: Schema.optionalKey(Schema.String),
+});
+export type PersonalHeartbeatInput = typeof PersonalHeartbeatInput.Type;
+
+export const PersonalHeartbeatResult = Schema.Struct({
+  hostId: TrimmedNonEmptyString,
+  hostKey: Schema.optionalKey(TrimmedNonEmptyString),
+  hostKeyVersion: Schema.optionalKey(Schema.Number),
+  revokedSessionIds: Schema.optionalKey(Schema.Array(Schema.String)),
+  heartbeatIntervalMs: Schema.optionalKey(Schema.Number),
+});
+export type PersonalHeartbeatResult = typeof PersonalHeartbeatResult.Type;
+
 /**
  * What a host knows about its personal-network connector. The host key never
- * appears here; revealing it is a separate, explicit call.
+ * appears here; revealing it is a separate, explicit call. The enrollment key
+ * is never returned either.
  */
 export const PersonalRelayState = Schema.Struct({
   /** Sharing is configured and wanted. */
@@ -13,11 +116,13 @@ export const PersonalRelayState = Schema.Struct({
   paused: Schema.Boolean,
   relayUrl: Schema.NullOr(TrimmedNonEmptyString),
   hostId: Schema.NullOr(TrimmedNonEmptyString),
-  publicUrl: Schema.NullOr(TrimmedNonEmptyString),
+  publicUrl: Schema.NullOr(Schema.String),
   label: Schema.NullOr(TrimmedNonEmptyString),
-  /** Registered, online, and (unless paused) the frpc child is running. */
+  /** Registered, online, and (unless paused) the connector child is running. */
   online: Schema.Boolean,
-  frpcRunning: Schema.Boolean,
+  connectorKind: Schema.NullOr(PersonalConnectorKind),
+  connectorMode: Schema.NullOr(PersonalConnectorMode),
+  connectorRunning: Schema.Boolean,
   lastError: Schema.NullOr(Schema.String),
   updatedAt: Schema.NullOr(Schema.String),
 });
@@ -25,6 +130,8 @@ export type PersonalRelayState = typeof PersonalRelayState.Type;
 
 export const PersonalShareInput = Schema.Struct({
   relayUrl: Schema.String,
+  /** Cloudflare relays require this at registration; omit to reuse the stored one. */
+  relayKey: Schema.optionalKey(Schema.String),
   label: Schema.optionalKey(Schema.String),
 });
 export type PersonalShareInput = typeof PersonalShareInput.Type;
@@ -39,7 +146,8 @@ export const PersonalResolvedHost = Schema.Struct({
   hostId: TrimmedNonEmptyString,
   environmentId: TrimmedNonEmptyString,
   label: Schema.NullOr(Schema.String),
-  publicUrl: TrimmedNonEmptyString,
+  /** Empty while a quick-mode host has not reported its tunnel URL. */
+  publicUrl: Schema.String,
   online: Schema.Boolean,
   paused: Schema.Boolean,
 });

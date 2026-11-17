@@ -45,7 +45,9 @@ export const PersonalRelayStatusFile = Schema.Struct({
   publicUrl: Schema.NullOr(Schema.String),
   label: Schema.NullOr(Schema.String),
   online: Schema.Boolean,
-  frpcRunning: Schema.Boolean,
+  connectorKind: Schema.NullOr(Schema.String),
+  connectorMode: Schema.NullOr(Schema.String),
+  connectorRunning: Schema.Boolean,
   lastError: Schema.NullOr(Schema.String),
   updatedAt: Schema.String,
 });
@@ -445,7 +447,9 @@ const disabledState = (config: {
   publicUrl: null,
   label: config.personalLabel?.trim() || null,
   online: false,
-  frpcRunning: false,
+  connectorKind: null,
+  connectorMode: null,
+  connectorRunning: false,
   lastError: null,
   updatedAt: null,
 });
@@ -460,7 +464,9 @@ const toStatus = (host: PersonalHostFile | null): PersonalRelayState =>
         publicUrl: null,
         label: null,
         online: false,
-        frpcRunning: false,
+        connectorKind: null,
+        connectorMode: null,
+        connectorRunning: false,
         lastError: null,
         updatedAt: null,
       }
@@ -472,7 +478,9 @@ const toStatus = (host: PersonalHostFile | null): PersonalRelayState =>
         publicUrl: host.publicUrl,
         label: host.label,
         online: false,
-        frpcRunning: false,
+        connectorKind: "frp",
+        connectorMode: null,
+        connectorRunning: false,
         lastError: null,
         updatedAt: host.updatedAt,
       };
@@ -538,7 +546,9 @@ const makeEnabled = Effect.gen(function* () {
           publicUrl: status.publicUrl,
           label: status.label,
           online: status.online,
-          frpcRunning: status.frpcRunning,
+          connectorKind: status.connectorKind,
+          connectorMode: status.connectorMode,
+          connectorRunning: status.connectorRunning,
           lastError: status.lastError,
           updatedAt,
         })}\n`,
@@ -571,7 +581,7 @@ const makeEnabled = Effect.gen(function* () {
         : {
             ...toStatus(host),
             online: false,
-            frpcRunning: false,
+            connectorRunning: false,
             lastError: null,
           },
     );
@@ -638,6 +648,8 @@ const makeEnabled = Effect.gen(function* () {
       hostId: next.hostId,
       publicUrl: next.publicUrl,
       label: next.label,
+      connectorKind: "frp",
+      connectorMode: null,
       lastError: null,
     }));
     return next;
@@ -721,7 +733,7 @@ const makeEnabled = Effect.gen(function* () {
         ...current,
         online: false,
         paused: true,
-        frpcRunning: false,
+        connectorRunning: false,
       }));
       yield* Effect.sleep("30 seconds");
       return;
@@ -739,13 +751,15 @@ const makeEnabled = Effect.gen(function* () {
       enabled: true,
       paused: false,
       online: true,
-      frpcRunning: false,
+      connectorKind: "frp",
+      connectorMode: null,
+      connectorRunning: false,
       lastError: null,
     }));
     yield* Effect.scoped(
       Effect.gen(function* () {
         const handle = yield* processes.spawn({ frpcPath, configPath });
-        yield* updateStatus((current) => ({ ...current, frpcRunning: true }));
+        yield* updateStatus((current) => ({ ...current, connectorRunning: true }));
         yield* Effect.raceFirst(
           heartbeatLoop(),
           handle.exited.pipe(
@@ -792,7 +806,7 @@ const makeEnabled = Effect.gen(function* () {
           updateStatus((current) => ({
             ...current,
             online: false,
-            frpcRunning: false,
+            connectorRunning: false,
             lastError: String(cause).slice(0, 500),
           })).pipe(Effect.andThen(Effect.sleep(RESTART_DELAY))),
         ),
@@ -876,7 +890,9 @@ const makeEnabled = Effect.gen(function* () {
           publicUrl: host.publicUrl,
           label: host.label,
           online: false,
-          frpcRunning: false,
+          connectorKind: "frp",
+          connectorMode: null,
+          connectorRunning: false,
           lastError: null,
         }));
         yield* startConnector;
@@ -934,7 +950,7 @@ const makeEnabled = Effect.gen(function* () {
           ...current,
           paused: true,
           online: false,
-          frpcRunning: false,
+          connectorRunning: false,
           lastError: null,
         }));
         yield* startConnector;

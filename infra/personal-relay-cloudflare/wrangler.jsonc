@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "t3cf",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "../../apps/web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/v1/*"],
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REGISTRY",
+        "class_name": "RegistryDurableObject",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RegistryDurableObject"],
+    },
+  ],
+  "observability": {
+    "enabled": true,
+  },
+  "vars": {
+    "T3CODE_TUNNEL_MODE": "auto",
+    "TUNNEL_PREFIX": "t3cf",
+    "T3CODE_MAX_HOSTS": "20",
+    "T3CODE_HEARTBEAT_INTERVAL_MS": "60000",
+    "T3CODE_HEARTBEAT_TTL_MS": "180000",
+  },
+}

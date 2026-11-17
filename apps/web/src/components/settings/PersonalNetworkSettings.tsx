@@ -258,7 +258,10 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                     ? "Online and discoverable."
                     : "Connecting..."}
                 {status.publicUrl ? ` · ${status.publicUrl}` : ""}
-                {status.frpcRunning ? " · frpc running" : ""}
+                {status.connectorRunning ? " · connector running" : ""}
+                {status.connectorKind === "cloudflare-tunnel" && status.connectorMode === "quick"
+                  ? " · temporary address"
+                  : ""}
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <code className="rounded bg-muted px-2 py-1">

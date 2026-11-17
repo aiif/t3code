@@ -53,7 +53,20 @@ node_modules/
 # Downloaded by scripts/fetch-frpc.mjs for the desktop bundle.
 /apps/desktop/resources/frpc/
 
+# Downloaded by scripts/fetch-cloudflared.mjs for the desktop bundle.
+/apps/desktop/resources/cloudflared/
+/apps/desktop/prod-resources/cloudflared/
+
+# Cloudflare relay local state, generated deploy config and npm build outputs.
+/infra/personal-relay-cloudflare/.dev.vars
+/infra/personal-relay-cloudflare/.dev.vars.*
+/infra/personal-relay-cloudflare/.wrangler/
+/infra/personal-relay-cloudflare/.relay-secrets.json
+/infra/personal-relay-cloudflare/wrangler.generated.jsonc
+/infra/personal-relay-cloudflare/dist/
+
 /packages/ssh/.ssh-launcher-test-*/
 
 # Local goal/planning notes
 /GOAL.md
+/goal-cf.md

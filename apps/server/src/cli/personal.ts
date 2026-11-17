@@ -217,7 +217,7 @@ const personalStatusCommand = Command.make("status", projectLocationFlags).pipe(
           yield* Console.log(`Host: ${status.hostId}${status.label ? ` (${status.label})` : ""}`);
         }
         yield* Console.log(
-          `State: ${status.online ? "online" : "offline"}${status.paused ? " (paused)" : ""} · frpc ${status.frpcRunning ? "running" : "stopped"}${status.updatedAt ? ` · reported ${status.updatedAt}` : ""}`,
+          `State: ${status.online ? "online" : "offline"}${status.paused ? " (paused)" : ""} · ${status.connectorKind === "cloudflare-tunnel" ? "cloudflared" : "frpc"} ${status.connectorRunning ? "running" : "stopped"}${status.updatedAt ? ` · reported ${status.updatedAt}` : ""}`,
         );
         if (status.lastError !== null) yield* Console.log(`Error: ${status.lastError}`);
       }),
