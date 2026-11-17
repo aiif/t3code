@@ -82,6 +82,7 @@ const DESKTOP_BACKEND_ENV_NAMES = [
   "T3CODE_DESKTOP_HTTPS_ENDPOINTS",
   "T3CODE_TAILSCALE_SERVE",
   "T3CODE_TAILSCALE_SERVE_PORT",
+  "T3CODE_CLOUDFLARED_PATH",
 ] as const;
 
 // Windows forwards these variables into WSL only through WSLENV.
@@ -578,6 +579,11 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
                 environment.resourcesPath,
                 "frpc",
                 environment.platform === "win32" ? "frpc.exe" : "frpc",
+              ),
+              T3CODE_CLOUDFLARED_PATH: environment.path.join(
+                environment.resourcesPath,
+                "cloudflared",
+                environment.platform === "win32" ? "cloudflared.exe" : "cloudflared",
               ),
             }
           : {}),
