@@ -1,6 +1,9 @@
 #!/usr/bin/env node
+// @effect-diagnostics no-global-process-runtime:off globalProcessRuntime:off nodeBuiltinImport:off -- Standalone build script outside the Effect runtime.
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeModule from "node:module";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
@@ -118,6 +121,26 @@ async function assertPortalBuild() {
     throw new Error("apps/web/dist/index.html is missing; run without --no-portal-build.");
   }
   output.stdout("Reusing the existing portal build.");
+}
+
+// Windows file-system filters can stop the pnpm-store esbuild binary from writing
+// build output; running a copy restores normal file access.
+async function ensureWritableEsbuildBinary() {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone build script has no Effect runtime.
+  if (process.platform !== "win32" || process.env.ESBUILD_BINARY_PATH) return;
+  try {
+    const require = NodeModule.createRequire(import.meta.url);
+    const esbuildEntry = require.resolve("esbuild", { paths: [require.resolve("wrangler")] });
+    const esbuildRequire = NodeModule.createRequire(esbuildEntry);
+    const source = esbuildRequire.resolve("@esbuild/win32-x64/esbuild.exe");
+    const destination = NodePath.join(NodeOS.tmpdir(), "t3cf-esbuild", "esbuild.exe");
+    await NodeFSP.mkdir(NodePath.dirname(destination), { recursive: true });
+    await NodeFSP.copyFile(source, destination);
+    process.env.ESBUILD_BINARY_PATH = destination;
+    output.stdout(`Using a writable esbuild binary at ${destination}.`);
+  } catch {
+    // Fall through to wrangler's resolved binary and surface its own error.
+  }
 }
 
 async function prebundleWorker(bundleDirectory) {
@@ -297,6 +320,7 @@ async function main() {
   await NodeFSP.mkdir(bundleDirectory, { recursive: true });
 
   output.stdout("Prebundling the Worker...");
+  if (options.workerBundle === null) await ensureWritableEsbuildBinary();
   const workerBundle =
     options.workerBundle === null
       ? await prebundleWorker(bundleDirectory)
