@@ -91,6 +91,7 @@ export interface AdminHost {
   readonly hostKey: string;
   readonly clientsCount: number;
   readonly createdAt: string;
+  readonly revokedAt: string | null;
 }
 
 export interface AdminClient {
@@ -487,6 +488,15 @@ export class RegistryService {
     return { removed };
   }
 
+  restoreHost(hostId: string, actor: string): { readonly restored: boolean } {
+    const restored = this.#store.restoreHost(hostId, this.#now());
+    if (!restored) {
+      throw new RegistryRequestError(404, "Unknown host.");
+    }
+    this.#store.audit({ action: "restore-host", hostId, actor, now: this.#now() });
+    return { restored };
+  }
+
   revokeClient(hostId: string, body: unknown, actor: string): { readonly revoked: boolean } {
     const input = parseRecord(body);
     const sessionId = requireText(input["sessionId"], "sessionId", MAX_SESSION_ID_LENGTH);
@@ -508,6 +518,7 @@ export class RegistryService {
       hostKey: this.#decrypt(host),
       clientsCount: this.#store.countClients(host.id),
       createdAt: new Date(host.createdAt).toISOString(),
+      revokedAt: host.revokedAt === null ? null : new Date(host.revokedAt).toISOString(),
     };
   }
 

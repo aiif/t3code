@@ -53,8 +53,10 @@ The relay stores the new encrypted key, increments its version, and returns it o
 the host's next heartbeat. The host replaces its guest grant and revokes sessions
 created with the old key. Guests get 401 and must enter the new key.
 
-Removing a host from the admin console deletes its record, invalidates the key,
-and the host's next heartbeat stops its connector.
+Removing a host from the admin console revokes its record, invalidates the key,
+and the host's next heartbeat stops its connector. The removed host stays under
+**Removed hosts** in the console; **Restore** keeps its host id and key and lets
+the environment register again.
 
 ## Backup and migration
 
@@ -94,6 +96,7 @@ project content, prompts, command output, or file data reaches the registry.
 | Host subdomain returns 404 from frps | `customDomains` does not match the host id                                                          |
 | Admin console lists no hosts         | Hosts have not registered yet, or the admin key is wrong                                            |
 | Guest resolve returns 401            | The host key is invalid or rotated                                                                  |
+| Host register returns 410            | The environment was removed in the admin console; restore it there                                  |
 | Guest resolve says offline/paused    | Sharing is off, paused, the app quit, or `frpc` is down                                             |
 | Guest pairing fails                  | Host rejected the key: confirm the host state file has the key and sharing is enabled               |
 | Guests cannot approve                | Check the session has `orchestration:operate`; the guest allowlist covers `runtime-request.respond` |

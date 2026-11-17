@@ -217,10 +217,13 @@ describe("guest clients", () => {
 });
 
 describe("admin host management", () => {
-  it("removes hosts", () => {
+  it("removes hosts and restores them", () => {
     const registry = makeTestRegistry();
     const host = registerTestHost(registry);
     expect(registry.service.removeHost(host.hostId, "admin")).toEqual({ removed: true });
+    expect(registry.service.listAdminHosts().hosts).toMatchObject([
+      { hostId: host.hostId, revokedAt: expect.any(String) },
+    ]);
     expect(() => registry.service.getAdminHost(host.hostId)).toThrow(RegistryRequestError);
     expect(() => registry.service.authenticateHostToken(host.hostToken)).toThrow(
       RegistryRequestError,
@@ -228,6 +231,11 @@ describe("admin host management", () => {
     expect(() =>
       registry.service.registerHost({ environmentId: "env-a", label: "Home PC" }),
     ).toThrow(RegistryRequestError);
+
+    expect(registry.service.restoreHost(host.hostId, "admin")).toEqual({ restored: true });
+    const restored = registry.service.registerHost({ environmentId: "env-a", label: "Home PC" });
+    expect(restored.hostId).toBe(host.hostId);
+    expect(restored.hostKey).toBe(host.hostKey);
     registry.close();
   });
 });

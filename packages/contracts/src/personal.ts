@@ -75,6 +75,8 @@ export const PersonalAdminHost = Schema.Struct({
   hostKey: TrimmedNonEmptyString,
   clientsCount: Schema.Number,
   createdAt: Schema.String,
+  /** Set while a host is removed; restore clears it and lets the environment register again. */
+  revokedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type PersonalAdminHost = typeof PersonalAdminHost.Type;
 

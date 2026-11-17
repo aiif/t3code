@@ -13,6 +13,7 @@ import {
   removeAdminHost,
   removePersonalHost,
   resolvePersonalHost,
+  restoreAdminHost,
   rotateAdminHostKey,
   savePersonalAdminConfig,
   upsertPersonalHost,
@@ -141,7 +142,12 @@ describe("admin api", () => {
       hostId: "abcdef123456",
       fetchImpl,
     });
-    expect(requests.map((request) => request.method)).toEqual(["GET", "POST", "POST"]);
+    await restoreAdminHost({
+      config: { relayUrl: RELAY, adminKey: ADMIN_KEY },
+      hostId: "abcdef123456",
+      fetchImpl,
+    });
+    expect(requests.map((request) => request.method)).toEqual(["GET", "POST", "POST", "POST"]);
   });
 });
 

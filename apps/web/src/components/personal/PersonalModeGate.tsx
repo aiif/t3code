@@ -6,6 +6,7 @@ import {
   listAdminHosts,
   readPersonalAdminConfig,
   removeAdminHost,
+  restoreAdminHost,
   revokeAdminClient,
   rotateAdminHostKey,
   savePersonalAdminConfig,
@@ -202,13 +203,30 @@ function AdminConsole({
   };
 
   const remove = async (host: PersonalAdminHost) => {
-    if (!window.confirm(`Remove ${host.label ?? host.hostId}? Its host key stops working.`)) {
+    if (
+      !window.confirm(
+        `Remove ${host.label ?? host.hostId}? Its host key stops working and it cannot register again until you restore it.`,
+      )
+    ) {
       return;
     }
     setBusy(host.hostId);
     setError("");
     try {
       await removeAdminHost({ config, hostId: host.hostId });
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const restore = async (host: PersonalAdminHost) => {
+    setBusy(host.hostId);
+    setError("");
+    try {
+      await restoreAdminHost({ config, hostId: host.hostId });
       await refresh();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -245,6 +263,9 @@ function AdminConsole({
     }
   };
 
+  const activeHosts = hosts.filter((host) => host.revokedAt == null);
+  const removedHosts = hosts.filter((host) => host.revokedAt != null);
+
   return (
     <StandalonePage>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -268,14 +289,15 @@ function AdminConsole({
         </Alert>
       ) : null}
 
-      {hosts.length === 0 ? (
+      {activeHosts.length === 0 ? (
         <p className="mt-6 text-sm text-muted-foreground">
-          No hosts yet. Open T3 Code on a computer and use Settings → Personal Network → Share this
-          computer.
+          {removedHosts.length === 0
+            ? "No hosts yet. Open T3 Code on a computer and use Settings → Personal Network → Share this computer."
+            : "No active hosts. Restore a removed host below to let it register again."}
         </p>
       ) : (
         <div className="mt-6 space-y-3">
-          {hosts.map((host) => {
+          {activeHosts.map((host) => {
             const isRevealed = revealed.has(host.hostId);
             const hostClients = clients[host.hostId];
             return (
@@ -387,6 +409,46 @@ function AdminConsole({
           })}
         </div>
       )}
+
+      {removedHosts.length > 0 ? (
+        <div className="mt-8">
+          <h2 className="text-sm font-medium">Removed hosts</h2>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            A removed host cannot register again. Restore it to keep the same host id and key, then
+            register again from T3 Code on that computer.
+          </p>
+          <div className="mt-3 space-y-3">
+            {removedHosts.map((host) => (
+              <div key={host.hostId} className="rounded-lg border border-border/70 bg-card p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{host.label ?? host.hostId}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {host.hostId} · removed {host.revokedAt}
+                    </p>
+                    <a
+                      className="mt-1 block truncate text-xs text-primary underline-offset-2 hover:underline"
+                      href={host.publicUrl}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {host.publicUrl}
+                    </a>
+                  </div>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={busy !== null}
+                    onClick={() => void restore(host)}
+                  >
+                    Restore
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </StandalonePage>
   );
 }

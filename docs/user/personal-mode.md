@@ -91,6 +91,9 @@ Open the relay origin in a browser and enter the admin key. The console lists:
 - that host's host key (reveal/copy only on request);
 - the guest sessions the host reported;
 - **Rotate key** and **Remove**.
+- **Remove** revokes the host and moves it to **Removed hosts**. Its key stops
+  working and it cannot register again until **Restore** puts it back. Restore
+  keeps the host id and key, so guests can re-pair with the same key.
 
 The admin key is stored under `t3.admin.key`, separately from any guest key. It
 is rejected by every host's `/oauth/token` and cannot operate a project as a

@@ -148,6 +148,7 @@ rate-limited; the relay returns that host's key. Every other route needs
 | GET    | `/admin/hosts/:id/clients`       | admin key  | One host and its guest sessions                             |
 | POST   | `/admin/hosts/:id/rotate-key`    | admin key  | Rotate and return the new key                               |
 | POST   | `/admin/hosts/:id/remove`        | admin key  | Remove the host and invalidate its key                      |
+| POST   | `/admin/hosts/:id/restore`       | admin key  | Restore a removed host so it can register again             |
 | POST   | `/admin/hosts/:id/revoke-client` | admin key  | Queue a guest-session revoke for the host                   |
 | POST   | `/push/subscribe`                | admin/host | Store a Web Push subscription for that scope                |
 | POST   | `/push/unsubscribe`              | admin/host | Remove one                                                  |
@@ -166,6 +167,9 @@ Behavior worth knowing:
 - Heartbeats expire after 90 seconds (`HEARTBEAT_TTL_MS`). A paused host stays in
   the registry and keeps its key but reports `online: false`.
 - Re-registering the same `environmentId` keeps the host id and host key.
+- Removing a host keeps the row revoked: it disappears from guest resolution and
+  cannot register again until an admin restores it. Restore keeps the host id
+  and key, then the host registers again normally.
 - Notifications deduplicate per `hostId:threadId:phase` for 30 seconds
   (`NOTIFY_DEDUPE_MS`) and never carry command output, prompts, or file content.
 - Subscriptions the push service answers `404`/`410` for are deleted.

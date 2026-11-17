@@ -119,7 +119,18 @@ it("lists, reveals, rotates, and removes hosts with the admin key", async () => 
       headers: { authorization: `Bearer ${TEST_ADMIN_KEY}` },
     });
     expect(remove.status).toBe(200);
-    expect(harness.registry.service.listAdminHosts().hosts).toHaveLength(0);
+    expect(harness.registry.service.listAdminHosts().hosts).toMatchObject([
+      { hostId: host.hostId, revokedAt: expect.any(String) },
+    ]);
+
+    const restore = await fetch(harness.url(`/v1/admin/hosts/${host.hostId}/restore`), {
+      method: "POST",
+      headers: { authorization: `Bearer ${TEST_ADMIN_KEY}` },
+    });
+    expect(restore.status).toBe(200);
+    expect(await restore.json()).toEqual({ restored: true });
+    const restored = await register(harness, "env-http");
+    expect(restored.hostId).toBe(host.hostId);
   } finally {
     await harness.close();
   }

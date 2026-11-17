@@ -222,6 +222,19 @@ export async function removeAdminHost(input: {
   );
 }
 
+export async function restoreAdminHost(input: {
+  readonly config: PersonalAdminConfig;
+  readonly hostId: string;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<void> {
+  await adminRequest(
+    input.config,
+    `/admin/hosts/${encodeURIComponent(input.hostId)}/restore`,
+    { method: "POST" },
+    input.fetchImpl,
+  );
+}
+
 export async function revokeAdminClient(input: {
   readonly config: PersonalAdminConfig;
   readonly hostId: string;

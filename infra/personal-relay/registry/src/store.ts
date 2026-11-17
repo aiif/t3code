@@ -448,6 +448,16 @@ export class RegistryStore {
     return Number(result.changes) > 0;
   }
 
+  restoreHost(hostId: string, now: number): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE hosts SET revoked_at = NULL, online = 0, paused = 0, last_seen_at = ?
+         WHERE id = ? AND revoked_at IS NOT NULL`,
+      )
+      .run(now, hostId);
+    return Number(result.changes) > 0;
+  }
+
   deleteRevokedHost(hostId: string): boolean {
     const result = this.db
       .prepare("DELETE FROM hosts WHERE id = ? AND revoked_at IS NOT NULL")
@@ -457,7 +467,7 @@ export class RegistryStore {
 
   listHosts(): ReadonlyArray<HostRow> {
     const rows = this.db
-      .prepare("SELECT * FROM hosts WHERE revoked_at IS NULL ORDER BY created_at ASC")
+      .prepare("SELECT * FROM hosts ORDER BY created_at ASC")
       .all() as unknown as ReadonlyArray<HostDbRow>;
     return rows.map(toHost);
   }

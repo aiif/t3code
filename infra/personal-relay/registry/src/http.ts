@@ -4,7 +4,7 @@ import { RegistryRequestError, type RegistryService } from "./registry.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const ADMIN_HOST_PATH =
-  /^\/admin\/hosts\/([a-z0-9]{6,32})(?:\/(clients|rotate-key|remove|revoke-client))?$/;
+  /^\/admin\/hosts\/([a-z0-9]{6,32})(?:\/(clients|rotate-key|remove|restore|revoke-client))?$/;
 
 export interface RegistryHttpOptions {
   readonly service: RegistryService;
@@ -216,6 +216,11 @@ export function createRegistryServer(options: RegistryHttpOptions): NodeHttp.Ser
           }
           if (method === "POST" && action === "remove") {
             sendJson(request, response, 200, service.removeHost(hostId, "admin"));
+            finish(200);
+            return;
+          }
+          if (method === "POST" && action === "restore") {
+            sendJson(request, response, 200, service.restoreHost(hostId, "admin"));
             finish(200);
             return;
           }
