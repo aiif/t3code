@@ -774,7 +774,7 @@ const makeEnabled = Effect.gen(function* () {
       yield* connectorAttempt().pipe(
         Effect.catchIf(
           (error): error is PersonalNetworkError =>
-            error._tag === "PersonalNetworkError" && (error.status === 401 || error.status === 410),
+            error._tag === "PersonalNetworkError" && error.status === 410,
           () =>
             Effect.gen(function* () {
               const host = yield* Ref.get(hostRef);

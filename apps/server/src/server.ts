@@ -894,9 +894,6 @@ const layerMakeRoutes = Layer.mergeAll(
     ),
   ),
   Layer.provide(CloudSpeech.layer.pipe(Layer.provide(SecretResolver.layer))),
-  // The personal RPC handlers resolve the service by tag, so the route layer
-  // must provide it; a sibling merge in the application layer is not enough.
-  Layer.provide(layerPersonalMode),
   Layer.provide(layerServerSettings),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
@@ -1353,8 +1350,11 @@ const layerMakeServer = Layer.unwrap(
       layerTailscaleServe,
       layerCloudDesiredLinkReconcile,
       HeapSnapshot.layer,
-      layerPersonalMode,
     ).pipe(
+      // One relay and notifier for both the RPC routes and the application.
+      // Providing this layer twice builds two connectors that register against
+      // the same host and invalidate each other's host token.
+      Layer.provideMerge(layerPersonalMode),
       // Effect layers are lazy; resolving the service starts the relay and
       // notifier workers even when no client asks for their status.
       Layer.tap((context) =>
