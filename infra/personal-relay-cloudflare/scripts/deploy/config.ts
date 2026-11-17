@@ -43,10 +43,47 @@ export function stripJsonComments(text: string): string {
   return output;
 }
 
+/** Removes trailing commas outside strings, which JSONC permits and oxfmt emits. */
+export function stripTrailingCommas(text: string): string {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  let index = 0;
+
+  while (index < text.length) {
+    const character = text[index] ?? "";
+    if (inString) {
+      output += character;
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      index += 1;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      output += character;
+      index += 1;
+      continue;
+    }
+    if (character === ",") {
+      let next = index + 1;
+      while (next < text.length && /\s/u.test(text[next] ?? "")) next += 1;
+      if (text[next] === "}" || text[next] === "]") {
+        index += 1;
+        continue;
+      }
+    }
+    output += character;
+    index += 1;
+  }
+  return output;
+}
+
 export function parseJsonc(text: string, source: string): Record<string, unknown> {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stripJsonComments(text));
+    parsed = JSON.parse(stripTrailingCommas(stripJsonComments(text)));
   } catch (cause) {
     throw new DeployConfigError(`${source} is not valid JSONC: ${(cause as Error).message}`);
   }

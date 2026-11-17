@@ -18,6 +18,14 @@ export interface WranglerRunnerOptions {
   readonly command?: WranglerCommand;
 }
 
+/** Maintainer escape hatch for hosts where the pinned wrangler binary cannot write. */
+function overriddenWranglerCommand(): WranglerCommand | null {
+  const value = process.env.T3CF_WRANGLER_PATH?.trim();
+  return value === undefined || value.length === 0
+    ? null
+    : { command: value, args: [], shell: isWindows };
+}
+
 function searchNodeModules(start: string): WranglerCommand | null {
   let directory = NodePath.resolve(start);
   for (let depth = 0; depth < 12; depth += 1) {
@@ -43,6 +51,7 @@ export function resolveWranglerCommand(input: {
   const fromDirectory =
     input.fromDirectory ?? NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
   return (
+    overriddenWranglerCommand() ??
     searchNodeModules(input.cwd) ??
     searchNodeModules(fromDirectory) ?? { command: "wrangler", args: [], shell: isWindows }
   );
