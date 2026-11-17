@@ -62,7 +62,11 @@
     "sync:repos": "node scripts/sync-reference-repos.ts",
     "cf-relay:dev": "vp run --filter @t3tools/personal-relay-cloudflare dev",
     "cf-relay:deploy": "node infra/personal-relay-cloudflare/scripts/deploy.mjs",
-    "cf-relay:pack": "node infra/personal-relay-cloudflare/scripts/build-npm-package.mjs"
+    "cf-relay:pack": "node infra/personal-relay-cloudflare/scripts/build-npm-package.mjs",
+    "cf-relay:pack:aiif": "node infra/personal-relay-cloudflare/scripts/build-npm-package.mjs --package-name @aiif/t3cf --create-package-name create-t3cf",
+    "cf-relay:publish:main": "npm publish infra/personal-relay-cloudflare/dist/npm --access public",
+    "cf-relay:publish:create": "npm publish infra/personal-relay-cloudflare/dist/create --access public",
+    "release:fork": "node scripts/release-fork.mjs"
   },
   "devDependencies": {
     "@coderabbitai/config": "1.2.0",
