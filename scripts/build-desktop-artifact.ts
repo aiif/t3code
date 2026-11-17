@@ -1104,6 +1104,11 @@ export const DESKTOP_EXTRA_RESOURCES = [
     from: "apps/desktop/prod-resources/frpc",
     to: "frpc",
   },
+  {
+    // Adds ~40 MB to every installer so a host can open a tunnel without a first-connect download.
+    from: "apps/desktop/prod-resources/cloudflared",
+    to: "cloudflared",
+  },
 ] as const;
 export const LINUX_CAPTURE_EXTRA_RESOURCES = [
   {
@@ -2479,6 +2484,46 @@ export const stageFrpc = Effect.fn("stageFrpc")(function* (input: {
   }
 });
 
+export const stageCloudflared = Effect.fn("stageCloudflared")(function* (input: {
+  readonly repoRoot: string;
+  readonly stageResourcesDir: string;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly arch: typeof BuildArch.Type;
+  readonly verbose: boolean;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const executable = input.platform === "win" ? "cloudflared.exe" : "cloudflared";
+  const source = path.join(
+    input.repoRoot,
+    "apps/desktop/resources/cloudflared",
+    `${input.platform}-${input.arch}`,
+    executable,
+  );
+  yield* runCommand(
+    ChildProcess.make("node", [
+      path.join(input.repoRoot, "scripts/fetch-cloudflared.mjs"),
+      "--platform",
+      input.platform,
+      "--arch",
+      input.arch,
+      "--out",
+      path.join(input.repoRoot, "apps/desktop/resources/cloudflared"),
+      "--required",
+    ]),
+    { label: "fetch cloudflared", verbose: input.verbose },
+  );
+  const destinationDirectory = path.join(input.stageResourcesDir, "cloudflared");
+  const destination = path.join(destinationDirectory, executable);
+  yield* fs.makeDirectory(destinationDirectory, { recursive: true });
+  yield* fs.copyFile(source, destination);
+  if (input.platform !== "win") {
+    yield* fs.chmod(destination, 0o755);
+  }
+  const size = yield* fs.stat(source).pipe(Effect.map((info) => Number(info.size)));
+  yield* Effect.log(`[desktop-artifact] Staged cloudflared (${(size / 1_000_000).toFixed(1)} MB).`);
+});
+
 export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (input: {
   readonly repoRoot: string;
   readonly stageResourcesDir: string;
@@ -3838,6 +3883,13 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* stageFrpc({
+    repoRoot,
+    stageResourcesDir,
+    platform: options.platform,
+    arch: options.arch,
+    verbose: options.verbose,
+  });
+  yield* stageCloudflared({
     repoRoot,
     stageResourcesDir,
     platform: options.platform,

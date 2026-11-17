@@ -226,6 +226,21 @@
           ]
         }
       ]
+    },
+    {
+      "bundles": ["desktop"],
+      "license": "Apache-2.0",
+      "name": "cloudflared",
+      "sourceUrl": "https://github.com/cloudflare/cloudflared",
+      "version": "2026.10.4",
+      "generatedNotices": [
+        {
+          "licenseId": "Apache-2.0",
+          "preamble": [
+            "The desktop app bundles the unmodified cloudflared 2026.10.4 release binary from Cloudflare, Inc. for Cloudflare Tunnel relay connections.\nhttps://github.com/cloudflare/cloudflared/releases/tag/2026.10.4"
+          ]
+        }
+      ]
     }
   ],
   "packageOverrides": [
