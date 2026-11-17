@@ -185,6 +185,20 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  personalRelayKey: Config.Redacted("T3CODE_PERSONAL_RELAY_KEY").pipe(
+    Config.map((key) => Redacted.make(Redacted.value(key).trim())),
+    Config.option,
+    Config.map(Option.filter((key) => Redacted.value(key).length > 0)),
+    Config.map(Option.getOrUndefined),
+  ),
+  personalCloudflaredPath: Config.String("T3CODE_CLOUDFLARED_PATH").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  personalCloudflaredProtocol: Config.schema(
+    Schema.Literal("http2"),
+    "T3CODE_CLOUDFLARED_PROTOCOL",
+  ).pipe(Config.option, Config.map(Option.getOrUndefined)),
   personalEnabled: Config.Boolean("T3CODE_PERSONAL_ENABLED").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -486,7 +500,10 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   const personalRelayUrl = env.personalRelayUrl?.trim() || undefined;
   const personalLabel = env.personalLabel?.trim() || undefined;
+  const personalRelayKey = env.personalRelayKey;
   const personalFrpcPath = env.personalFrpcPath?.trim() || undefined;
+  const personalCloudflaredPath = env.personalCloudflaredPath?.trim() || undefined;
+  const personalCloudflaredProtocol = env.personalCloudflaredProtocol;
 
   const otel = yield* OtelEnvironment.load;
 
@@ -572,7 +589,10 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     tailscaleServePort,
     ...(personalRelayUrl === undefined ? {} : { personalRelayUrl }),
     ...(personalLabel === undefined ? {} : { personalLabel }),
+    ...(personalRelayKey === undefined ? {} : { personalRelayKey }),
     ...(personalFrpcPath === undefined ? {} : { personalFrpcPath }),
+    ...(personalCloudflaredPath === undefined ? {} : { personalCloudflaredPath }),
+    ...(personalCloudflaredProtocol === undefined ? {} : { personalCloudflaredProtocol }),
     personalEnabled,
     personalMode,
     personalOnly,

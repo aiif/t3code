@@ -66,6 +66,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
 
   const [status, setStatus] = useState<PersonalRelayState | null>(null);
   const [relayUrl, setRelayUrl] = useState(DEFAULT_RELAY_URL);
+  const [relayKey, setRelayKey] = useState("");
   const [label, setLabel] = useState("");
   const [hostKey, setHostKey] = useState<string | null>(null);
   const [guestKey, setGuestKey] = useState("");
@@ -118,6 +119,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
         environmentId,
         input: {
           relayUrl: relayUrl.trim(),
+          ...(relayKey.trim() === "" ? {} : { relayKey: relayKey.trim() }),
           ...(label.trim() === "" ? {} : { label: label.trim() }),
         },
       }),
@@ -232,6 +234,15 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
             placeholder="https://t3.example.com"
             value={relayUrl}
           />
+          <Input
+            aria-label="Relay key"
+            autoComplete="off"
+            disabled={busy}
+            onChange={(event) => setRelayKey(event.currentTarget.value)}
+            placeholder="Enrollment key (Cloudflare relays only)"
+            type="password"
+            value={relayKey}
+          />
           <div className="flex gap-2">
             <Input
               aria-label="This computer's label"
@@ -258,11 +269,19 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                     ? "Online and discoverable."
                     : "Connecting..."}
                 {status.publicUrl ? ` · ${status.publicUrl}` : ""}
-                {status.connectorRunning ? " · connector running" : ""}
-                {status.connectorKind === "cloudflare-tunnel" && status.connectorMode === "quick"
-                  ? " · temporary address"
+                {status.connectorKind
+                  ? ` · ${status.connectorKind === "cloudflare-tunnel" ? "Cloudflare Tunnel" : "frpc"} ${status.connectorRunning ? "running" : "stopped"}`
                   : ""}
               </p>
+              {status.connectorKind === "cloudflare-tunnel" && status.connectorMode === "quick" ? (
+                <Alert variant="warning">
+                  <AlertDescription>
+                    Quick tunnels use a temporary trycloudflare.com address that changes whenever
+                    the tunnel restarts, without SSE support or an SLA. Use a named Cloudflare
+                    tunnel for a stable address.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <code className="rounded bg-muted px-2 py-1">
                   {hostKey ?? (status.hostId ? "••••••••••••••••" : "")}
