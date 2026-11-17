@@ -71,22 +71,23 @@ function makeHarness(
     readonly now?: number;
     readonly provisioner?: FakeTunnelProvisioner;
     readonly clientIp?: string;
+    readonly store?: RegistryStore;
+    readonly secretKey?: string;
   } = {},
 ): Harness {
   let now = options.now ?? NOW;
-  const env = options.named === true ? namedEnv() : workerEnv();
-  const config = resolveWorkerConfig(
-    options.maxHosts === undefined && options.allowedOrigins === undefined
-      ? env
-      : ({
-          ...env,
-          ...(options.maxHosts === undefined ? {} : { T3CODE_MAX_HOSTS: options.maxHosts }),
-          ...(options.allowedOrigins === undefined
-            ? {}
-            : { T3CODE_ALLOWED_ORIGINS: options.allowedOrigins }),
-        } as WorkerEnv),
-  );
-  const store = createInMemoryRegistryStore();
+  const overrides: Record<string, string | undefined> = {};
+  if (options.maxHosts !== undefined) overrides["T3CODE_MAX_HOSTS"] = options.maxHosts;
+  if (options.allowedOrigins !== undefined) {
+    overrides["T3CODE_ALLOWED_ORIGINS"] = options.allowedOrigins;
+  }
+  if (options.secretKey !== undefined) overrides["T3CODE_SECRET_KEY"] = options.secretKey;
+  const env = {
+    ...(options.named === true ? namedEnv() : workerEnv()),
+    ...overrides,
+  } as WorkerEnv;
+  const config = resolveWorkerConfig(env);
+  const store = options.store ?? createInMemoryRegistryStore();
   const provisioner = options.provisioner ?? createFakeTunnelProvisioner();
   const context: RegistryRequestContext = {
     env,
@@ -763,6 +764,20 @@ describe("admin host management", () => {
     expect((await harness.call("/v1/admin/hosts/unknown00000", { auth: ADMIN_KEY })).status).toBe(
       404,
     );
+  });
+
+  it("keeps the admin list usable when the secret key changed", async () => {
+    const store = createInMemoryRegistryStore();
+    const original = makeHarness({ store });
+    const host = await original.register();
+    const rotated = makeHarness({ store, secretKey: "08".repeat(32) });
+    const body = (await json(await rotated.call("/v1/admin/hosts", { auth: ADMIN_KEY }))) as {
+      hosts: ReadonlyArray<Record<string, unknown>>;
+    };
+    expect(body.hosts[0]).toMatchObject({
+      hostId: host.hostId,
+      hostKey: "(unavailable: secret key changed)",
+    });
   });
 
   it("removes and restores a host without banning its environment", async () => {

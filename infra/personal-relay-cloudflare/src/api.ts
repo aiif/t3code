@@ -823,7 +823,9 @@ async function adminHostBody(
     paused: host.paused === 1,
     lastSeenAt: new Date(host.lastSeenAt).toISOString(),
     publicUrl: host.publicUrl,
-    hostKey: (await decryptHostKeyOrNull(context.config.secretKey, host)) ?? "",
+    hostKey:
+      (await decryptHostKeyOrNull(context.config.secretKey, host)) ??
+      "(unavailable: secret key changed)",
     clientsCount: context.store.countClients(host.id),
     createdAt: new Date(host.createdAt).toISOString(),
     revokedAt: host.revokedAt === null ? null : new Date(host.revokedAt).toISOString(),
