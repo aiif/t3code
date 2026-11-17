@@ -1056,13 +1056,16 @@ const makeEnabled = Effect.gen(function* () {
           }),
         );
         yield* stopConnector;
-        const host = hostFileFromRegistration({
-          registration,
-          previous,
-          relayUrl,
-          relayKey,
-          now: DateTime.formatIso(yield* DateTime.now),
-        });
+        const host: PersonalHostFile = {
+          ...hostFileFromRegistration({
+            registration,
+            previous,
+            relayUrl,
+            relayKey,
+            now: DateTime.formatIso(yield* DateTime.now),
+          }),
+          paused: false,
+        };
         yield* Ref.set(hostRef, host);
         yield* persistPersonalHost(host);
         yield* grants.setHostKeyGrant({ hostKey: host.hostKey, hostId: host.hostId });
