@@ -15,6 +15,25 @@ additive: it does not change VPS behavior, and one host uses one relay at a time
 This runbook describes the frozen interface. The E2E checklists at the end are
 the gate evidence; a dry run or a fake wrangler run is not a pass.
 
+## Validation status (2026-11-17)
+
+- Quick mode passed against a real `wrangler dev` relay, a real cloudflared
+  quick tunnel, a host, the admin console (including a foreign origin), and a
+  guest paired over the tunnel.
+- Named mode passed against a live Cloudflare zone: a remotely-managed tunnel,
+  proxied CNAME, healthy tunnel, `https://<hostId>.<zone>` returning 200, guest
+  pairing over that hostname, and a host restart that kept the same host ID and
+  URL.
+- The npm packages were built and installed from the tarball; `t3cf --help`,
+  `init --dry-run`, `--upgrade` secret reuse, a real quick-mode deploy, the
+  deployed admin console, and `--destroy` passed. The `t3cf` tarball measured
+  74.6 MB, above the 50 MB target; it still ships the prebuilt portal per the
+  locked decision.
+- The packages are **not published to npm yet**. Publishing remains the manual
+  or `cf-relay-v*` workflow in `.github/workflows/publish-t3cf.yml`.
+- The full desktop/Android G5 pass has not been recorded; the named and quick
+  guest checks used the web client against the same host protocol.
+
 ## Prerequisites
 
 - A Cloudflare account. Quick mode needs nothing else in Cloudflare.
@@ -387,8 +406,10 @@ cd ../create && npm pack && tar -tzf create-t3cf-*.tgz
 
 Expect the prebundled Worker, the prebuilt portal, the wrangler template, the
 README, and the license. Expect no `.dev.vars`, no `relay-secrets.json`, no
-`cloudflared` binary, and no `postinstall`. Record the tarball size; move the
-portal to a release asset if it exceeds about 50 MB.
+`cloudflared` binary, and no `postinstall`. The 2026-11-17 build measured
+`t3cf` at 74.6 MB; it keeps the portal in the package per the locked product
+decision. Re-measure on every release and revisit the release-asset fallback if
+the size becomes a distribution blocker.
 
 **3. Install and deploy from a temp directory.**
 
