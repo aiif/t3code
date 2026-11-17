@@ -111,8 +111,14 @@ export class ServerConfig extends Context.Service<
     readonly tailscaleServePort: number;
     readonly personalRelayUrl?: string | undefined;
     readonly personalLabel?: string | undefined;
+    /** Cloudflare relay enrollment key; `t3 personal join` stores it in the host file. */
+    readonly personalRelayKey?: Redacted.Redacted<string> | undefined;
     /** frpc binary; defaults to `frpc` on PATH. */
     readonly personalFrpcPath?: string | undefined;
+    /** cloudflared binary; defaults to `cloudflared` on PATH. */
+    readonly personalCloudflaredPath?: string | undefined;
+    /** Forces cloudflared's transport, for networks that block QUIC. */
+    readonly personalCloudflaredProtocol?: "http2" | undefined;
     /** Starts the relay connector and accepts personal-key sessions. */
     readonly personalEnabled?: boolean | undefined;
     /** Reports `remote-reachable` while still binding loopback. */
@@ -281,7 +287,10 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     startupPresentation: "browser",
     personalRelayUrl: undefined,
     personalLabel: undefined,
+    personalRelayKey: undefined,
     personalFrpcPath: undefined,
+    personalCloudflaredPath: undefined,
+    personalCloudflaredProtocol: undefined,
     personalEnabled: false,
     personalMode: false,
     personalOnly: false,
