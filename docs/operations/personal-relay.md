@@ -1,9 +1,9 @@
 # Personal relay operations
 
 Runbook for the self-hosted relay behind [personal network](../user/personal-mode.md).
-The deployment files live in [`infra/personal-relay`](../../infra/personal-relay/README.md);
-that README owns the step-by-step VPS procedure. This page covers what to check
-after it is running and how to recover.
+The container deployment lives in [`infra/personal-relay`](../../infra/personal-relay/README.md);
+that README owns its step-by-step procedure. This page covers health checks,
+native systemd updates, and recovery.
 
 ## Components
 
@@ -19,6 +19,37 @@ connection, supervised by the T3 server process that owns it. Closing the
 desktop window does not stop that process; tray Quit does, and the relay marks
 the host offline when heartbeats expire (90 seconds by default). Pause stops
 `frpc` and reports `online: false` immediately.
+
+## Native systemd install
+
+The relay can run without Docker. A native host uses three units:
+`t3-registry.service`, `frps.service`, and `openresty.service`.
+
+| Piece    | Unit                  | Files                                                                                 |
+| -------- | --------------------- | ------------------------------------------------------------------------------------- |
+| Registry | `t3-registry.service` | Source `/opt/t3-registry`, env `/etc/t3-relay/relay.env`, data `/var/lib/t3-registry` |
+| frps     | `frps.service`        | Config `/etc/frp/frps.toml`                                                           |
+| Portal   | `openresty.service`   | Static files `/srv/t3-portal`                                                         |
+
+The registry unit runs Node directly (`ExecStart=/usr/local/bin/node src/main.ts`),
+so source changes need a restart, not a build:
+
+```sh
+rsync -a --delete infra/personal-relay/registry/src/ root@<vps>:/opt/t3-registry/src/
+ssh root@<vps> systemctl restart t3-registry
+curl -sS http://127.0.0.1:8787/v1/health
+```
+
+The portal is a static build. Keep `.well-known` for certificate challenges and
+skip source maps:
+
+```sh
+VITE_HOSTED_APP_URL=https://t3.example.com pnpm --filter @t3tools/web build
+rsync -a --delete --exclude .well-known --exclude '*.map' apps/web/dist/ root@<vps>:/srv/t3-portal/
+```
+
+Portal files need no service restart. The service worker serves a cached shell,
+so reload once after an update.
 
 ## Health checks
 
@@ -39,8 +70,9 @@ From outside, `8080` and `8787` must time out.
 ## Rotating the admin key
 
 1. Generate a new key (`openssl rand -base64 32`).
-2. Update `T3CODE_ADMIN_KEY` in `infra/personal-relay/.env`, restart the
-   registry.
+2. Update `T3CODE_ADMIN_KEY` in `infra/personal-relay/.env` (Compose) or
+   `/etc/t3-relay/relay.env` (native), then restart the registry
+   (`docker compose restart registry` or `systemctl restart t3-registry`).
 3. Re-enter it in the admin console. Guests and host keys are unaffected.
 
 The admin key must never be copied to a host or a guest client. Hosts do not
@@ -60,15 +92,28 @@ the environment register again.
 
 ## Backup and migration
 
-- Back up the registry SQLite file (`registry-data` volume or
-  `/var/lib/t3-registry`) and `.env` before upgrading.
+- Back up the registry SQLite file and the env file before upgrading. The
+  database is `/var/lib/t3-registry/registry.sqlite` on a native install, or the
+  `registry-data` volume under Compose; the env file is
+  `/etc/t3-relay/relay.env` or `infra/personal-relay/.env`.
+- On a native host, do not copy a live `registry.sqlite-wal`. Use SQLite's own
+  copy and archive the source and portal:
+
+  ```sh
+  mkdir -p /root/t3-backups
+  node -e 'const { DatabaseSync } = require("node:sqlite"); const db = new DatabaseSync("/var/lib/t3-registry/registry.sqlite"); db.exec("VACUUM INTO \"/root/t3-backups/registry-" + Date.now() + ".sqlite\"");'
+  tar -C /opt/t3-registry -czf /root/t3-backups/registry-src.tgz src package.json
+  tar -C /srv -czf /root/t3-backups/portal.tgz t3-portal
+  ```
+
 - Registry v2 migrates the v1 key-space schema in place: host ids and environment
   ids survive, each host gets a new encrypted host key, and hosts stay offline
   until their new version re-registers.
 - Keep the old `/root/t3-personal-key.txt` value as `T3CODE_ADMIN_KEY`. Generate
   `T3CODE_SECRET_KEY`; losing it makes stored host keys unrecoverable and requires
   rotating every host key.
-- Rollback: restore the SQLite file and the previous container image. Hosts that
+- Rollback: restore the SQLite file plus the previous container image (Compose)
+  or `src/` and portal archives (native), then restart the registry. Hosts that
   already migrated keep local state; they re-register when the v1 relay returns
   only if their environment ids match the restored rows.
 
@@ -81,8 +126,9 @@ project content, prompts, command output, or file data reaches the registry.
 
 ## Web Push
 
-- VAPID keys persist in the registry data volume (`vapid.json`). Deleting them
-  invalidates every subscription.
+- VAPID keys persist in the registry data directory (`vapid.json`;
+  `/var/lib/t3-registry` on a native install, the `registry-data` volume under
+  Compose). Deleting them invalidates every subscription.
 - Subscriptions are scoped to `admin` or one host.
 - Host notifications use the host token; the admin subscription receives every
   host's notifications.
@@ -92,7 +138,7 @@ project content, prompts, command output, or file data reaches the registry.
 
 | Symptom                              | Check                                                                                               |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Host subdomain returns 502           | `frpc` is not connected: host relay status, `docker compose logs frps`                              |
+| Host subdomain returns 502           | `frpc` is not connected: host relay status, `docker compose logs frps` or `journalctl -u frps`      |
 | Host subdomain returns 404 from frps | `customDomains` does not match the host id                                                          |
 | Admin console lists no hosts         | Hosts have not registered yet, or the admin key is wrong                                            |
 | Guest resolve returns 401            | The host key is invalid or rotated                                                                  |

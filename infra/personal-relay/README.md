@@ -33,6 +33,10 @@ The T3 server on each host keeps binding loopback; `frpc` is the only way in.
 
 ## Deploying
 
+> This page describes the Docker Compose deployment. A native systemd host uses
+> the unit layout and update commands in
+> [Personal relay operations](../../docs/operations/personal-relay.md#native-systemd-install).
+
 These steps change a live VPS. Run them yourself; nothing in this repository
 applies them automatically.
 
