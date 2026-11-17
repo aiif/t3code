@@ -135,6 +135,47 @@ describe("npm package build", () => {
     expect(readme.includes("{{PACKAGE_SIZE}}")).toBe(false);
   });
 
+  it("carries an owner-controlled main package name through both packages", async () => {
+    const sources = await createSources();
+    await write(
+      NodePath.join(sources.readmes, "README.npm.md"),
+      "# {{PACKAGE_NAME}}\n\nnpx {{PACKAGE_NAME}}@latest init\n",
+    );
+    await write(
+      NodePath.join(sources.readmes, "README.create.md"),
+      "# {{CREATE_PACKAGE_NAME}}\n\nnpm create {{CREATE_ALIAS}}@latest\naround {{MAIN_PACKAGE_NAME}}\n",
+    );
+
+    const assembled = await assembleNpmPackages(
+      input(sources, { mainPackageName: "@scope/t3cf", createPackageName: "create-t3cf" }),
+    );
+
+    const main = await readManifest(assembled.main.directory);
+    expect(main.name).toBe("@scope/t3cf");
+
+    const create = await readManifest(assembled.create.directory);
+    expect(create.dependencies).toEqual({ "@scope/t3cf": "0.1.9" });
+
+    const createBin = await NodeFSP.readFile(
+      NodePath.join(assembled.create.directory, "bin", "create.mjs"),
+      "utf8",
+    );
+    expect(createBin).toContain('from "@scope/t3cf/cli"');
+
+    const mainReadme = await NodeFSP.readFile(
+      NodePath.join(assembled.main.directory, "README.md"),
+      "utf8",
+    );
+    expect(mainReadme).toContain("npx @scope/t3cf@latest init");
+
+    const createReadme = await NodeFSP.readFile(
+      NodePath.join(assembled.create.directory, "README.md"),
+      "utf8",
+    );
+    expect(createReadme).toContain("npm create t3cf@latest");
+    expect(createReadme).toContain("around @scope/t3cf");
+  });
+
   it("fails when a deployment secret reaches the package", async () => {
     const sources = await createSources();
     const secret = "s".repeat(43);

@@ -32,6 +32,9 @@ Usage: node scripts/build-npm-package.mjs [options]
 
 Options:
   --version <x.y.z>        Package version (default T3CF_VERSION or package.json)
+  --package-name <name>    Main npm package name (default T3CF_PACKAGE_NAME or t3cf)
+  --create-package-name <name>
+                           Wrapper package name (default T3CF_CREATE_PACKAGE_NAME or create-t3cf)
   --no-portal-build        Reuse apps/web/dist
   --no-pack                Assemble dist/npm and dist/create without npm pack
   --worker-bundle <path>   Reuse a Worker bundle instead of running wrangler
@@ -41,6 +44,8 @@ Options:
 function parseArgs(argv) {
   const options = {
     version: process.env.T3CF_VERSION ?? null,
+    packageName: process.env.T3CF_PACKAGE_NAME ?? null,
+    createPackageName: process.env.T3CF_CREATE_PACKAGE_NAME ?? null,
     portalBuild: true,
     pack: true,
     workerBundle: null,
@@ -58,6 +63,16 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg.startsWith("--version=")) {
       options.version = arg.slice("--version=".length);
+    } else if (arg === "--package-name") {
+      options.packageName = argv[index + 1] ?? null;
+      index += 1;
+    } else if (arg.startsWith("--package-name=")) {
+      options.packageName = arg.slice("--package-name=".length);
+    } else if (arg === "--create-package-name") {
+      options.createPackageName = argv[index + 1] ?? null;
+      index += 1;
+    } else if (arg.startsWith("--create-package-name=")) {
+      options.createPackageName = arg.slice("--create-package-name=".length);
     } else if (arg === "--worker-bundle") {
       options.workerBundle = argv[index + 1] ?? null;
       index += 1;
@@ -78,6 +93,14 @@ function normalizeVersion(raw) {
     throw new Error(`Invalid package version: ${raw}`);
   }
   return version;
+}
+
+function normalizePackageName(raw, fallback, label) {
+  const name = String(raw ?? fallback).trim();
+  if (!/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(name)) {
+    throw new Error(`Invalid ${label} package name: ${name}`);
+  }
+  return name;
 }
 
 async function pathExists(target) {
@@ -248,6 +271,12 @@ async function main() {
     await NodeFSP.readFile(NodePath.join(packageRoot, "package.json"), "utf8"),
   );
   const version = normalizeVersion(options.version ?? packageJson.version);
+  const mainPackageName = normalizePackageName(options.packageName, "t3cf", "main");
+  const createPackageName = normalizePackageName(
+    options.createPackageName,
+    "create-t3cf",
+    "create",
+  );
   const wranglerVersion = packageJson.devDependencies.wrangler;
 
   if (options.portalBuild) {
@@ -288,7 +317,7 @@ async function main() {
   }
 
   const outputRoot = NodePath.join(packageRoot, "dist");
-  output.stdout(`Assembling t3cf and create-t3cf ${version}...`);
+  output.stdout(`Assembling ${mainPackageName} and ${createPackageName} ${version}...`);
   const assembled = await assembleNpmPackages({
     outputRoot,
     version,
@@ -299,6 +328,8 @@ async function main() {
     templatePath: NodePath.join(packageRoot, "scripts", "templates", "wrangler.jsonc"),
     licensePath: NodePath.join(repoRoot, "LICENSE"),
     readmeDirectory: NodePath.join(packageRoot, "scripts", "templates"),
+    mainPackageName,
+    createPackageName,
     secretValues,
   });
 

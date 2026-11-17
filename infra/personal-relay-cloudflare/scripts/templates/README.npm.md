@@ -1,11 +1,11 @@
-# t3cf
+# {{PACKAGE_NAME}}
 
 Deploy the [T3 Code](https://github.com/pingdotgg/t3code) personal network relay to
 your own Cloudflare account. The relay is a registry and management plane: guest
 traffic goes from Cloudflare's edge through a tunnel straight to your host.
 
 ```sh
-npx t3cf@latest init
+npx {{PACKAGE_NAME}}@latest init
 ```
 
 `npm create t3cf@latest` runs the same deploy.
@@ -38,15 +38,15 @@ hosts at temporary `trycloudflare.com` addresses.
 ## Usage
 
 ```sh
-npx t3cf@latest init                                   # auto: named with a zone, else quick
-npx t3cf@latest init --mode named --hosts-domain example.com
-npx t3cf@latest init --mode quick
-npx t3cf@latest init --upgrade                         # reuse secrets and redeploy
-npx t3cf@latest init --doctor                          # check tokens, zone and Zero Trust
-npx t3cf@latest init --destroy                         # delete tunnels, DNS and the Worker
+npx {{PACKAGE_NAME}}@latest init                                   # auto: named with a zone, else quick
+npx {{PACKAGE_NAME}}@latest init --mode named --hosts-domain example.com
+npx {{PACKAGE_NAME}}@latest init --mode quick
+npx {{PACKAGE_NAME}}@latest init --upgrade                         # reuse secrets and redeploy
+npx {{PACKAGE_NAME}}@latest init --doctor                          # check tokens, zone and Zero Trust
+npx {{PACKAGE_NAME}}@latest init --destroy                         # delete tunnels, DNS and the Worker
 ```
 
-Run `npx t3cf@latest init --help` for every flag. `--yes` never prompts.
+Run `npx {{PACKAGE_NAME}}@latest init --help` for every flag. `--yes` never prompts.
 
 ## Secrets
 

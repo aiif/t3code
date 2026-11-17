@@ -57,6 +57,8 @@ export interface NpmAssemblyInput {
   readonly templatePath: string;
   readonly licensePath: string;
   readonly readmeDirectory: string;
+  readonly mainPackageName?: string;
+  readonly createPackageName?: string;
   readonly secretValues?: ReadonlyArray<string>;
 }
 
@@ -188,9 +190,13 @@ export async function assertPackage(
   return { directory: report.directory, files: report.files };
 }
 
-function mainManifest(version: string, wranglerVersion: string): Record<string, unknown> {
+function mainManifest(
+  version: string,
+  wranglerVersion: string,
+  packageName: string,
+): Record<string, unknown> {
   return {
-    name: MAIN_PACKAGE_NAME,
+    name: packageName,
     version,
     description: "Deploy the T3 Code personal network relay to your own Cloudflare account.",
     type: "module",
@@ -219,16 +225,20 @@ function mainManifest(version: string, wranglerVersion: string): Record<string, 
   };
 }
 
-function createManifest(version: string): Record<string, unknown> {
+function createManifest(
+  version: string,
+  packageName: string,
+  mainPackageName: string,
+): Record<string, unknown> {
   return {
-    name: CREATE_PACKAGE_NAME,
+    name: packageName,
     version,
     description: "Create a T3 Code personal network relay on Cloudflare.",
     type: "module",
     bin: { "create-t3cf": "bin/create.mjs" },
     files: ["bin", "README.md", "LICENSE"],
     engines: { node: ">=20.19" },
-    dependencies: { [MAIN_PACKAGE_NAME]: version },
+    dependencies: { [mainPackageName]: version },
     publishConfig: { access: "public" },
     keywords: ["t3-code", "cloudflare", "tunnel", "relay", "create"],
     license: "MIT",
@@ -247,11 +257,16 @@ import { runInstalledCli } from "../dist/cli.mjs";
 process.exitCode = await runInstalledCli(process.argv.slice(2));
 `;
 
-const CREATE_BIN = `#!/usr/bin/env node
-import { runInstalledCli } from "t3cf/cli";
+const createBin = (mainPackageName: string) => `#!/usr/bin/env node
+import { runInstalledCli } from "${mainPackageName}/cli";
 
 process.exitCode = await runInstalledCli(process.argv.slice(2));
 `;
+
+const createAlias = (createPackageName: string): string =>
+  createPackageName.startsWith("@")
+    ? createPackageName.replace(/^@([^/]+)\/create-/, "@$1/")
+    : createPackageName.replace(/^create-/, "");
 
 async function writeJson(file: string, value: unknown): Promise<void> {
   await NodeFSP.mkdir(NodePath.dirname(file), { recursive: true });
@@ -279,6 +294,8 @@ async function copyDirectory(source: string, destination: string): Promise<void>
 export async function assembleNpmPackages(input: NpmAssemblyInput): Promise<NpmAssemblyResult> {
   const mainDirectory = NodePath.join(input.outputRoot, "npm");
   const createDirectory = NodePath.join(input.outputRoot, "create");
+  const mainPackageName = input.mainPackageName ?? MAIN_PACKAGE_NAME;
+  const createPackageName = input.createPackageName ?? CREATE_PACKAGE_NAME;
   const secretValues = input.secretValues ?? [];
 
   await NodeFSP.rm(mainDirectory, { recursive: true, force: true });
@@ -299,21 +316,33 @@ export async function assembleNpmPackages(input: NpmAssemblyInput): Promise<NpmA
   const sizeMb = (await directorySize(mainDirectory)) / 1024 / 1024;
   await NodeFSP.writeFile(
     readmePath,
-    readme.replaceAll("{{PACKAGE_SIZE}}", `${sizeMb.toFixed(0)} MB`),
+    readme
+      .replaceAll("{{PACKAGE_SIZE}}", `${sizeMb.toFixed(0)} MB`)
+      .replaceAll("{{PACKAGE_NAME}}", mainPackageName),
   );
   await writeJson(
     NodePath.join(mainDirectory, "package.json"),
-    mainManifest(input.version, input.wranglerVersion),
+    mainManifest(input.version, input.wranglerVersion, mainPackageName),
   );
   await writeBin(NodePath.join(mainDirectory, "bin/init.mjs"), MAIN_BIN);
 
   await copyFile(input.licensePath, NodePath.join(createDirectory, "LICENSE"));
-  await copyFile(
-    NodePath.join(input.readmeDirectory, "README.create.md"),
-    NodePath.join(createDirectory, "README.md"),
+  const createReadmePath = NodePath.join(input.readmeDirectory, "README.create.md");
+  await copyFile(createReadmePath, NodePath.join(createDirectory, "README.md"));
+  const createReadmePathInPackage = NodePath.join(createDirectory, "README.md");
+  const createReadme = await NodeFSP.readFile(createReadmePathInPackage, "utf8");
+  await NodeFSP.writeFile(
+    createReadmePathInPackage,
+    createReadme
+      .replaceAll("{{CREATE_PACKAGE_NAME}}", createPackageName)
+      .replaceAll("{{CREATE_ALIAS}}", createAlias(createPackageName))
+      .replaceAll("{{MAIN_PACKAGE_NAME}}", mainPackageName),
   );
-  await writeJson(NodePath.join(createDirectory, "package.json"), createManifest(input.version));
-  await writeBin(NodePath.join(createDirectory, "bin/create.mjs"), CREATE_BIN);
+  await writeJson(
+    NodePath.join(createDirectory, "package.json"),
+    createManifest(input.version, createPackageName, mainPackageName),
+  );
+  await writeBin(NodePath.join(createDirectory, "bin/create.mjs"), createBin(mainPackageName));
 
   const main = await assertPackage(mainDirectory, {
     required: [
