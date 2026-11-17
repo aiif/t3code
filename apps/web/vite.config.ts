@@ -45,6 +45,7 @@ const configuredRelayTracingDataset = repoEnv.VITE_RELAY_OTLP_TRACES_DATASET?.tr
 const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim() || "";
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
 const configuredPersonalOnly = process.env.VITE_T3CODE_PERSONAL_ONLY?.trim() || "";
+const configuredPersonalAdminConsole = process.env.VITE_PERSONAL_ADMIN_CONSOLE?.trim() || "";
 const configuredReleaseChannel =
   process.env.T3CODE_BUILT_DEV === "1" ? "dev" : process.env.VITE_RELEASE_CHANNEL?.trim() || "";
 const configuredDesktopUpdateRepository =
@@ -367,6 +368,7 @@ export default defineConfig(({ command }) => {
       "import.meta.env.VITE_RELAY_OTLP_TRACES_TOKEN": JSON.stringify(configuredRelayTracingToken),
       "import.meta.env.VITE_HOSTED_APP_URL": JSON.stringify(configuredHostedAppUrl ?? ""),
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
+      "import.meta.env.VITE_PERSONAL_ADMIN_CONSOLE": JSON.stringify(configuredPersonalAdminConsole),
       "import.meta.env.VITE_T3CODE_PERSONAL_ONLY": JSON.stringify(configuredPersonalOnly),
       "import.meta.env.T3CODE_DESKTOP_UPDATE_REPOSITORY": JSON.stringify(
         configuredDesktopUpdateRepository,

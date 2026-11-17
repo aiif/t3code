@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   buildHostedPairingUrl,
   hasHostedPairingRequest,
+  isHostedStaticApp,
   readHostedPairingRequest,
 } from "./hostedPairing";
 
@@ -39,5 +40,25 @@ describe("hostedPairing", () => {
     expect(url.searchParams.get("label")).toBe("Workstation");
     expect(url.searchParams.has("token")).toBe(false);
     expect(url.hash).toBe("#token=pairing-token");
+  });
+
+  it("treats a personal admin console build as hosted static at any origin", () => {
+    vi.stubEnv("VITE_PERSONAL_ADMIN_CONSOLE", "1");
+    vi.stubEnv("VITE_HOSTED_APP_URL", "");
+    vi.stubEnv("VITE_HOSTED_APP_CHANNEL", "");
+    vi.stubEnv("VITE_HTTP_URL", "");
+    vi.stubEnv("VITE_WS_URL", "");
+
+    expect(isHostedStaticApp(new URL("https://relay.example.test/"))).toBe(true);
+  });
+
+  it("keeps a foreign origin out of hosted static mode without the admin flag", () => {
+    vi.stubEnv("VITE_PERSONAL_ADMIN_CONSOLE", "");
+    vi.stubEnv("VITE_HOSTED_APP_URL", "https://app.t3.codes");
+    vi.stubEnv("VITE_HOSTED_APP_CHANNEL", "");
+    vi.stubEnv("VITE_HTTP_URL", "");
+    vi.stubEnv("VITE_WS_URL", "");
+
+    expect(isHostedStaticApp(new URL("https://relay.example.test/"))).toBe(false);
   });
 });
