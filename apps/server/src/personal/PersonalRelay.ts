@@ -1,11 +1,17 @@
 import {
   AuthSessionId,
+  type PersonalConnector,
+  PersonalConnectorKind,
+  PersonalConnectorMode,
+  type PersonalHostRegistration,
+  PersonalHostRegistrationResponse,
   type PersonalRelayState,
   type PersonalResolvedHost,
   PersonalNetworkError,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -15,6 +21,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Redacted from "effect/Redacted";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
@@ -34,6 +41,18 @@ import {
   readPersonalHostFile,
   writePersonalHostFile,
 } from "./hostSharingState.ts";
+import {
+  connectorModeOf,
+  connectorPlan,
+  findQuickTunnelUrl,
+  hostFileFromRegistration,
+  normalizeHeartbeatInterval,
+  normalizeHostRegistration,
+  quickTunnelTimeoutDetail,
+  QUICK_TUNNEL_TIMEOUT_MS,
+  stderrTail,
+  stripAnsi,
+} from "./connector.ts";
 export const PERSONAL_RELAY_STATUS_FILE = "personal-relay.json";
 
 /** The status file adds when it was written, so the CLI can show staleness. */
@@ -45,36 +64,61 @@ export const PersonalRelayStatusFile = Schema.Struct({
   publicUrl: Schema.NullOr(Schema.String),
   label: Schema.NullOr(Schema.String),
   online: Schema.Boolean,
-  connectorKind: Schema.NullOr(Schema.String),
-  connectorMode: Schema.NullOr(Schema.String),
+  connectorKind: Schema.NullOr(PersonalConnectorKind),
+  connectorMode: Schema.NullOr(PersonalConnectorMode),
   connectorRunning: Schema.Boolean,
   lastError: Schema.NullOr(Schema.String),
   updatedAt: Schema.String,
 });
 export type PersonalRelayStatusFile = typeof PersonalRelayStatusFile.Type;
 
+const LegacyPersonalRelayStatusFile = Schema.Struct({
+  enabled: Schema.Boolean,
+  paused: Schema.Boolean,
+  relayUrl: Schema.NullOr(Schema.String),
+  hostId: Schema.NullOr(Schema.String),
+  publicUrl: Schema.NullOr(Schema.String),
+  label: Schema.NullOr(Schema.String),
+  online: Schema.Boolean,
+  frpcRunning: Schema.Boolean,
+  connectorKind: Schema.optionalKey(Schema.NullOr(PersonalConnectorKind)),
+  connectorMode: Schema.optionalKey(Schema.NullOr(PersonalConnectorMode)),
+  lastError: Schema.NullOr(Schema.String),
+  updatedAt: Schema.String,
+});
+
 const encodeStatusFile = Schema.encodeSync(Schema.fromJsonString(PersonalRelayStatusFile));
+const decodeCurrentStatusFile = Schema.decodeUnknownOption(
+  Schema.fromJsonString(PersonalRelayStatusFile),
+);
+const decodeLegacyStatusFile = Schema.decodeUnknownOption(
+  Schema.fromJsonString(LegacyPersonalRelayStatusFile),
+);
 const RESTART_DELAY = "10 seconds";
 const REQUEST_TIMEOUT = "15 seconds";
 const PRIVATE_FILE = { mode: 0o600 } as const;
 
-export const FrpRegistration = Schema.Struct({
-  hostId: Schema.String,
-  hostKey: Schema.String,
-  hostKeyVersion: Schema.Number,
-  hostToken: Schema.String,
-  environmentId: Schema.String,
-  label: Schema.NullOr(Schema.String),
-  publicUrl: Schema.String,
-  frp: Schema.Struct({
-    serverAddr: Schema.String,
-    serverPort: Schema.Number,
-    authToken: Schema.String,
-    domain: Schema.String,
-  }),
-  heartbeatIntervalMs: Schema.Number,
-});
-export type FrpRegistration = typeof FrpRegistration.Type;
+export function decodePersonalRelayStatusFile(raw: string): Option.Option<PersonalRelayStatusFile> {
+  const current = decodeCurrentStatusFile(raw);
+  if (Option.isSome(current)) return current;
+  const legacy = decodeLegacyStatusFile(raw);
+  if (Option.isNone(legacy)) return Option.none();
+  const file = legacy.value;
+  return Option.some({
+    enabled: file.enabled,
+    paused: file.paused,
+    relayUrl: file.relayUrl,
+    hostId: file.hostId,
+    publicUrl: file.publicUrl,
+    label: file.label,
+    online: file.online,
+    connectorKind: file.connectorKind ?? "frp",
+    connectorMode: file.connectorMode ?? null,
+    connectorRunning: file.frpcRunning,
+    lastError: file.lastError,
+    updatedAt: file.updatedAt,
+  });
+}
 
 const HeartbeatResult = Schema.Struct({
   hostId: Schema.String,
@@ -100,29 +144,40 @@ const ResolvedHost = Schema.Struct({
 });
 export type ResolvedHost = typeof ResolvedHost.Type;
 
-export class FrpcSpawnError extends Schema.TaggedError<FrpcSpawnError>()("FrpcSpawnError", {
-  detail: Schema.String,
-}) {
+export class ConnectorSpawnError extends Schema.TaggedError<ConnectorSpawnError>()(
+  "ConnectorSpawnError",
+  { detail: Schema.String },
+) {
   override get message(): string {
-    return `frpc could not start: ${this.detail}`;
+    return `The personal relay connector could not start: ${this.detail}`;
   }
 }
 
-/** The frpc child, separated so supervision tests do not need a real binary. */
-export interface FrpcHandle {
+/** The connector child, separated so supervision tests do not need a real binary. */
+export interface ConnectorHandle {
   readonly exited: Effect.Effect<void>;
   readonly lastError: Effect.Effect<string>;
+  /** Set once cloudflared prints its quick-tunnel address. */
+  readonly publicUrl: Effect.Effect<string | null>;
 }
 
-class FrpcProcess extends Context.Service<
-  FrpcProcess,
+export interface ConnectorSpawnInput {
+  readonly connector: PersonalConnector;
+  readonly port: number;
+  readonly configPath: string;
+  readonly frpcPath: string;
+  readonly cloudflaredPath: string;
+  readonly cloudflaredProtocol?: "http2" | undefined;
+}
+
+export class ConnectorProcess extends Context.Service<
+  ConnectorProcess,
   {
-    readonly spawn: (input: {
-      readonly frpcPath: string;
-      readonly configPath: string;
-    }) => Effect.Effect<FrpcHandle, FrpcSpawnError, Scope.Scope>;
+    readonly spawn: (
+      input: ConnectorSpawnInput,
+    ) => Effect.Effect<ConnectorHandle, ConnectorSpawnError, Scope.Scope>;
   }
->()("t3/personal/PersonalRelay/FrpcProcess") {}
+>()("t3/personal/PersonalRelay/ConnectorProcess") {}
 
 export type PersonalNotificationPhase =
   | "waiting_for_approval"
@@ -155,13 +210,16 @@ class PersonalRelayClient extends Context.Service<
       readonly environmentId: string;
       readonly label: string | null;
       readonly platform: string | null;
-    }) => Effect.Effect<FrpRegistration, PersonalNetworkError>;
+      readonly originPort: number;
+      readonly relayKey?: string | undefined;
+    }) => Effect.Effect<PersonalHostRegistrationResponse, PersonalNetworkError>;
     readonly heartbeat: (input: {
       readonly relayUrl: string;
       readonly hostToken: string;
       readonly hostKeyVersion: number;
       readonly label: string | null;
       readonly online: boolean;
+      readonly publicUrl?: string | undefined;
     }) => Effect.Effect<HeartbeatResult, PersonalNetworkError>;
     readonly unregister: (input: {
       readonly relayUrl: string;
@@ -194,6 +252,7 @@ export class PersonalRelay extends Context.Service<
     readonly getStatus: () => Effect.Effect<PersonalRelayState>;
     readonly startSharing: (input: {
       readonly relayUrl: string;
+      readonly relayKey?: string | undefined;
       readonly label?: string | undefined;
     }) => Effect.Effect<PersonalRelayState, PersonalNetworkError>;
     readonly stopSharing: () => Effect.Effect<PersonalRelayState, PersonalNetworkError>;
@@ -265,7 +324,9 @@ const layerClient = (): Layer.Layer<PersonalRelayClient, never, HttpClient.HttpC
                 operation,
                 detail:
                   response.status === 401
-                    ? "The relay rejected this host key."
+                    ? operation === "start"
+                      ? "The relay rejected the enrollment key."
+                      : "The relay rejected this host key."
                     : response.status === 410
                       ? "This host was removed from the relay."
                       : `The relay answered ${response.status}.`,
@@ -276,19 +337,26 @@ const layerClient = (): Layer.Layer<PersonalRelayClient, never, HttpClient.HttpC
 
       return PersonalRelayClient.of({
         register: Effect.fn("PersonalRelayClient.register")(function* (input) {
+          const request = HttpClientRequest.post(
+            `${baseUrlOf(input.relayUrl)}/v1/hosts/register`,
+          ).pipe(
+            HttpClientRequest.bodyJsonUnsafe({
+              environmentId: input.environmentId,
+              label: input.label,
+              platform: input.platform,
+              apiVersion: 2,
+              origin: { host: "127.0.0.1", port: input.originPort },
+            }),
+          );
           const response = yield* execute(
             "start",
-            HttpClientRequest.post(`${baseUrlOf(input.relayUrl)}/v1/hosts/register`).pipe(
-              HttpClientRequest.bodyJsonUnsafe({
-                environmentId: input.environmentId,
-                label: input.label,
-                platform: input.platform,
-              }),
-            ),
+            input.relayKey === undefined || input.relayKey.length === 0
+              ? request
+              : HttpClientRequest.bearerToken(request, input.relayKey),
           );
-          const decoded = yield* HttpClientResponse.schemaBodyJson(FrpRegistration)(response).pipe(
-            Effect.option,
-          );
+          const decoded = yield* HttpClientResponse.schemaBodyJson(
+            PersonalHostRegistrationResponse,
+          )(response).pipe(Effect.option);
           if (Option.isNone(decoded)) {
             return yield* new PersonalNetworkError({
               operation: "start",
@@ -306,6 +374,9 @@ const layerClient = (): Layer.Layer<PersonalRelayClient, never, HttpClient.HttpC
                 label: input.label,
                 online: input.online,
                 hostKeyVersion: input.hostKeyVersion,
+                ...(input.publicUrl === undefined || input.publicUrl.length === 0
+                  ? {}
+                  : { publicUrl: input.publicUrl }),
               }),
             ),
           );
@@ -389,52 +460,77 @@ const layerClient = (): Layer.Layer<PersonalRelayClient, never, HttpClient.HttpC
     }),
   );
 
-/** The real frpc child. The caller's scope owns it, so shutdown kills only this PID. */
-const layerFrpcProcess: Layer.Layer<FrpcProcess, never, ChildProcessSpawner.ChildProcessSpawner> =
-  Layer.effect(
-    FrpcProcess,
-    Effect.gen(function* () {
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      return FrpcProcess.of({
-        spawn: Effect.fn("FrpcProcess.spawn")(function* ({ frpcPath, configPath }) {
-          const child = yield* spawner
-            .spawn(
-              ChildProcess.make(frpcPath, ["-c", configPath], {
-                detached: false,
-                shell: false,
-                stdin: "ignore",
-                stdout: "ignore",
-                stderr: "pipe",
-              }),
-            )
-            .pipe(Effect.mapError((cause) => new FrpcSpawnError({ detail: String(cause) })));
-          yield* Effect.addFinalizer(() =>
-            child
-              .kill()
-              .pipe(
-                Effect.ignore,
-                Effect.andThen(Effect.logInfo("Stopped frpc for personal mode.")),
-              ),
-          );
-          const tail = yield* Ref.make("");
-          yield* child.stderr.pipe(
-            Stream.decodeText(),
-            Stream.runFold(
-              () => "",
-              (_, chunk) => chunk.slice(-500),
+/** The real connector child. The caller's scope owns it, so shutdown kills only this PID. */
+export const layerConnectorProcess: Layer.Layer<
+  ConnectorProcess,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner
+> = Layer.effect(
+  ConnectorProcess,
+  Effect.gen(function* () {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    return ConnectorProcess.of({
+      spawn: Effect.fn("ConnectorProcess.spawn")(function* (input) {
+        const plan = connectorPlan(input);
+        const child = yield* spawner
+          .spawn(
+            ChildProcess.make(plan.command, plan.args, {
+              detached: false,
+              shell: false,
+              stdin: "ignore",
+              stdout: "ignore",
+              stderr: "pipe",
+              ...(Object.keys(plan.env).length === 0 ? {} : { env: plan.env, extendEnv: true }),
+            }),
+          )
+          .pipe(Effect.mapError((cause) => new ConnectorSpawnError({ detail: String(cause) })));
+        yield* Effect.addFinalizer(() =>
+          child
+            .kill()
+            .pipe(
+              Effect.ignore,
+              Effect.andThen(Effect.logInfo("Stopped the personal relay connector.")),
             ),
-            Effect.flatMap((last) => Ref.set(tail, last)),
-            Effect.ignore,
-            Effect.forkScoped,
+        );
+        const tail = yield* Ref.make("");
+        const scan = yield* Ref.make("");
+        const publicUrl = yield* Ref.make<string | null>(null);
+        const firstUrl = yield* Deferred.make<void>();
+        yield* child.stderr.pipe(
+          Stream.decodeText(),
+          Stream.runForEach((chunk) =>
+            Effect.gen(function* () {
+              const plain = stripAnsi(chunk);
+              yield* Ref.update(tail, (current) => stderrTail(`${current}${plain}`));
+              yield* Ref.update(scan, (current) => `${current}${plain}`.slice(-4096));
+              if (plan.mode !== "quick" || (yield* Ref.get(publicUrl)) !== null) return;
+              const found = findQuickTunnelUrl(yield* Ref.get(scan));
+              if (found === null) return;
+              yield* Ref.set(publicUrl, found);
+              yield* Deferred.succeed(firstUrl, void 0);
+            }),
+          ),
+          Effect.ignore,
+          Effect.forkScoped,
+        );
+        if (plan.mode === "quick") {
+          const ready = yield* Deferred.await(firstUrl).pipe(
+            Effect.timeoutOption(`${QUICK_TUNNEL_TIMEOUT_MS} millis`),
           );
-          return {
-            exited: child.exitCode.pipe(Effect.ignore),
-            lastError: Ref.get(tail),
-          } satisfies FrpcHandle;
-        }),
-      });
-    }),
-  );
+          if (Option.isNone(ready)) {
+            const last = yield* Ref.get(tail);
+            return yield* new ConnectorSpawnError({ detail: quickTunnelTimeoutDetail(last) });
+          }
+        }
+        return {
+          exited: child.exitCode.pipe(Effect.ignore),
+          lastError: Ref.get(tail),
+          publicUrl: Ref.get(publicUrl),
+        } satisfies ConnectorHandle;
+      }),
+    });
+  }),
+);
 
 const disabledState = (config: {
   readonly personalRelayUrl?: string | undefined;
@@ -454,7 +550,7 @@ const disabledState = (config: {
   updatedAt: null,
 });
 
-const toStatus = (host: PersonalHostFile | null): PersonalRelayState =>
+export const toPersonalRelayState = (host: PersonalHostFile | null): PersonalRelayState =>
   host === null
     ? {
         enabled: false,
@@ -478,12 +574,31 @@ const toStatus = (host: PersonalHostFile | null): PersonalRelayState =>
         publicUrl: host.publicUrl,
         label: host.label,
         online: false,
-        connectorKind: "frp",
-        connectorMode: null,
+        connectorKind: host.connector.kind,
+        connectorMode: connectorModeOf(host.connector),
         connectorRunning: false,
         lastError: null,
         updatedAt: host.updatedAt,
       };
+
+/**
+ * Switching relays registers with the new one first: a missing enrollment key
+ * must leave the existing host untouched instead of unregistering it.
+ */
+export const registerBeforeUnregister = Effect.fn("PersonalRelay.registerBeforeUnregister")(
+  function* <A, E, R>(input: {
+    readonly previousRelayUrl: string | null;
+    readonly nextRelayUrl: string;
+    readonly register: Effect.Effect<A, E, R>;
+    readonly unregister: (relayUrl: string) => Effect.Effect<void, never, R>;
+  }) {
+    const registration = yield* input.register;
+    if (input.previousRelayUrl !== null && input.previousRelayUrl !== input.nextRelayUrl) {
+      yield* input.unregister(input.previousRelayUrl).pipe(Effect.ignore);
+    }
+    return registration;
+  },
+);
 
 const makeEnabled = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -491,7 +606,7 @@ const makeEnabled = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const client = yield* PersonalRelayClient;
-  const processes = yield* FrpcProcess;
+  const processes = yield* ConnectorProcess;
   const sessions = yield* SessionStore.SessionStore;
   const grants = yield* PairingGrantStore.PairingGrantStore;
   const scope = yield* Effect.scope;
@@ -501,6 +616,12 @@ const makeEnabled = Effect.gen(function* () {
   const configPath = path.join(personalDirectory, "frpc.toml");
   const statusPath = path.join(config.stateDir, PERSONAL_RELAY_STATUS_FILE);
   const frpcPath = config.personalFrpcPath?.trim() || "frpc";
+  const cloudflaredPath = config.personalCloudflaredPath?.trim() || "cloudflared";
+  const cloudflaredProtocol = config.personalCloudflaredProtocol;
+  const configRelayKey =
+    config.personalRelayKey === undefined
+      ? undefined
+      : Redacted.value(config.personalRelayKey).trim() || undefined;
 
   const provideHostFileServices = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
@@ -528,7 +649,7 @@ const makeEnabled = Effect.gen(function* () {
   const hostRef = yield* Ref.make<PersonalHostFile | null>(initialHost);
   const fiberRef = yield* Ref.make<Fiber.Fiber<void> | null>(null);
   const statusRef = yield* Ref.make<PersonalRelayState>(
-    initialHost === null ? disabledState(config) : toStatus(initialHost),
+    initialHost === null ? disabledState(config) : toPersonalRelayState(initialHost),
   );
 
   const writeStatusFile = Effect.fn("PersonalRelay.writeStatusFile")(function* (
@@ -579,7 +700,7 @@ const makeEnabled = Effect.gen(function* () {
       host === null
         ? disabledState(config)
         : {
-            ...toStatus(host),
+            ...toPersonalRelayState(host),
             online: false,
             connectorRunning: false,
             lastError: null,
@@ -613,23 +734,19 @@ const makeEnabled = Effect.gen(function* () {
     return next;
   });
 
-  const applyRegistration = Effect.fn("PersonalRelay.applyRegistration")(function* (
-    registration: FrpRegistration,
-  ) {
+  const applyRegistration = Effect.fn("PersonalRelay.applyRegistration")(function* (input: {
+    readonly registration: PersonalHostRegistration;
+    readonly relayKey?: string | undefined;
+  }) {
+    const registration = input.registration;
     const previous = yield* Ref.get(hostRef);
-    const next: PersonalHostFile = {
-      enabled: true,
-      paused: previous?.paused ?? false,
+    const next = hostFileFromRegistration({
+      registration,
+      previous,
       relayUrl: previous?.relayUrl ?? "",
-      label: registration.label ?? previous?.label ?? null,
-      hostId: registration.hostId,
-      hostKey: registration.hostKey,
-      hostKeyVersion: registration.hostKeyVersion,
-      hostToken: registration.hostToken,
-      publicUrl: registration.publicUrl,
-      frp: registration.frp,
-      updatedAt: DateTime.formatIso(yield* DateTime.now),
-    };
+      relayKey: input.relayKey,
+      now: DateTime.formatIso(yield* DateTime.now),
+    });
     if (previous !== null && previous.hostKey !== registration.hostKey) {
       yield* grants.clearHostKeyGrant();
       yield* revokeGuestSessions(previous.hostId);
@@ -648,22 +765,28 @@ const makeEnabled = Effect.gen(function* () {
       hostId: next.hostId,
       publicUrl: next.publicUrl,
       label: next.label,
-      connectorKind: "frp",
-      connectorMode: null,
+      connectorKind: next.connector.kind,
+      connectorMode: connectorModeOf(next.connector),
       lastError: null,
     }));
     return next;
   });
 
-  const writeConfig = Effect.fn("PersonalRelay.writeConfig")(function* (host: PersonalHostFile) {
+  const prepareConnectorFiles = Effect.fn("PersonalRelay.prepareConnectorFiles")(function* (
+    host: PersonalHostFile,
+  ) {
+    if (host.connector.kind !== "frp") {
+      yield* fs.remove(configPath).pipe(Effect.ignore);
+      return;
+    }
     yield* fs.makeDirectory(personalDirectory, { recursive: true });
     yield* fs.writeFileString(
       configPath,
       renderFrpcConfig({
-        serverAddr: host.frp.serverAddr,
-        serverPort: host.frp.serverPort,
-        authToken: host.frp.authToken,
-        domain: host.frp.domain,
+        serverAddr: host.connector.serverAddr,
+        serverPort: host.connector.serverPort,
+        authToken: host.connector.authToken,
+        domain: host.connector.domain,
         localPort: config.port,
       }),
       PRIVATE_FILE,
@@ -690,21 +813,27 @@ const makeEnabled = Effect.gen(function* () {
   });
 
   const heartbeatLoop = Effect.fn("PersonalRelay.heartbeatLoop")(function* () {
-    const interval = 30_000;
     while (true) {
-      yield* Effect.sleep(`${interval} millis`);
       const current = yield* Ref.get(hostRef);
       if (current === null || !current.enabled) return;
+      yield* Effect.sleep(`${normalizeHeartbeatInterval(current.heartbeatIntervalMs)} millis`);
+      const latest = yield* Ref.get(hostRef);
+      if (latest === null || !latest.enabled) return;
+      const quickPublicUrl =
+        latest.connector.kind === "cloudflare-tunnel" && latest.connector.mode === "quick"
+          ? latest.publicUrl.trim()
+          : "";
       const result = yield* client.heartbeat({
-        relayUrl: current.relayUrl,
-        hostToken: current.hostToken,
-        hostKeyVersion: current.hostKeyVersion,
-        label: current.label,
-        online: !current.paused,
+        relayUrl: latest.relayUrl,
+        hostToken: latest.hostToken,
+        hostKeyVersion: latest.hostKeyVersion,
+        label: latest.label,
+        online: !latest.paused,
+        ...(quickPublicUrl.length === 0 ? {} : { publicUrl: quickPublicUrl }),
       });
       if (result.hostKey !== undefined && result.hostKeyVersion !== undefined) {
         yield* applyHostKey({
-          host: current,
+          host: latest,
           hostKey: result.hostKey,
           hostKeyVersion: result.hostKeyVersion,
         });
@@ -714,9 +843,36 @@ const makeEnabled = Effect.gen(function* () {
           sessions.revoke(AuthSessionId.make(sessionId)).pipe(Effect.ignore),
         );
       }
-      yield* reportClients(current);
+      yield* reportClients(latest);
     }
   });
+
+  const updateQuickPublicUrl = Effect.fn("PersonalRelay.updateQuickPublicUrl")(function* (
+    publicUrl: string,
+  ) {
+    const current = yield* Ref.get(hostRef);
+    if (current === null || !current.enabled) return;
+    if (current.connector.kind !== "cloudflare-tunnel" || current.connector.mode !== "quick") {
+      return;
+    }
+    if (current.publicUrl === publicUrl) return;
+    const next: PersonalHostFile = {
+      ...current,
+      publicUrl,
+      updatedAt: DateTime.formatIso(yield* DateTime.now),
+    };
+    yield* Ref.set(hostRef, next);
+    yield* persistPersonalHost(next).pipe(Effect.ignore);
+    yield* updateStatus((status) => ({ ...status, publicUrl }));
+  });
+
+  const connectorExitMessage = (connector: PersonalConnector, lastError: string) => {
+    const label = connector.kind === "cloudflare-tunnel" ? "cloudflared" : "frpc";
+    if (lastError.length > 0) return `${label} exited: ${lastError}`;
+    return connector.kind === "frp"
+      ? "frpc exited unexpectedly. Install frpc or set T3CODE_FRPC_PATH."
+      : "cloudflared exited unexpectedly. Install cloudflared or set T3CODE_CLOUDFLARED_PATH.";
+  };
 
   const connectorAttempt = Effect.fn("PersonalRelay.connectorAttempt")(function* () {
     const existing = yield* Ref.get(hostRef);
@@ -735,31 +891,53 @@ const makeEnabled = Effect.gen(function* () {
         paused: true,
         connectorRunning: false,
       }));
-      yield* Effect.sleep("30 seconds");
+      yield* Effect.sleep(`${normalizeHeartbeatInterval(existing.heartbeatIntervalMs)} millis`);
       return;
     }
-    const registration = yield* client.register({
-      relayUrl: existing.relayUrl,
-      environmentId,
-      label: existing.label,
-      platform: yield* HostProcess.Platform,
-    });
-    const host = yield* applyRegistration(registration);
-    yield* writeConfig(host);
+    const relayKey = existing.relayKey ?? configRelayKey;
+    const registration = normalizeHostRegistration(
+      yield* client.register({
+        relayUrl: existing.relayUrl,
+        environmentId,
+        label: existing.label,
+        platform: yield* HostProcess.Platform,
+        originPort: config.port,
+        ...(relayKey === undefined ? {} : { relayKey }),
+      }),
+    );
+    const host = yield* applyRegistration({ registration, relayKey });
+    yield* prepareConnectorFiles(host);
     yield* updateStatus((current) => ({
       ...current,
       enabled: true,
       paused: false,
       online: true,
-      connectorKind: "frp",
-      connectorMode: null,
+      connectorKind: host.connector.kind,
+      connectorMode: connectorModeOf(host.connector),
       connectorRunning: false,
       lastError: null,
     }));
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const handle = yield* processes.spawn({ frpcPath, configPath });
-        yield* updateStatus((current) => ({ ...current, connectorRunning: true }));
+        const handle = yield* processes.spawn({
+          connector: host.connector,
+          port: config.port,
+          configPath,
+          frpcPath,
+          cloudflaredPath,
+          cloudflaredProtocol,
+        });
+        if (host.connector.kind === "cloudflare-tunnel" && host.connector.mode === "quick") {
+          const publicUrl = yield* handle.publicUrl;
+          if (publicUrl !== null) yield* updateQuickPublicUrl(publicUrl);
+        }
+        yield* updateStatus((current) => ({
+          ...current,
+          online: true,
+          connectorRunning: true,
+          connectorKind: host.connector.kind,
+          connectorMode: connectorModeOf(host.connector),
+        }));
         yield* Effect.raceFirst(
           heartbeatLoop(),
           handle.exited.pipe(
@@ -768,10 +946,7 @@ const makeEnabled = Effect.gen(function* () {
               Effect.fail(
                 new PersonalNetworkError({
                   operation: "start",
-                  detail:
-                    lastError.length > 0
-                      ? `frpc exited: ${lastError}`
-                      : "frpc exited unexpectedly. Install frpc or set T3CODE_FRPC_PATH.",
+                  detail: connectorExitMessage(host.connector, lastError),
                 }),
               ),
             ),
@@ -851,33 +1026,43 @@ const makeEnabled = Effect.gen(function* () {
           });
         }
         const previous = yield* Ref.get(hostRef);
-        if (previous !== null) {
-          yield* stopConnector;
-          if (previous.relayUrl !== relayUrl) {
-            yield* client
-              .unregister({ relayUrl: previous.relayUrl, hostToken: previous.hostToken })
-              .pipe(Effect.ignore);
-          }
-        }
-        const registration = yield* client.register({
+        const relayKey =
+          input.relayKey?.trim() ||
+          (previous?.relayUrl === relayUrl ? previous.relayKey : undefined) ||
+          configRelayKey;
+        const label =
+          input.label?.trim() || previous?.label || config.personalLabel?.trim() || null;
+        const registration = normalizeHostRegistration(
+          yield* registerBeforeUnregister({
+            previousRelayUrl: previous?.relayUrl ?? null,
+            nextRelayUrl: relayUrl,
+            register: client.register({
+              relayUrl,
+              environmentId,
+              label,
+              platform: yield* HostProcess.Platform,
+              originPort: config.port,
+              ...(relayKey === undefined ? {} : { relayKey }),
+            }),
+            unregister: (unregisterRelayUrl) =>
+              previous === null
+                ? Effect.void
+                : client
+                    .unregister({
+                      relayUrl: unregisterRelayUrl,
+                      hostToken: previous.hostToken,
+                    })
+                    .pipe(Effect.ignore),
+          }),
+        );
+        yield* stopConnector;
+        const host = hostFileFromRegistration({
+          registration,
+          previous,
           relayUrl,
-          environmentId,
-          label: input.label?.trim() || previous?.label || config.personalLabel?.trim() || null,
-          platform: yield* HostProcess.Platform,
+          relayKey,
+          now: DateTime.formatIso(yield* DateTime.now),
         });
-        const host: PersonalHostFile = {
-          enabled: true,
-          paused: false,
-          relayUrl,
-          label: registration.label,
-          hostId: registration.hostId,
-          hostKey: registration.hostKey,
-          hostKeyVersion: registration.hostKeyVersion,
-          hostToken: registration.hostToken,
-          publicUrl: registration.publicUrl,
-          frp: registration.frp,
-          updatedAt: DateTime.formatIso(yield* DateTime.now),
-        };
         yield* Ref.set(hostRef, host);
         yield* persistPersonalHost(host);
         yield* grants.setHostKeyGrant({ hostKey: host.hostKey, hostId: host.hostId });
@@ -890,8 +1075,8 @@ const makeEnabled = Effect.gen(function* () {
           publicUrl: host.publicUrl,
           label: host.label,
           online: false,
-          connectorKind: "frp",
-          connectorMode: null,
+          connectorKind: host.connector.kind,
+          connectorMode: connectorModeOf(host.connector),
           connectorRunning: false,
           lastError: null,
         }));
@@ -1073,5 +1258,5 @@ export const layer: Layer.Layer<
   | PairingGrantStore.PairingGrantStore
 > = Layer.effect(
   PersonalRelay,
-  makeEnabled.pipe(Effect.provide(Layer.merge(layerClient(), layerFrpcProcess))),
+  makeEnabled.pipe(Effect.provide(Layer.merge(layerClient(), layerConnectorProcess))),
 );
