@@ -23,6 +23,11 @@ function configuredHostedAppChannel(): HostedAppChannel | null {
   return channel === "latest" || channel === "nightly" ? channel : null;
 }
 
+/** The relay portal is served from a Worker at an origin that is unknown at build time. */
+function configuredPersonalAdminConsole(): boolean {
+  return import.meta.env.VITE_PERSONAL_ADMIN_CONSOLE?.trim() === "1";
+}
+
 function originFromUrl(value: string): string | null {
   try {
     return new URL(value).origin;
@@ -32,6 +37,10 @@ function originFromUrl(value: string): string | null {
 }
 
 export function isHostedStaticApp(url?: URL): boolean {
+  if (configuredPersonalAdminConsole()) {
+    return true;
+  }
+
   if (configuredBackendUrl()) {
     return false;
   }
