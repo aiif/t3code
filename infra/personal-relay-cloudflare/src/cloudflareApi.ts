@@ -66,7 +66,8 @@ export class CloudflareApiClient {
 
   constructor(options: CloudflareApiClientOptions) {
     this.#apiToken = options.apiToken;
-    this.#fetch = options.fetch ?? fetch;
+    // workerd requires the global fetch to keep its globalThis receiver.
+    this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
     this.#baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/u, "");
     this.#timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
@@ -122,7 +123,11 @@ export class CloudflareApiClient {
       if (controller.signal.aborted) {
         throw new CloudflareApiError("Cloudflare API request timed out.", { retryable: true });
       }
-      throw new CloudflareApiError("Could not reach the Cloudflare API.", { retryable: true });
+      const detail = error instanceof Error ? error.message.trim() : "";
+      throw new CloudflareApiError(
+        `Could not reach the Cloudflare API.${detail.length === 0 ? "" : ` ${this.#redact(detail)}`}`,
+        { retryable: true },
+      );
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }

@@ -870,7 +870,9 @@ async function ensureTunnel(
     if (cause instanceof TunnelProvisionError && cause.status === 409) {
       throw new ApiRequestError(409, "The hostname is already in use.");
     }
-    throw new ApiRequestError(502, "Tunnel provisioning failed. Try again later.");
+    const detail =
+      cause instanceof Error && cause.message.trim().length > 0 ? ` ${cause.message.trim()}` : "";
+    throw new ApiRequestError(502, `Tunnel provisioning failed.${detail}`);
   }
 }
 

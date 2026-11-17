@@ -370,7 +370,7 @@ describe("named mode provisioning", () => {
       },
     });
     expect(retryable.status).toBe(502);
-    expect(errorOf(await json(retryable))).toBe("Tunnel provisioning failed. Try again later.");
+    expect(errorOf(await json(retryable))).toBe("Tunnel provisioning failed. Rate limited.");
     expect(harness.store.countActiveHosts()).toBe(0);
 
     harness.provisioner.failNext(new TunnelProvisionError("Conflict.", { status: 409 }));
