@@ -58,7 +58,8 @@ describe("personal relay registration contract", () => {
       ...base,
       connector: { kind: "cloudflare-tunnel", mode: "quick" },
     });
-    expect("connector" in quick && quick.connector.mode).toBe("quick");
+    const quickConnector = "connector" in quick ? quick.connector : null;
+    expect(quickConnector?.kind === "cloudflare-tunnel" ? quickConnector.mode : null).toBe("quick");
   });
 
   it("keeps quick-mode heartbeats optional and relay state explicit", () => {
