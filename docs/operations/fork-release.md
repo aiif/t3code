@@ -50,6 +50,23 @@ The portal URL comes from the repository variable `T3CODE_PERSONAL_PORTAL_URL`.
 Leave it unset to ship with every relay field blank; the desktop, web, and
 Android builds then ask the user for their relay.
 
+## VPS relay packages
+
+The self-hosted relay has its own publish train in
+[`publish-t3relay.yml`](../../.github/workflows/publish-t3relay.yml). A
+`vps-relay-v*` tag, or a manual main-branch dispatch, publishes:
+
+- `@aiif/t3relay`, the Docker one-command installer and `prompt` command.
+- `@aiif/create-t3relay`, the `npm create @aiif/t3relay` wrapper.
+- `t3relay-native-<version>.tar.gz` and `SHA256SUMS`, attached to the matching
+  GitHub Release for the AI-native systemd path.
+
+The workflow needs an `NPM_TOKEN` secret with publish rights for the `@aiif`
+scope. Override the package names with the repository variables
+`T3RELAY_NPM_PACKAGE_NAME` and `T3RELAY_NPM_CREATE_PACKAGE_NAME` when testing a
+fork under another scope. This train is independent of the desktop/Android
+`v*.*.*` release tags.
+
 ## Repository setup
 
 - Enable Actions for the fork.

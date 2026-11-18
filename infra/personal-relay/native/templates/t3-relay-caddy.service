@@ -1,0 +1,28 @@
+[Unit]
+Description=T3 Code personal relay Caddy
+After=network-online.target t3-relay-registry.service t3-relay-frps.service
+Wants=network-online.target t3-relay-registry.service t3-relay-frps.service
+
+[Service]
+Type=simple
+User=t3relay
+Group=t3relay
+UMask=0077
+Environment=HOME=/opt/t3-relay
+Environment=XDG_DATA_HOME=/opt/t3-relay/caddy/data
+Environment=XDG_CONFIG_HOME=/opt/t3-relay/caddy/config
+ExecStart=/opt/t3-relay/bin/caddy run --config /opt/t3-relay/Caddyfile --adapter caddyfile
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/t3-relay/caddy
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

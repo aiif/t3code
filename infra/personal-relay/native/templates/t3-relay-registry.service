@@ -1,0 +1,25 @@
+[Unit]
+Description=T3 Code personal relay registry
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=t3relay
+Group=t3relay
+UMask=0077
+EnvironmentFile=/opt/t3-relay/relay.env
+ExecStart=/opt/t3-relay/runtime/node /opt/t3-relay/registry/registry.mjs
+WorkingDirectory=/opt/t3-relay/registry
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/t3-relay/data
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

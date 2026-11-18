@@ -1,6 +1,6 @@
 # Personal relay
 
-Self-hosted relay for the personal-network T3 Code fork. One VPS runs OpenResty,
+Self-hosted relay for the personal-network T3 Code fork. One VPS runs Caddy,
 `frps`, and a small registry. Hosts stay behind NAT and dial out; guests use the
 desktop app or the Android APK with a host key. The portal at the root origin is
 the **admin console**, not a guest client.
@@ -8,8 +8,8 @@ the **admin console**, not a guest client.
 ```text
 admin PWA (admin key)
         | https://t3.example.com
-   OpenResty (80/443)
-        +-- /              -> /srv/t3-portal (admin console + app shell)
+   Caddy (80/443)
+        +-- /              -> /opt/t3-relay/portal (admin console + app shell)
         +-- /v1/*          -> 127.0.0.1:8787 (registry)
         +-- *.t3.example.com -> 127.0.0.1:8080 (frps vhost)
                                   ^ frp control 7001
@@ -20,7 +20,42 @@ guest desktop / Android APK
    -> host /oauth/token (host key) -> bearer session -> operate that host
 ```
 
-## What runs here
+## Deploy
+
+There are two supported channels. Both use the same registry, admin console,
+`deploy.json` schema, and `/opt/t3-relay` layout.
+
+**Docker one-command.** On a fresh VPS with Docker and the DNS records below:
+
+```sh
+npx @aiif/t3relay@latest init --domain relay.example.com --email you@example.com
+```
+
+This writes a Docker Compose stack with Caddy, `frps`, and the registry, starts
+it, and prints the admin key once. Use `upgrade`, `doctor`, `status`, `logs`, and
+`uninstall` for day-two operations.
+
+**AI-native, no Docker.** On a VPS where an agent CLI is available:
+
+```sh
+npx @aiif/t3relay@latest prompt
+```
+
+Paste the printed prompt into the agent. It downloads the pinned native bundle,
+installs systemd services and Caddy, and verifies the relay. The runbook is
+[`native/AI-DEPLOY.md`](native/AI-DEPLOY.md).
+
+Both paths need two DNS-only records (no Cloudflare proxy):
+
+```text
+A     relay.example.com      <VPS IPv4>
+A     *.relay.example.com    <VPS IPv4>
+```
+
+Add `AAAA` records when the VPS has IPv6. Only `80`, `443`, and `7001` are
+public; `8080` and `8787` stay internal.
+
+## What the manual stack runs
 
 | Piece            | Purpose                                            | Exposure           |
 | ---------------- | -------------------------------------------------- | ------------------ |
@@ -31,11 +66,11 @@ guest desktop / Android APK
 `8080` (frps vhost port) and `8787` (registry) are published on loopback only.
 The T3 server on each host keeps binding loopback; `frpc` is the only way in.
 
-## Deploying
+## Manual Compose + OpenResty deployment
 
-> This page describes the Docker Compose deployment. A native systemd host uses
-> the unit layout and update commands in
-> [Personal relay operations](../../docs/operations/personal-relay.md#native-systemd-install).
+> The npm and AI-native channels above are the recommended paths for a new VPS.
+> This section is for an existing host that already runs OpenResty and wants to
+> add the relay alongside other vhosts.
 
 These steps change a live VPS. Run them yourself; nothing in this repository
 applies them automatically.

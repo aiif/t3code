@@ -60,6 +60,14 @@
         "scripts/build-npm-package.mjs",
       ],
     },
+    "infra/personal-relay": {
+      // The deploy wrappers and npm entry are run by path, not imported.
+      "entry": [
+        "scripts/deploy.mjs",
+        "scripts/deploy/npm-entry.ts",
+        "scripts/build-npm-package.mjs",
+      ],
+    },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
       "entry": [

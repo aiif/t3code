@@ -1,0 +1,23 @@
+[Unit]
+Description=T3 Code personal relay frps
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=t3relay
+Group=t3relay
+UMask=0077
+ExecStart=/opt/t3-relay/bin/frps -c /opt/t3-relay/frps.toml
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

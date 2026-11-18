@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    // A plain Node installer on purpose: it has no Effect dependency, so the
+    // Effect-specific language-service diagnostics do not apply here.
+    "plugins": []
+  },
+  "include": ["scripts/**/*.ts"]
+}

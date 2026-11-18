@@ -1,0 +1,11 @@
+bindPort = 7001
+vhostHTTPPort = 8080
+proxyBindAddr = "127.0.0.1"
+
+auth.method = "token"
+auth.token = "{{FRP_AUTH_TOKEN}}"
+
+allowPorts = []
+
+transport.maxPoolCount = 10
+userConnTimeout = 10

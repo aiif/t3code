@@ -5,6 +5,28 @@ The container deployment lives in [`infra/personal-relay`](../../infra/personal-
 that README owns its step-by-step procedure. This page covers health checks,
 native systemd updates, and recovery.
 
+## Deployment channels
+
+There are two supported channels. Both use the same registry, admin console,
+`deploy.json` schema, and `/opt/t3-relay` layout.
+
+- **Docker one-command:** `npx @aiif/t3relay@latest init --domain relay.example.com`
+  writes and starts a Caddy + `frps` + registry stack. Day-two commands:
+  `upgrade`, `doctor`, `status`, `logs`, `uninstall`.
+- **AI-native:** `npx @aiif/t3relay@latest prompt` prints a prompt for an agent
+  running on the VPS. The agent follows
+  [`native/AI-DEPLOY.md`](../../infra/personal-relay/native/AI-DEPLOY.md),
+  installs systemd services and Caddy without Docker, and verifies the relay.
+
+Both need two DNS-only records, `A relay.example.com` and
+`A *.relay.example.com` (plus `AAAA` when the VPS has IPv6), and only public
+ports `80`, `443`, and `7001`. `8080` and `8787` must stay internal (loopback on
+the native path, the Compose network on Docker).
+
+The manual Compose + OpenResty and native systemd sections below are retained
+for existing hosts that need to coexist with other vhosts. New deployments
+should use one of the two channels above.
+
 ## Components
 
 | Piece     | Binds                            | Notes                                             |
@@ -21,6 +43,10 @@ the host offline when heartbeats expire (90 seconds by default). Pause stops
 `frpc` and reports `online: false` immediately.
 
 ## Native systemd install
+
+> The AI-native channel above is the supported no-Docker path and uses Caddy.
+> The OpenResty unit layout below is retained for hosts that already run
+> OpenResty and cannot give Caddy ports 80/443.
 
 The relay can run without Docker. A native host uses three units:
 `t3-registry.service`, `frps.service`, and `openresty.service`.
@@ -51,6 +77,33 @@ rsync -a --delete --exclude .well-known --exclude '*.map' apps/web/dist/ root@<v
 Portal files need no service restart. The service worker serves a cached shell,
 so reload once after an update.
 
+## Docker channel operations
+
+The npm installer keeps everything under `/opt/t3-relay`:
+
+| Path          | Purpose                                                 |
+| ------------- | ------------------------------------------------------- |
+| `deploy.json` | Admin key, secret key, frp token, domain, images (0600) |
+| `relay.env`   | Registry environment (0600)                             |
+| `data/`       | Registry SQLite, VAPID keys                             |
+| `caddy/`      | Certificates and Caddy state                            |
+| `backups/`    | Timestamped `upgrade` backups, newest three kept        |
+
+```sh
+npx @aiif/t3relay@latest doctor
+npx @aiif/t3relay@latest status
+npx @aiif/t3relay@latest logs
+npx @aiif/t3relay@latest upgrade
+```
+
+`upgrade` reuses the keys and host registrations. It stops the registry,
+copies `data/`, `deploy.json`, `relay.env`, `Caddyfile`, `frps.toml`, and
+`compose.yaml` into `backups/<timestamp>/`, then recreates the containers. If
+health fails, the printed backup path is the rollback point.
+
+Back up `deploy.json` and `data/` before the first host registers. Losing the
+secret key breaks host-key reveal and forces hosts to register again.
+
 ## Health checks
 
 ```sh
@@ -68,6 +121,17 @@ ss -H -ltnp | grep -E ':(80|443|7001|8080|8787) '
 From outside, `8080` and `8787` must time out.
 
 ## Rotating the admin key
+
+For the Docker channel:
+
+```sh
+npx @aiif/t3relay@latest upgrade --rotate-admin-key
+```
+
+The CLI writes the new key to `/opt/t3-relay/deploy.json` and `relay.env`,
+recreates the registry, and prints the key once.
+
+For the manual Compose and native paths:
 
 1. Generate a new key (`openssl rand -base64 32`).
 2. Update `T3CODE_ADMIN_KEY` in `infra/personal-relay/.env` (Compose) or
@@ -91,6 +155,10 @@ and the host's next heartbeat stops its connector. The removed host stays under
 the environment register again.
 
 ## Backup and migration
+
+For the Docker and AI-native channels, back up `/opt/t3-relay/deploy.json` and
+`/opt/t3-relay/data`; the Docker channel also keeps `relay.env`, `Caddyfile`,
+`frps.toml`, and `compose.yaml` there.
 
 - Back up the registry SQLite file and the env file before upgrading. The
   database is `/var/lib/t3-registry/registry.sqlite` on a native install, or the

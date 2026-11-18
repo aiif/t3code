@@ -23,6 +23,37 @@ Both use the same host keys, the same admin console, and the same guest flow.
 The rest of this page applies to either relay; see
 [Cloudflare Tunnel relay](#cloudflare-tunnel-relay) for what differs.
 
+## Deploy a relay
+
+A self-hosted relay needs a fresh Linux VPS with `80`, `443`, and `7001` free,
+and two DNS-only records:
+
+```text
+A     relay.example.com      <VPS IPv4>
+A     *.relay.example.com    <VPS IPv4>
+```
+
+Add `AAAA` records when the VPS has IPv6. Do not proxy these records through
+Cloudflare.
+
+On the VPS, either use the Docker installer:
+
+```sh
+npx @aiif/t3relay@latest init --domain relay.example.com --email you@example.com
+```
+
+or let an agent install it natively without Docker:
+
+```sh
+npx @aiif/t3relay@latest prompt
+```
+
+Paste the printed prompt into your agent. Both paths print the relay URL, the
+admin key once, and the host URL rule. Open the relay URL and enter the admin
+key to reach the admin console. See
+[self-hosted relay operations](../operations/personal-relay.md) for upgrades,
+backups, and troubleshooting.
+
 ## Sharing a computer
 
 1. Open **Settings → Connections → Personal network**.

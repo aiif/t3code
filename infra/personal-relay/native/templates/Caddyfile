@@ -1,0 +1,44 @@
+{
+	admin off
+{{EMAIL_LINE}}
+{{ON_DEMAND_TLS}}
+}
+
+https://{{DOMAIN}} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:8787 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle /assets/* {
+		root * /opt/t3-relay/portal
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	handle /.well-known/* {
+		root * /opt/t3-relay/portal
+		file_server
+	}
+
+	handle {
+		root * /opt/t3-relay/portal
+		try_files {path} /index.html
+		header Cache-Control "no-cache"
+		file_server
+	}
+}
+
+https://*.{{DOMAIN}} {
+{{TLS_DIRECTIVE}}
+	reverse_proxy 127.0.0.1:8080 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		flush_interval -1
+	}
+}
