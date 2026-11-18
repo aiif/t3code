@@ -71,7 +71,7 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Publishing t3cf@$version"
+          echo "Publishing ${T3CF_PACKAGE_NAME}@$version"
 
       - name: Refuse to overwrite a published version
         env:
@@ -80,8 +80,8 @@ jobs:
         run: |
           set -euo pipefail
           # An existing version means the tag or input is wrong; npm would reject it later anyway.
-          if npm view "t3cf@$VERSION" version >/dev/null 2>&1; then
-            echo "::error::t3cf@$VERSION already exists on npm."
+          if npm view "${T3CF_PACKAGE_NAME}@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::${T3CF_PACKAGE_NAME}@$VERSION already exists on npm."
             exit 1
           fi
 
