@@ -185,8 +185,8 @@ certificate; during provisioning that name may answer Cloudflare error 1033 unti
   then deletes the Worker. The registry and host records go with it, so guests
   must add hosts again. Tunnels belonging to another prefix are left alone.
 - Worker logs: `npx wrangler tail <worker-name>` from the package directory.
-  Logs carry method, path, status, host id, and duration; never keys, tokens, or
-  bodies.
+  Structured events cover host registration, key rotation, admin actions,
+  tunnel provisioning steps, and API errors; never keys, tokens, or bodies.
 - Cloudflare dashboard checks: **Workers & Pages** for the Worker and its
   deployment, **Durable Objects** for the registry class, **Zero Trust →
   Networks → Tunnels** for named tunnels, and **DNS** for the proxied CNAMEs.
@@ -197,6 +197,40 @@ admin key is accepted only on `/v1/admin/*`, the enrollment key only on
 resolve. Rate limits default to 10 registrations, 120 resolves, and 300 admin
 requests per minute per IP, and `--max-hosts` caps registrations. CORS allows the
 relay's own origin plus any `T3CODE_ALLOWED_ORIGINS` entries; `*` is rejected.
+
+## Operation logs
+
+Both sides emit structured events for the operations that usually need
+debugging. They never contain the admin key, enrollment key, host key, host
+token, tunnel token, Cloudflare API token, authorization header, or request
+body.
+
+Worker (live):
+
+```sh
+pnpm --filter @t3tools/personal-relay-cloudflare exec wrangler tail t3cf --format pretty
+```
+
+Or open **Workers & Pages → the Worker → Observability** in Cloudflare. Key
+events:
+
+| Event                                                                                                             | What it records                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `host_registered`, `host_reregistered`                                                                            | `hostId`, `environmentId`, `mode`, connector kind, `publicUrl`, and whether the host key was reused |
+| `host_unregistered`, `host_key_rotated`, `host_key_rotation_announced`                                            | Host lifecycle and key changes                                                                      |
+| `admin_host_action`                                                                                               | Admin rotate/remove/restore/revoke actions                                                          |
+| `tunnel_created`, `tunnel_reused`, `tunnel_ingress_configured`, `tunnel_token_fetched`, `tunnel_ensure_succeeded` | Named tunnel provisioning steps                                                                     |
+| `tunnel_ensure_failed`, `tunnel_provision_failed`, `tunnel_cleanup_failed`                                        | The failing tunnel step and the Cloudflare error detail                                             |
+| `api_rejected`, `api_error`                                                                                       | HTTP status and the same error text returned to the caller                                          |
+
+Host/server: `personal relay starting`, `registered`, `start failed`,
+`stopping`, `pausing`, `resuming`, and `host key rotated`. Registration logs
+include the relay origin, whether the relay switched, the connector kind/mode,
+the public URL, and whether the host key changed. The host log goes to the
+server log stream and the app's `userdata/logs` directory.
+
+The client surfaces the relay's `{ "error": "..." }` text in the UI, so a
+provisioning 502 names the failed step instead of only `The relay answered 502`.
 
 ## Limits and costs
 

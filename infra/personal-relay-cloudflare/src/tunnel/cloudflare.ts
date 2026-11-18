@@ -1,4 +1,5 @@
 import { CloudflareApiClient, CloudflareApiError } from "../cloudflareApi.ts";
+import { describeError, logRelayEvent } from "../logging.ts";
 import { TunnelProvisionError } from "./types.ts";
 import type {
   TunnelEnsureInput,
@@ -66,13 +67,28 @@ class CloudflareTunnelProvisioner implements TunnelProvisioner {
     const hostId = assertHostId(input.hostId);
     const hostname = this.#hostname(hostId);
     assertOriginPort(input.originPort);
+    logRelayEvent("tunnel_ensure_started", { hostId, hostname, originPort: input.originPort });
     try {
       const tunnel = await this.#ensureTunnel(hostId);
       await this.#configureIngress(tunnel.id, hostname, input.originPort);
+      logRelayEvent("tunnel_ingress_configured", {
+        hostId,
+        tunnelId: tunnel.id,
+        hostname,
+        originPort: input.originPort,
+      });
       const tunnelToken = await this.#fetchTunnelToken(tunnel.id);
+      logRelayEvent("tunnel_token_fetched", { hostId, tunnelId: tunnel.id });
       const dnsRecordId = await this.#ensureDnsRecord(tunnel.id, hostname);
+      logRelayEvent("tunnel_ensure_succeeded", {
+        hostId,
+        hostname,
+        tunnelId: tunnel.id,
+        dnsRecordId,
+      });
       return { tunnelId: tunnel.id, tunnelToken, hostname, dnsRecordId };
     } catch (error) {
+      logRelayEvent("tunnel_ensure_failed", { hostId, hostname, error: describeError(error) });
       throw toProvisionError(error);
     }
   }
@@ -81,6 +97,11 @@ class CloudflareTunnelProvisioner implements TunnelProvisioner {
     const hostId = assertHostId(input.hostId);
     const errors: Array<unknown> = [];
     let tunnelId = input.tunnelId ?? null;
+    logRelayEvent("tunnel_remove_started", {
+      hostId,
+      tunnelId,
+      hostname: input.hostname ?? null,
+    });
     if (tunnelId === null) {
       await attempt(errors, async () => {
         const tunnel = await this.#findTunnel(this.#tunnelName(hostId));
@@ -104,7 +125,11 @@ class CloudflareTunnelProvisioner implements TunnelProvisioner {
       isNotFound,
     );
     const first = errors[0];
-    if (first !== undefined) throw toProvisionError(first);
+    if (first !== undefined) {
+      logRelayEvent("tunnel_remove_failed", { hostId, tunnelId, error: describeError(first) });
+      throw toProvisionError(first);
+    }
+    logRelayEvent("tunnel_removed", { hostId, tunnelId });
   }
 
   async sweep(input: TunnelSweepInput): Promise<void> {
@@ -138,17 +163,23 @@ class CloudflareTunnelProvisioner implements TunnelProvisioner {
   async #ensureTunnel(hostId: string): Promise<CloudflareTunnel> {
     const name = this.#tunnelName(hostId);
     const existing = await this.#findTunnel(name);
-    if (existing !== null) return existing;
+    if (existing !== null) {
+      logRelayEvent("tunnel_reused", { hostId, tunnelId: existing.id, name });
+      return existing;
+    }
     try {
-      return await this.#api.request<CloudflareTunnel>({
+      const created = await this.#api.request<CloudflareTunnel>({
         method: "POST",
         path: `/accounts/${this.#accountId}/cfd_tunnel`,
         body: { name, config_src: "cloudflare" },
       });
+      logRelayEvent("tunnel_created", { hostId, tunnelId: created.id, name });
+      return created;
     } catch (error) {
       if (!(error instanceof CloudflareApiError) || error.status !== 409) throw error;
       const raced = await this.#findTunnel(name);
       if (raced === null) throw error;
+      logRelayEvent("tunnel_reused_after_race", { hostId, tunnelId: raced.id, name });
       return raced;
     }
   }

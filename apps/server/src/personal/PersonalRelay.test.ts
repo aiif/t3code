@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { PersonalConnector } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
@@ -14,7 +15,9 @@ import type { PersonalHostFile } from "./hostSharingState.ts";
 import {
   ConnectorProcess,
   decodePersonalRelayStatusFile,
+  layerClient,
   layerConnectorProcess,
+  PersonalRelayClient,
   registerBeforeUnregister,
   toPersonalRelayState,
 } from "./PersonalRelay.ts";
@@ -77,6 +80,49 @@ const spawnerLayer = (input: {
 
 const connectorLayer = (input: Parameters<typeof spawnerLayer>[0]) =>
   layerConnectorProcess.pipe(Layer.provide(spawnerLayer(input)));
+
+describe("PersonalRelayClient", () => {
+  it.effect("includes the relay error body in a failed request", () =>
+    Effect.gen(function* () {
+      const client = yield* PersonalRelayClient;
+      const error = yield* client
+        .register({
+          relayUrl: "https://relay.example.test",
+          environmentId: "environment-1",
+          label: "Home PC",
+          platform: "win32",
+          originPort: 3773,
+          relayKey: "enrollment-key",
+        })
+        .pipe(Effect.flip);
+
+      expect(error.status).toBe(502);
+      expect(error.detail).toContain("Tunnel provisioning failed.");
+      expect(error.detail).toContain("Zero Trust is not enabled.");
+    }).pipe(
+      Effect.provide(
+        layerClient().pipe(
+          Layer.provide(
+            Layer.succeed(
+              HttpClient.HttpClient,
+              HttpClient.make((request) =>
+                Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    request,
+                    Response.json(
+                      { error: "Tunnel provisioning failed. Zero Trust is not enabled." },
+                      { status: 502 },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+});
 
 describe("ConnectorProcess", () => {
   it.effect("waits for cloudflared's quick tunnel address", () => {

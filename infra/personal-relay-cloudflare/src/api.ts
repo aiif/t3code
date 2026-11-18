@@ -11,6 +11,7 @@ import {
   newHostToken,
   safeEqualText,
 } from "./crypto.ts";
+import { describeError, logRelayEvent } from "./logging.ts";
 import type { ClientSnapshotInput, HostRow, RegistryStore } from "./store/types.ts";
 import type { TunnelEnsureResult, TunnelProvisioner } from "./tunnel/types.ts";
 import { TunnelProvisionError } from "./tunnel/types.ts";
@@ -182,11 +183,17 @@ export async function handleApiRequest(
 
 function errorToResponse(cause: unknown): Response {
   if (cause instanceof ApiRequestError) {
+    logRelayEvent(cause.status >= 500 ? "api_error" : "api_rejected", {
+      status: cause.status,
+      error: cause.message,
+    });
     return errorResponse(cause.status, cause.message, { ...cause.headers });
   }
   if (cause instanceof WorkerConfigError) {
+    logRelayEvent("api_config_error", { status: 503, error: cause.message });
     return errorResponse(503, cause.message);
   }
+  logRelayEvent("api_error", { status: 500, error: describeError(cause) });
   return errorResponse(500, "Internal error.");
 }
 
@@ -242,6 +249,13 @@ async function registerRoute(request: Request, context: RegistryRequestContext):
       now,
     });
   }
+  logRelayEvent("host_registered", {
+    hostId,
+    environmentId: input.environmentId,
+    mode,
+    connector: tunnel === null ? "quick" : "named",
+    publicUrl,
+  });
   return jsonResponse(
     registrationBody(host, hostKey, hostToken, tunnel, context.config.heartbeatIntervalMs),
   );
@@ -288,6 +302,14 @@ async function reRegister(
     now,
   });
 
+  logRelayEvent("host_reregistered", {
+    hostId: existing.id,
+    environmentId: existing.environmentId,
+    mode,
+    connector: tunnel === null ? "quick" : "named",
+    publicUrl,
+    hostKeyReused: hostKey !== null,
+  });
   if (hostKey !== null) {
     return jsonResponse(
       registrationBody(updated, hostKey, hostToken, tunnel, context.config.heartbeatIntervalMs),
@@ -391,6 +413,12 @@ async function heartbeatRoute(
     hostKeyVersion < updated.keyVersion
       ? await rotationBody(context.config.secretKey, updated)
       : {};
+  if (rotation.hostKey !== undefined) {
+    logRelayEvent("host_key_rotation_announced", {
+      hostId: updated.id,
+      keyVersion: updated.keyVersion,
+    });
+  }
   return jsonResponse({
     hostId: updated.id,
     ...rotation,
@@ -420,6 +448,7 @@ async function unregisterRoute(
   const host = await authenticateHostToken(request, context);
   const removed = context.store.deleteHost(host.id);
   await removeTunnel(context, host);
+  logRelayEvent("host_unregistered", { hostId: host.id, removed });
   return jsonResponse({ removed });
 }
 
@@ -447,6 +476,7 @@ async function rotateHostKeyRoute(
   });
   if (hostKeyVersion === null) throw new ApiRequestError(410, "This host was removed.");
   context.store.audit({ action: "rotate-key", hostId: host.id, actor: "host", now });
+  logRelayEvent("host_key_rotated", { hostId: host.id, actor: "host", keyVersion: hostKeyVersion });
   return jsonResponse({ hostKey, hostKeyVersion });
 }
 
@@ -527,24 +557,28 @@ async function adminHostActionRoute(
     });
     if (hostKeyVersion === null) throw new ApiRequestError(404, "Unknown host.");
     context.store.audit({ action: "rotate-key", hostId, actor: "admin", now });
+    logRelayEvent("admin_host_action", { action, hostId, actor: "admin" });
     return jsonResponse({ hostKey, hostKeyVersion });
   }
   if (action === "remove") {
     const removed = context.store.revokeHost(hostId, now);
     if (!removed) throw new ApiRequestError(404, "Unknown host.");
     context.store.audit({ action: "remove-host", hostId, actor: "admin", now });
+    logRelayEvent("admin_host_action", { action, hostId, actor: "admin" });
     return jsonResponse({ removed });
   }
   if (action === "restore") {
     const restored = context.store.restoreHost(hostId, now);
     if (!restored) throw new ApiRequestError(404, "Unknown host.");
     context.store.audit({ action: "restore-host", hostId, actor: "admin", now });
+    logRelayEvent("admin_host_action", { action, hostId, actor: "admin" });
     return jsonResponse({ restored });
   }
   const body = await readJsonBody(request);
   const sessionId = requireText(body["sessionId"], "sessionId", MAX_SESSION_ID_LENGTH);
   const revoked = context.store.revokeClient(hostId, sessionId, now);
   context.store.audit({ action: "revoke-client", hostId, actor: "admin", now });
+  logRelayEvent("admin_host_action", { action: "revoke-client", hostId, actor: "admin" });
   return jsonResponse({ revoked });
 }
 
@@ -867,6 +901,11 @@ async function ensureTunnel(
       now,
     });
   } catch (cause) {
+    logRelayEvent("tunnel_provision_failed", {
+      hostId,
+      hostname: `${hostId}.${suffix}`,
+      error: describeError(cause),
+    });
     if (cause instanceof TunnelProvisionError && cause.status === 409) {
       throw new ApiRequestError(409, "The hostname is already in use.");
     }
@@ -886,7 +925,11 @@ async function removeTunnel(context: RegistryRequestContext, host: HostRow): Pro
       dnsRecordId: host.dnsRecordId ?? undefined,
       hostname: host.hostname ?? undefined,
     });
-  } catch {
+  } catch (cause) {
     // Cleanup is best effort; the daily sweep retries orphaned tunnels.
+    logRelayEvent("tunnel_cleanup_failed", {
+      hostId: host.id,
+      error: describeError(cause),
+    });
   }
 }

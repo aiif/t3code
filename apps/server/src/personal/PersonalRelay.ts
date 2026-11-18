@@ -202,7 +202,7 @@ export interface GuestClientReport {
   readonly lastSeenAt: string;
 }
 
-class PersonalRelayClient extends Context.Service<
+export class PersonalRelayClient extends Context.Service<
   PersonalRelayClient,
   {
     readonly register: (input: {
@@ -304,7 +304,36 @@ const requestError = (
 
 const baseUrlOf = (relayUrl: string) => relayUrl.trim().replace(/\/+$/u, "");
 
-const layerClient = (): Layer.Layer<PersonalRelayClient, never, HttpClient.HttpClient> =>
+function relayErrorFallback(operation: PersonalNetworkError["operation"], status: number): string {
+  if (status === 401) {
+    return operation === "start"
+      ? "The relay rejected the enrollment key."
+      : "The relay rejected this host key.";
+  }
+  if (status === 410) return "This host was removed from the relay.";
+  return `The relay answered ${status}.`;
+}
+
+const relayError = Effect.fn("PersonalRelay.relayError")(function* (
+  operation: PersonalNetworkError["operation"],
+  response: HttpClientResponse.HttpClientResponse,
+) {
+  const fallback = relayErrorFallback(operation, response.status);
+  const body = yield* HttpClientResponse.schemaBodyJson(
+    Schema.Struct({ error: Schema.optional(Schema.String) }),
+  )(response).pipe(Effect.option);
+  const serverError = Option.isSome(body) ? (body.value.error?.trim() ?? "") : "";
+  return yield* new PersonalNetworkError({
+    operation,
+    detail:
+      serverError.length === 0
+        ? fallback
+        : `${fallback.replace(/\.$/u, "")}: ${serverError.slice(0, 300)}`,
+    status: response.status,
+  });
+});
+
+export const layerClient = (): Layer.Layer<PersonalRelayClient, never, HttpClient.HttpClient> =>
   Layer.effect(
     PersonalRelayClient,
     Effect.gen(function* () {
@@ -317,21 +346,9 @@ const layerClient = (): Layer.Layer<PersonalRelayClient, never, HttpClient.HttpC
         httpClient.execute(request).pipe(
           Effect.timeout(REQUEST_TIMEOUT),
           Effect.mapError((cause) => requestError(operation, cause)),
-          Effect.filterOrFail(
+          Effect.filterOrElse(
             (response) => response.status < 400,
-            (response) =>
-              new PersonalNetworkError({
-                operation,
-                detail:
-                  response.status === 401
-                    ? operation === "start"
-                      ? "The relay rejected the enrollment key."
-                      : "The relay rejected this host key."
-                    : response.status === 410
-                      ? "This host was removed from the relay."
-                      : `The relay answered ${response.status}.`,
-                status: response.status,
-              }),
+            (response) => relayError(operation, response),
           ),
         );
 
@@ -1032,6 +1049,13 @@ const makeEnabled = Effect.gen(function* () {
           configRelayKey;
         const label =
           input.label?.trim() || previous?.label || config.personalLabel?.trim() || null;
+        yield* Effect.logInfo("personal relay starting", {
+          relayUrl,
+          previousRelayUrl: previous?.relayUrl ?? null,
+          relaySwitched: previous !== null && previous.relayUrl !== relayUrl,
+          hasRelayKey: relayKey !== undefined,
+          label,
+        });
         const registration = normalizeHostRegistration(
           yield* registerBeforeUnregister({
             previousRelayUrl: previous?.relayUrl ?? null,
@@ -1055,6 +1079,15 @@ const makeEnabled = Effect.gen(function* () {
                     .pipe(Effect.ignore),
           }),
         );
+        yield* Effect.logInfo("personal relay registered", {
+          hostId: registration.hostId,
+          environmentId,
+          relayUrl,
+          connectorKind: registration.connector.kind,
+          connectorMode: connectorModeOf(registration.connector),
+          publicUrl: registration.publicUrl,
+          hostKeyChanged: previous !== null && previous.hostKey !== registration.hostKey,
+        });
         yield* stopConnector;
         const host: PersonalHostFile = {
           ...hostFileFromRegistration({
@@ -1086,12 +1119,24 @@ const makeEnabled = Effect.gen(function* () {
         yield* startConnector;
         return yield* Ref.get(statusRef);
       }),
+    ).pipe(
+      Effect.tapError((error) =>
+        Effect.logWarning("personal relay start failed", {
+          relayUrl: input.relayUrl,
+          operation: error.operation,
+          detail: error.detail,
+        }),
+      ),
     );
 
   const stopSharing: PersonalRelay["Service"]["stopSharing"] = () =>
     lock(
       Effect.gen(function* () {
         const host = yield* Ref.get(hostRef);
+        yield* Effect.logInfo("personal relay stopping", {
+          hostId: host?.hostId ?? null,
+          relayUrl: host?.relayUrl ?? null,
+        });
         yield* stopConnector;
         if (host !== null) {
           yield* client
@@ -1117,6 +1162,10 @@ const makeEnabled = Effect.gen(function* () {
             detail: "Sharing is not enabled on this computer.",
           });
         }
+        yield* Effect.logInfo("personal relay pausing", {
+          hostId: host.hostId,
+          relayUrl: host.relayUrl,
+        });
         yield* stopConnector;
         const next: PersonalHostFile = {
           ...host,
@@ -1156,6 +1205,10 @@ const makeEnabled = Effect.gen(function* () {
             detail: "Sharing is not enabled on this computer.",
           });
         }
+        yield* Effect.logInfo("personal relay resuming", {
+          hostId: host.hostId,
+          relayUrl: host.relayUrl,
+        });
         const next: PersonalHostFile = {
           ...host,
           paused: false,
@@ -1198,6 +1251,11 @@ const makeEnabled = Effect.gen(function* () {
         yield* persistPersonalHost(next);
         yield* Ref.set(hostRef, next);
         yield* grants.setHostKeyGrant({ hostKey: next.hostKey, hostId: next.hostId });
+        yield* Effect.logInfo("personal relay host key rotated", {
+          hostId: next.hostId,
+          relayUrl: next.relayUrl,
+          keyVersion: next.hostKeyVersion,
+        });
         return { hostKey: rotated.hostKey };
       }),
     );
