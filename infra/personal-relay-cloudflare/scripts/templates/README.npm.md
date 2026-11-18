@@ -48,6 +48,21 @@ npx {{PACKAGE_NAME}}@latest init --destroy                         # delete tunn
 
 Run `npx {{PACKAGE_NAME}}@latest init --help` for every flag. `--yes` never prompts.
 
+## Operation logs
+
+The Worker emits structured JSON events for host registration, key rotation,
+admin actions, tunnel provisioning, and API errors. Tail them with:
+
+```sh
+npx wrangler tail <worker-name> --format pretty
+```
+
+or open **Workers & Pages → the Worker → Observability** in Cloudflare. Events
+such as `host_reregistered` (including `hostKeyReused`), `tunnel_ensure_failed`,
+and `api_error` carry the host and tunnel identifiers plus the Cloudflare error
+detail. Logs never contain keys, host tokens, tunnel tokens, authorization
+headers, or request bodies.
+
 ## Secrets
 
 Keys and the deploy metadata live in `~/.t3/personal-relay/<worker-name>.json`,

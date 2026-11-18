@@ -37,6 +37,28 @@ Both paths run the same deploy module. The npm package ships a prebuilt admin
 console and a prebundled Worker, needs Node 20.19 or newer, and has no
 `postinstall`.
 
+## Operation logs
+
+The Worker emits structured JSON events for the operations that usually need
+debugging:
+
+```sh
+pnpm --filter @t3tools/personal-relay-cloudflare exec wrangler tail t3cf --format pretty
+```
+
+or open **Workers & Pages → the Worker → Observability** in Cloudflare.
+
+Registration events include `hostId`, `environmentId`, connector mode,
+`publicUrl`, and `hostKeyReused`. Tunnel events cover `tunnel_created`,
+`tunnel_reused`, ingress, token fetch, DNS, `tunnel_ensure_failed`, and
+`tunnel_provision_failed`. API failures log `api_rejected`/`api_error` with the
+same error text returned to the caller. The host server logs relay starts,
+relay switches, registration, host-key changes, and start failures.
+
+Logs never include the admin key, enrollment key, host key, host token, tunnel
+token, Cloudflare API token, authorization header, or request body. Do not add
+them.
+
 ## Layout
 
 - `src/worker.ts`, `src/registry.ts`, `src/api.ts` — Worker entry, Durable
