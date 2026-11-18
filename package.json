@@ -64,12 +64,10 @@
     "cf-relay:deploy": "node infra/personal-relay-cloudflare/scripts/deploy.mjs",
     "cf-relay:pack": "node infra/personal-relay-cloudflare/scripts/build-npm-package.mjs",
     "cf-relay:pack:aiif": "node infra/personal-relay-cloudflare/scripts/build-npm-package.mjs --package-name @aiif/t3cf --create-package-name create-t3cf",
-    "cf-relay:publish:main": "npm publish infra/personal-relay-cloudflare/dist/npm --access public",
-    "cf-relay:publish:create": "npm publish infra/personal-relay-cloudflare/dist/create --access public",
+    "cf-relay:publish": "node scripts/publish-npm-package.mjs cf-relay",
     "relay:deploy": "node infra/personal-relay/scripts/deploy.mjs",
     "relay:pack": "node infra/personal-relay/scripts/build-npm-package.mjs",
-    "relay:publish:main": "npm publish infra/personal-relay/dist/npm --access public",
-    "relay:publish:create": "npm publish infra/personal-relay/dist/create --access public",
+    "relay:publish": "node scripts/publish-npm-package.mjs relay",
     "release:fork": "node scripts/release-fork.mjs"
   },
   "devDependencies": {

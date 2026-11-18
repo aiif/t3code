@@ -25,6 +25,8 @@ on:
       - "v*.*.*"
       - "!v*-nightly.*"
       - "!v*-preview.*"
+      # The relay packages use vps-relay-v*; they are not desktop releases.
+      - "!vps-relay-v*"
   workflow_dispatch:
 
 concurrency:

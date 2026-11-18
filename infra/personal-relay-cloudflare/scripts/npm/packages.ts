@@ -59,6 +59,7 @@ export interface NpmAssemblyInput {
   readonly readmeDirectory: string;
   readonly mainPackageName?: string;
   readonly createPackageName?: string;
+  readonly repositoryUrl?: string;
   readonly secretValues?: ReadonlyArray<string>;
 }
 
@@ -194,6 +195,7 @@ function mainManifest(
   version: string,
   wranglerVersion: string,
   packageName: string,
+  repositoryUrl: string,
 ): Record<string, unknown> {
   return {
     name: packageName,
@@ -216,10 +218,10 @@ function mainManifest(
     publishConfig: { access: "public" },
     keywords: ["t3-code", "cloudflare", "tunnel", "relay", "workers"],
     license: "MIT",
-    homepage: "https://github.com/pingdotgg/t3code/tree/main/infra/personal-relay-cloudflare",
+    homepage: `${repositoryUrl}/tree/main/infra/personal-relay-cloudflare`,
     repository: {
       type: "git",
-      url: "https://github.com/pingdotgg/t3code",
+      url: repositoryUrl,
       directory: "infra/personal-relay-cloudflare",
     },
   };
@@ -229,6 +231,7 @@ function createManifest(
   version: string,
   packageName: string,
   mainPackageName: string,
+  repositoryUrl: string,
 ): Record<string, unknown> {
   return {
     name: packageName,
@@ -242,10 +245,10 @@ function createManifest(
     publishConfig: { access: "public" },
     keywords: ["t3-code", "cloudflare", "tunnel", "relay", "create"],
     license: "MIT",
-    homepage: "https://github.com/pingdotgg/t3code/tree/main/infra/personal-relay-cloudflare",
+    homepage: `${repositoryUrl}/tree/main/infra/personal-relay-cloudflare`,
     repository: {
       type: "git",
-      url: "https://github.com/pingdotgg/t3code",
+      url: repositoryUrl,
       directory: "infra/personal-relay-cloudflare",
     },
   };
@@ -296,6 +299,7 @@ export async function assembleNpmPackages(input: NpmAssemblyInput): Promise<NpmA
   const createDirectory = NodePath.join(input.outputRoot, "create");
   const mainPackageName = input.mainPackageName ?? MAIN_PACKAGE_NAME;
   const createPackageName = input.createPackageName ?? CREATE_PACKAGE_NAME;
+  const repositoryUrl = input.repositoryUrl ?? "https://github.com/pingdotgg/t3code";
   const secretValues = input.secretValues ?? [];
 
   await NodeFSP.rm(mainDirectory, { recursive: true, force: true });
@@ -322,7 +326,7 @@ export async function assembleNpmPackages(input: NpmAssemblyInput): Promise<NpmA
   );
   await writeJson(
     NodePath.join(mainDirectory, "package.json"),
-    mainManifest(input.version, input.wranglerVersion, mainPackageName),
+    mainManifest(input.version, input.wranglerVersion, mainPackageName, repositoryUrl),
   );
   await writeBin(NodePath.join(mainDirectory, "bin/init.mjs"), MAIN_BIN);
 
@@ -340,7 +344,7 @@ export async function assembleNpmPackages(input: NpmAssemblyInput): Promise<NpmA
   );
   await writeJson(
     NodePath.join(createDirectory, "package.json"),
-    createManifest(input.version, createPackageName, mainPackageName),
+    createManifest(input.version, createPackageName, mainPackageName, repositoryUrl),
   );
   await writeBin(NodePath.join(createDirectory, "bin/create.mjs"), createBin(mainPackageName));
 

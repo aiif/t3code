@@ -29,8 +29,9 @@ the gate evidence; a dry run or a fake wrangler run is not a pass.
   deployed admin console, and `--destroy` passed. The `t3cf` tarball measured
   74.6 MB, above the 50 MB target; it still ships the prebuilt portal per the
   locked decision.
-- The packages are **not published to npm yet**. Publishing remains the manual
-  or `cf-relay-v*` workflow in `.github/workflows/publish-t3cf.yml`.
+- The packages are **not published to npm yet**. Publishing runs in the
+  `.github/workflows/publish-t3cf.yml` workflow, started by a `cf-relay-v*` tag
+  or `npm run cf-relay:publish`, and uses npm trusted publishing over OIDC.
 - The full desktop/Android G5 pass has not been recorded; the named and quick
   guest checks used the web client against the same host protocol.
 
@@ -51,7 +52,24 @@ Scope it to the account and the host zone; do not use a global API key.
 | ------------------------ | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Deploy                   | `CLOUDFLARE_API_TOKEN`, or `wrangler login` | Account: Workers Scripts Edit, Workers Durable Objects Edit, Account Settings Read. Zone: Zone Read. |
 | Runtime in named mode    | `T3CODE_CF_API_TOKEN`                       | Account: Cloudflare Tunnel Edit. Zone: DNS Edit for the host zone.                                   |
-| Publish the npm packages | `NPM_TOKEN`                                 | Publishing only. Never use it to deploy a relay.                                                     |
+| Publish the npm packages | npm trusted publishing (OIDC)               | No secret. Register `publish-t3cf.yml` as a trusted publisher for `t3cf` and `create-t3cf`.          |
+
+Publishing never asks for a 2FA code: the workflow exchanges its OIDC token for
+a short-lived publish token. Register the workflow once for each package after
+the package exists, using npm 11.15 or newer:
+
+```sh
+npm trust github t3cf --file publish-t3cf.yml --repo <owner/name> --env npm --allow-publish
+npm trust github create-t3cf --file publish-t3cf.yml --repo <owner/name> --env npm --allow-publish
+```
+
+The commands prompt for 2FA during this one-time setup; publishing afterwards
+uses OIDC only. The package page has the same settings under **Settings →
+Trusted publishing**. A brand-new name needs one seed publish with a token or a
+local login first. A fork that publishes under another scope sets
+`T3CF_NPM_PACKAGE_NAME` and `T3CF_NPM_CREATE_PACKAGE_NAME` and registers those
+packages instead. A fork that is not `pingdotgg/t3code` also sets the repository
+variable `T3CF_NPM_PUBLISH_ENABLED=1` so the publish job is allowed to run.
 
 The runtime token is stored as a Worker secret and can create and delete tunnels
 and DNS records in that zone. Use a separate, zone-scoped token from the deploy

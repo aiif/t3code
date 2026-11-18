@@ -240,7 +240,8 @@ async function main() {
     fileName: "cli.mjs",
   });
 
-  const releaseUrl = `https://github.com/aiif/t3code/releases/download/vps-relay-v${version}/t3relay-native-${version}.tar.gz`;
+  const repository = process.env.GITHUB_REPOSITORY ?? "aiif/t3code";
+  const releaseUrl = `https://github.com/${repository}/releases/download/vps-relay-v${version}/t3relay-native-${version}.tar.gz`;
   const assembled = await assembleNpmPackages({
     outputRoot: NodePath.join(packageRoot, "dist"),
     version,
@@ -253,6 +254,7 @@ async function main() {
     mainPackageName: packageName,
     createPackageName,
     releaseUrl,
+    repositoryUrl: `https://github.com/${repository}`,
   });
 
   output.stdout(`Assembled ${assembled.main.files.length} files in ${assembled.main.directory}.`);

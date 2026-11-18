@@ -341,6 +341,10 @@ async function main() {
   }
 
   const outputRoot = NodePath.join(packageRoot, "dist");
+  const repositoryUrl =
+    process.env.GITHUB_REPOSITORY === undefined
+      ? "https://github.com/pingdotgg/t3code"
+      : `https://github.com/${process.env.GITHUB_REPOSITORY}`;
   output.stdout(`Assembling ${mainPackageName} and ${createPackageName} ${version}...`);
   const assembled = await assembleNpmPackages({
     outputRoot,
@@ -354,6 +358,7 @@ async function main() {
     readmeDirectory: NodePath.join(packageRoot, "scripts", "templates"),
     mainPackageName,
     createPackageName,
+    repositoryUrl,
     secretValues,
   });
 

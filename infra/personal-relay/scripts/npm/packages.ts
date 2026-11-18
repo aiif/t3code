@@ -56,6 +56,7 @@ export interface NpmAssemblyInput {
   readonly mainPackageName: string;
   readonly createPackageName: string;
   readonly releaseUrl: string;
+  readonly repositoryUrl?: string;
   readonly secretValues?: ReadonlyArray<string>;
 }
 
@@ -300,7 +301,7 @@ export async function assembleNpmPackages(input: NpmAssemblyInput): Promise<NpmA
   const createDirectory = NodePath.join(input.outputRoot, "create");
   const nativeOutput = NodePath.join(input.outputRoot, "native");
   const secretValues = input.secretValues ?? [];
-  const repositoryUrl = "https://github.com/aiif/t3code";
+  const repositoryUrl = input.repositoryUrl ?? "https://github.com/aiif/t3code";
   const repositoryDirectory = "infra/personal-relay";
 
   await NodeFSP.rm(mainDirectory, { recursive: true, force: true });

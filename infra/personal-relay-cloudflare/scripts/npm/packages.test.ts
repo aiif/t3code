@@ -84,7 +84,9 @@ async function readManifest(directory: string): Promise<Record<string, unknown>>
 describe("npm package build", () => {
   it("assembles t3cf and create-t3cf with matching versions", async () => {
     const sources = await createSources();
-    const assembled = await assembleNpmPackages(input(sources));
+    const assembled = await assembleNpmPackages(
+      input(sources, { repositoryUrl: "https://github.com/example/t3code" }),
+    );
 
     expect(assembled.main.files).toEqual(
       expect.arrayContaining([
@@ -106,6 +108,11 @@ describe("npm package build", () => {
     expect(main.engines).toEqual({ node: ">=20.19" });
     expect(main.dependencies).toEqual({ wrangler: "4.163.0" });
     expect(main.scripts).toBeUndefined();
+    expect(main.repository).toEqual({
+      type: "git",
+      url: "https://github.com/example/t3code",
+      directory: "infra/personal-relay-cloudflare",
+    });
 
     const create = await readManifest(assembled.create.directory);
     expect(create.name).toBe("create-t3cf");

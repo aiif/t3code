@@ -61,11 +61,43 @@ The self-hosted relay has its own publish train in
 - `t3relay-native-<version>.tar.gz` and `SHA256SUMS`, attached to the matching
   GitHub Release for the AI-native systemd path.
 
-The workflow needs an `NPM_TOKEN` secret with publish rights for the `@aiif`
-scope. Override the package names with the repository variables
+The workflow publishes both packages with npm trusted publishing over OIDC, so
+no npm token is stored and publishing never asks for a 2FA code. Trusted
+publishing is configured on an existing npm package, so a brand-new package needs
+one bootstrap publish first:
+
+```sh
+node infra/personal-relay/scripts/build-npm-package.mjs --no-portal-build
+npm login
+npm publish infra/personal-relay/dist/npm --access public
+npm publish infra/personal-relay/dist/create --access public
+```
+
+After the first publish, register the workflow for each package with npm 11.15
+or newer:
+
+```sh
+npm trust github @aiif/t3relay --file publish-t3relay.yml --repo aiif/t3code --env npm --allow-publish
+npm trust github @aiif/create-t3relay --file publish-t3relay.yml --repo aiif/t3code --env npm --allow-publish
+```
+
+The commands prompt for 2FA during this one-time setup; publishing afterwards
+uses OIDC only. The same settings live under **Settings → Trusted publishing**
+on the package page: workflow `publish-t3relay.yml`, environment `npm`,
+`npm publish` allowed. An unused trusted publisher expires after two days, so
+create it right before the first CI publish. The generated package metadata
+names the repository that runs the workflow, which npm requires for OIDC
+publishing. Override the package names with the repository variables
 `T3RELAY_NPM_PACKAGE_NAME` and `T3RELAY_NPM_CREATE_PACKAGE_NAME` when testing a
-fork under another scope. This train is independent of the desktop/Android
-`v*.*.*` release tags.
+fork under another scope.
+
+The relay tag namespace is excluded from the desktop/Android
+`release-fork.yml` workflow, so a `vps-relay-v*` tag only runs the relay publish.
+
+Dispatch the workflow locally with `npm run relay:publish`, or with
+`npm run relay:publish -- --version 0.1.0` for a version other than the one in
+`infra/personal-relay/package.json`. The script starts the workflow and follows
+the run. This train is independent of the desktop/Android `v*.*.*` release tags.
 
 ## Repository setup
 

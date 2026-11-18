@@ -62,13 +62,23 @@ it("assembles the npm packages and the native bundle", async () => {
       mainPackageName: "@aiif/t3relay",
       createPackageName: "@aiif/create-t3relay",
       releaseUrl: "https://example.com/t3relay-native-0.1.0.tar.gz",
+      repositoryUrl: "https://github.com/example/t3code",
     });
 
     const mainManifest = JSON.parse(
       await NodeFSP.readFile(NodePath.join(result.main.directory, "package.json"), "utf8"),
-    ) as { name: string; bin: Record<string, string> };
+    ) as {
+      name: string;
+      bin: Record<string, string>;
+      repository: { url: string; directory: string };
+    };
     expect(mainManifest.name).toBe("@aiif/t3relay");
     expect(mainManifest.bin["t3relay"]).toBe("bin/init.mjs");
+    expect(mainManifest.repository).toEqual({
+      type: "git",
+      url: "https://github.com/example/t3code",
+      directory: "infra/personal-relay",
+    });
     expect(
       await NodeFSP.readFile(NodePath.join(result.main.directory, "native", "PROMPT.md"), "utf8"),
     ).toContain("https://example.com/t3relay-native-0.1.0.tar.gz");

@@ -1,7 +1,9 @@
 name: Publish t3cf npm packages
 
 # Publishing is explicit: a cf-relay-v* tag or a manual main-branch dispatch.
-# A normal merge never triggers this workflow.
+# A normal merge never triggers this workflow. npm trusted publishing exchanges
+# this job's OIDC token for a short-lived publish token, so no npm secret or
+# interactive 2FA is involved.
 on:
   workflow_dispatch:
     inputs:
@@ -25,9 +27,10 @@ jobs:
   publish:
     name: Build and publish t3cf
     # Upstream publishes from its own repository. A fork must opt in explicitly
-    # because it owns a different npm scope and token.
+    # because it owns a different npm scope and trusted publisher.
     if: (github.repository == 'pingdotgg/t3code' || vars.T3CF_NPM_PUBLISH_ENABLED == '1') && (github.event_name == 'push' || github.ref == 'refs/heads/main')
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    # npm trusted publishing only accepts GitHub-hosted runners.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     environment:
       name: npm
@@ -86,18 +89,6 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: node infra/personal-relay-cloudflare/scripts/build-npm-package.mjs --version "$VERSION"
-
-      - name: Configure npm auth
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${NPM_TOKEN:-}" ]]; then
-            echo "::error::The npm environment needs an NPM_TOKEN secret with publish rights for t3cf."
-            exit 1
-          fi
-          npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
 
       - name: Publish t3cf
         working-directory: infra/personal-relay-cloudflare/dist/npm

@@ -1,7 +1,9 @@
 name: Publish t3relay VPS relay
 
 # Publishing is explicit: a vps-relay-v* tag or a manual main-branch dispatch.
-# A normal merge never triggers this workflow.
+# A normal merge never triggers this workflow. npm trusted publishing exchanges
+# this job's OIDC token for a short-lived publish token, so no npm secret or
+# interactive 2FA is involved.
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +27,7 @@ jobs:
   publish:
     name: Build and publish @aiif/t3relay
     if: (github.repository == 'aiif/t3code' || vars.T3RELAY_NPM_PUBLISH_ENABLED == '1') && (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    # npm trusted publishing only accepts GitHub-hosted runners.
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     environment:
@@ -87,18 +90,6 @@ jobs:
             --version "$VERSION" \
             --package-name "$T3RELAY_PACKAGE_NAME" \
             --create-package-name "$T3RELAY_CREATE_PACKAGE_NAME"
-
-      - name: Configure npm auth
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${NPM_TOKEN:-}" ]]; then
-            echo "::error::The npm environment needs an NPM_TOKEN secret with publish rights for ${T3RELAY_PACKAGE_NAME}."
-            exit 1
-          fi
-          npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
 
       - name: Publish the main package
         working-directory: infra/personal-relay/dist/npm
