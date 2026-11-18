@@ -42,11 +42,13 @@ Both desktop installers and the Android APK are built in personal mode from
   under **Add environment → Personal network**, resolve it through the relay, and
   add several independent hosts. It is the upstream React Native app, not a
   WebView or a PWA shortcut.
-- The portal at `https://relay.example.com` is the admin console. It uses the admin key
-  and manages hosts, host keys, and guest metadata; it does not pair as a guest.
+- The portal you deploy at your relay origin is the admin console. It uses the
+  admin key and manages hosts, host keys, and guest metadata; it does not pair
+  as a guest.
 
-The portal URL defaults to `https://relay.example.com`. Override it with the repository
-variable `T3CODE_PERSONAL_PORTAL_URL`; the desktop, web, and Android builds read it.
+The portal URL comes from the repository variable `T3CODE_PERSONAL_PORTAL_URL`.
+Leave it unset to ship with every relay field blank; the desktop, web, and
+Android builds then ask the user for their relay.
 
 ## Repository setup
 
@@ -54,7 +56,8 @@ variable `T3CODE_PERSONAL_PORTAL_URL`; the desktop, web, and Android builds read
 - In **Settings > Actions > General**, allow the workflow token to write contents
   (`Read and write permissions`, or the equivalent organization policy). The release
   job uses `contents: write` to create the GitHub Release.
-- Set `T3CODE_PERSONAL_PORTAL_URL` if the portal is not `https://relay.example.com`.
+- Set `T3CODE_PERSONAL_PORTAL_URL` to your relay origin. Unset is valid and
+  leaves the relay fields blank for the user to fill in.
 
 ## Cut a release
 
@@ -124,7 +127,7 @@ The APK is the native `apps/mobile` React Native app. It contains the personal
 network guest flow and guest badge described above; it is not the hosted PWA.
 Install the APK on an arm64 phone, open **Add environment → Personal network**,
 enter the relay URL and a host key, and add as many hosts as needed. The portal
-remains available at `https://relay.example.com` as the admin console.
+at your relay origin remains the admin console.
 
 ## Troubleshooting
 

@@ -1,5 +1,6 @@
 import {
   ORCHESTRATION_V2_WS_METHODS,
+  PERSONAL_WS_METHODS,
   WS_METHODS,
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
@@ -75,6 +76,9 @@ const PERSONAL_GUEST_RPC_METHODS: ReadonlySet<string> = new Set<string>([
   WS_METHODS.pullRequestsLabelCandidates,
 
   WS_METHODS.subscribeProjectClones,
+
+  // Paired guests pick up the host's other relay routes from an authenticated connection.
+  PERSONAL_WS_METHODS.guestRoutes,
 ]);
 
 /**

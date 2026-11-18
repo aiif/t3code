@@ -79,7 +79,9 @@ jobs:
       # main process bakes T3CODE_PERSONAL_ONLY into the tray/close behavior.
       VITE_T3CODE_PERSONAL_ONLY: "1"
       T3CODE_PERSONAL_ONLY: "1"
-      VITE_HOSTED_APP_URL: ${{ vars.T3CODE_PERSONAL_PORTAL_URL || 'https://relay.example.com' }}
+      # Set T3CODE_PERSONAL_PORTAL_URL to your relay origin. Unset leaves every
+      # relay field blank for the user to fill in.
+      VITE_HOSTED_APP_URL: ${{ vars.T3CODE_PERSONAL_PORTAL_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -201,7 +203,7 @@ jobs:
       # Personal mode: the app shows the personal network setup and hides the
       # T3 Connect surfaces. No Clerk or relay configuration is baked in.
       T3CODE_PERSONAL_ONLY: "1"
-      T3CODE_PERSONAL_RELAY_URL: ${{ vars.T3CODE_PERSONAL_PORTAL_URL || 'https://relay.example.com' }}
+      T3CODE_PERSONAL_RELAY_URL: ${{ vars.T3CODE_PERSONAL_PORTAL_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0

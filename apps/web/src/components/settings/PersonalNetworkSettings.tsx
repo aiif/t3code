@@ -1,4 +1,10 @@
-import type { EnvironmentId, PersonalRelayState, PersonalResolvedHost } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PersonalRelayProfileSummary,
+  PersonalRelayProfiles,
+  PersonalRelayState,
+  PersonalResolvedHost,
+} from "@t3tools/contracts";
 import {
   personalHostRecord,
   readPersonalHosts,
@@ -7,17 +13,21 @@ import {
   type PersonalHostRecord,
 } from "@t3tools/client-runtime/personal/portal";
 import * as Cause from "effect/Cause";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { requestConfirmDialog } from "~/confirmDialog";
 import { connectPairing as connectPairingCommand } from "../../connection/onboarding";
 import { usePrimaryEnvironment } from "../../state/environments";
 import {
+  personalForgetRelay,
+  personalListRelays,
   personalPauseSharing,
   personalRelayStatus,
   personalResolveHostKey,
   personalResumeSharing,
   personalRevealSharingKey,
   personalRotateSharingKey,
+  personalSaveRelay,
   personalStartSharing,
   personalStopSharing,
 } from "../../state/personal";
@@ -25,10 +35,12 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
-const DEFAULT_RELAY_URL = import.meta.env.VITE_HOSTED_APP_URL?.trim() || "https://relay.example.com";
+const DEFAULT_RELAY_URL = import.meta.env.VITE_HOSTED_APP_URL?.trim() || "";
+const NEW_RELAY_VALUE = "__new";
 
 type CommandResult<T> =
   | { readonly _tag: "Success"; readonly value: T }
@@ -46,6 +58,10 @@ function failureMessage(result: CommandResult<unknown>): string | null {
     : "The host did not answer.";
 }
 
+function normalizeRelayUrl(value: string): string {
+  return value.trim().replace(/\/+$/u, "");
+}
+
 export function PersonalNetworkSettings() {
   const primary = usePrimaryEnvironment();
   const environmentId = primary?.environmentId ?? null;
@@ -55,6 +71,9 @@ export function PersonalNetworkSettings() {
 
 function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: EnvironmentId }) {
   const statusCommand = useAtomCommand(personalRelayStatus, { reportFailure: false });
+  const listRelays = useAtomCommand(personalListRelays, { reportFailure: false });
+  const saveRelay = useAtomCommand(personalSaveRelay, { reportFailure: false });
+  const forgetRelay = useAtomCommand(personalForgetRelay, { reportFailure: false });
   const start = useAtomCommand(personalStartSharing, { reportFailure: false });
   const stop = useAtomCommand(personalStopSharing, { reportFailure: false });
   const pause = useAtomCommand(personalPauseSharing, { reportFailure: false });
@@ -64,13 +83,17 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
   const resolve = useAtomCommand(personalResolveHostKey, { reportFailure: false });
   const connectPairing = useAtomCommand(connectPairingCommand, { reportFailure: false });
 
+  const relayTouched = useRef(false);
   const [status, setStatus] = useState<PersonalRelayState | null>(null);
+  const [relays, setRelays] = useState<ReadonlyArray<PersonalRelayProfileSummary>>([]);
   const [relayUrl, setRelayUrl] = useState(DEFAULT_RELAY_URL);
   const [relayKey, setRelayKey] = useState("");
   const [label, setLabel] = useState("");
   const [hostKey, setHostKey] = useState<string | null>(null);
   const [guestKey, setGuestKey] = useState("");
-  const [guestRelay, setGuestRelay] = useState(DEFAULT_RELAY_URL);
+  const [guestRelay, setGuestRelay] = useState<string>(
+    () => readPersonalHosts()[0]?.relayUrl ?? DEFAULT_RELAY_URL,
+  );
   const [guests, setGuests] = useState<ReadonlyArray<PersonalHostRecord>>(readPersonalHosts);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -82,14 +105,27 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
     if (value !== null) {
       setStatus(value);
       if (value.label !== null) setLabel((current: string) => current || value.label || "");
-      if (value.relayUrl !== null)
-        setRelayUrl((current: string) => current || value.relayUrl || "");
+      if (value.relayUrl !== null && !relayTouched.current) {
+        setRelayUrl(value.relayUrl);
+      }
     }
+  };
+
+  const refreshRelays = async () => {
+    const result = await listRelays({ environmentId, input: {} });
+    const value = resultValue(result as CommandResult<PersonalRelayProfiles>);
+    if (value === null) return;
+    setRelays(value.relays);
+    if (!relayTouched.current && relayUrl.trim() === "") {
+      setRelayUrl(value.relays[0]?.relayUrl ?? DEFAULT_RELAY_URL);
+    }
+    setGuestRelay((current) => current || value.relays[0]?.relayUrl || DEFAULT_RELAY_URL);
   };
 
   /* oxlint-disable react/set-state-in-effect, react/exhaustive-effect-dependencies, t3code/no-unreasoned-state-sync -- polls the host connector's live status while the panel is mounted */
   useEffect(() => {
     void refreshStatus();
+    void refreshRelays();
     const timer = window.setInterval(() => void refreshStatus(), 5_000);
     return () => window.clearInterval(timer);
   }, [environmentId]);
@@ -115,11 +151,14 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
 
   const startSharing = () => {
     const previousKey = hostKey;
+    const previousRelay = normalizeRelayUrl(status?.relayUrl ?? "");
+    const nextRelay = normalizeRelayUrl(relayUrl);
+    const targetProfile = relays.find((relay) => relay.relayUrl === nextRelay);
     return run(async () => {
       const result = await start({
         environmentId,
         input: {
-          relayUrl: relayUrl.trim(),
+          relayUrl: nextRelay,
           ...(relayKey.trim() === "" ? {} : { relayKey: relayKey.trim() }),
           ...(label.trim() === "" ? {} : { label: label.trim() }),
         },
@@ -129,13 +168,83 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
         // The start response carries relay state, not the key, so reveal it now
         // instead of leaving the previously displayed key on screen.
         const revealed = await reveal({ environmentId, input: {} });
-        const nextKey = resultValue(revealed as CommandResult<{ hostKey: string }>);
+        const nextKey =
+          resultValue(revealed as CommandResult<{ hostKey: string }>)?.hostKey ?? null;
         setHostKey(nextKey);
+        setRelayKey("");
+        await refreshRelays();
         if (previousKey !== null && nextKey !== null && previousKey !== nextKey) {
-          setMessage("Host key changed. Guests must add the new key.");
+          setMessage(
+            previousRelay === nextRelay
+              ? "Host key changed. Guests must add the new key."
+              : "Switched. The new relay issued a different host key; guests must add it once.",
+          );
+        } else if (previousRelay !== "" && previousRelay !== nextRelay) {
+          setMessage(
+            targetProfile?.hostId != null
+              ? `Switched to ${nextRelay}. The previous relay stays registered, so guests keep their keys.`
+              : `Switched to ${nextRelay}. Add its host key to guests once; paired guests that synced it pick it up automatically.`,
+          );
+        } else {
+          setMessage("Personal network settings saved.");
         }
       }
+      return result as CommandResult<unknown>;
+    });
+  };
+
+  const saveCurrentRelay = () =>
+    run(async () => {
+      const result = (await saveRelay({
+        environmentId,
+        input: {
+          relayUrl: relayUrl.trim(),
+          ...(relayKey.trim() === "" ? {} : { relayKey: relayKey.trim() }),
+        },
+      })) as CommandResult<PersonalRelayProfiles>;
+      const value = resultValue(result);
+      if (value !== null) {
+        setRelays(value.relays);
+        setRelayKey("");
+        const prepared = value.relays.some(
+          (relay) => relay.relayUrl === normalizeRelayUrl(relayUrl) && relay.hostId !== null,
+        );
+        setMessage(
+          prepared
+            ? "Relay saved. Paired guests pick up its key within a minute; switch after that."
+            : "Relay saved. It registers when you switch to it.",
+        );
+      }
       return result;
+    });
+
+  const forgetCurrentRelay = async () => {
+    const selected = relays.find((relay) => relay.relayUrl === normalizeRelayUrl(relayUrl));
+    if (selected === undefined) return;
+    if (
+      status?.enabled === true &&
+      normalizeRelayUrl(status.relayUrl ?? "") === selected.relayUrl
+    ) {
+      setError("Stop sharing before forgetting this relay.");
+      return;
+    }
+    const confirmed = await requestConfirmDialog(
+      `Forget ${selected.relayUrl} on this computer? The relay still lists this host until it is removed from the relay's admin console.`,
+      { variant: "destructive" },
+    );
+    if (confirmed !== true) return;
+    await run(async () => {
+      const forgotten = (await forgetRelay({
+        environmentId,
+        input: { relayUrl: selected.relayUrl },
+      })) as CommandResult<PersonalRelayProfiles>;
+      const value = resultValue(forgotten);
+      if (value !== null) {
+        setRelays(value.relays);
+        setRelayUrl(value.relays[0]?.relayUrl ?? "");
+        setMessage("Relay forgotten.");
+      }
+      return forgotten;
     });
   };
 
@@ -230,6 +339,33 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
     setGuests(removePersonalHost({ hostId: guest.hostId, relayUrl: guest.relayUrl }));
   };
 
+  const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+  const selectedRelay = relays.find((relay) => relay.relayUrl === normalizedRelayUrl);
+  const selectedValue = selectedRelay === undefined ? NEW_RELAY_VALUE : selectedRelay.relayUrl;
+  const isCurrentRelay =
+    status?.enabled === true && normalizeRelayUrl(status.relayUrl ?? "") === normalizedRelayUrl;
+  const actionLabel = status?.enabled !== true ? "Register" : isCurrentRelay ? "Save" : "Switch";
+  const relaySuggestions = [
+    ...new Set([
+      ...relays.map((relay) => relay.relayUrl),
+      ...guests.map((guest) => guest.relayUrl),
+      ...(guestRelay.trim() === "" ? [] : [guestRelay]),
+    ]),
+  ];
+
+  const submitRelay = async () => {
+    if (status?.enabled === true && !isCurrentRelay) {
+      const learned = selectedRelay !== undefined && selectedRelay.hostId !== null;
+      const confirmed = await requestConfirmDialog(
+        learned
+          ? `Switch this computer to ${normalizedRelayUrl}? Guests using ${status.relayUrl} go offline until you switch back; their host keys stay valid.`
+          : `Switch this computer to ${normalizedRelayUrl}? Paired guests have not learned this relay yet. Save it first if you want them to add it automatically; switching now may ask each guest for its host key.`,
+      );
+      if (confirmed === false) return;
+    }
+    await startSharing();
+  };
+
   return (
     <SettingsSection
       {...searchableSetting("personal-network")}
@@ -241,11 +377,37 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
         description="Guests with this computer's host key can use its projects while the app is running and sharing is on. Closing the window keeps sharing on; Quit stops it."
       >
         <div className="flex w-full max-w-md flex-col gap-2">
+          <Select
+            value={selectedValue}
+            onValueChange={(value) => {
+              relayTouched.current = true;
+              setRelayUrl(value === NEW_RELAY_VALUE ? "" : value);
+              setRelayKey("");
+            }}
+          >
+            <SelectTrigger aria-label="Saved relay" size="sm">
+              <SelectValue>{selectedRelay?.relayUrl ?? "New relay..."}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="start">
+              {relays.map((relay) => (
+                <SelectItem hideIndicator key={relay.relayUrl} value={relay.relayUrl}>
+                  {relay.relayUrl}
+                  {relay.hostId === null ? " (not registered)" : ""}
+                </SelectItem>
+              ))}
+              <SelectItem hideIndicator value={NEW_RELAY_VALUE}>
+                New relay...
+              </SelectItem>
+            </SelectPopup>
+          </Select>
           <Input
             aria-label="Relay URL"
             disabled={busy}
-            onChange={(event) => setRelayUrl(event.currentTarget.value)}
-            placeholder="https://t3.example.com"
+            onChange={(event) => {
+              relayTouched.current = true;
+              setRelayUrl(event.currentTarget.value);
+            }}
+            placeholder="https://relay.example.com"
             value={relayUrl}
           />
           <Input
@@ -253,7 +415,11 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
             autoComplete="off"
             disabled={busy}
             onChange={(event) => setRelayKey(event.currentTarget.value)}
-            placeholder="Enrollment key (Cloudflare relays only)"
+            placeholder={
+              selectedRelay?.hasRelayKey === true
+                ? "Saved enrollment key (leave blank to reuse)"
+                : "Enrollment key (Cloudflare relays only)"
+            }
             type="password"
             value={relayKey}
           />
@@ -266,12 +432,35 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
               value={label}
             />
             <Button
-              disabled={busy || relayUrl.trim().length === 0}
+              disabled={busy || normalizedRelayUrl.length === 0}
               size="sm"
-              onClick={() => void startSharing()}
+              onClick={() => void submitRelay()}
             >
-              {status?.enabled ? "Save" : "Register"}
+              {actionLabel}
             </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {normalizedRelayUrl.length > 0 &&
+            (selectedRelay === undefined || relayKey.trim() !== "") ? (
+              <Button
+                disabled={busy}
+                size="xs"
+                variant="outline"
+                onClick={() => void saveCurrentRelay()}
+              >
+                Save relay
+              </Button>
+            ) : null}
+            {selectedRelay !== undefined ? (
+              <Button
+                disabled={busy || isCurrentRelay}
+                size="xs"
+                variant="ghost-destructive"
+                onClick={() => void forgetCurrentRelay()}
+              >
+                Forget relay
+              </Button>
+            ) : null}
           </div>
 
           {status?.enabled ? (
@@ -371,10 +560,16 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
           <Input
             aria-label="Guest relay URL"
             disabled={busy}
+            list="personal-relay-urls"
             onChange={(event) => setGuestRelay(event.currentTarget.value)}
-            placeholder="https://t3.example.com"
+            placeholder="https://relay.example.com"
             value={guestRelay}
           />
+          <datalist id="personal-relay-urls">
+            {relaySuggestions.map((relayUrl) => (
+              <option key={relayUrl} value={relayUrl} />
+            ))}
+          </datalist>
           <div className="flex gap-2">
             <Input
               aria-label="Host key"

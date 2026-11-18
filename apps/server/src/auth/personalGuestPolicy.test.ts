@@ -1,6 +1,7 @@
 import {
   AuthPersonalGuestScopes,
   ORCHESTRATION_V2_WS_METHODS,
+  PERSONAL_WS_METHODS,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -37,6 +38,7 @@ describe("personal guest RPC allowlist", () => {
       WS_METHODS.secretsAnswerRequest,
       WS_METHODS.pullRequestsDetail,
       WS_METHODS.subscribeWorktreeSetup,
+      PERSONAL_WS_METHODS.guestRoutes,
     ]) {
       expect(personalGuestMayCallRpc(method)).toBe(true);
     }
@@ -70,6 +72,9 @@ describe("personal guest RPC allowlist", () => {
     expect(personalGuestMayCallRpc("server.somethingNew")).toBe(false);
     expect(personalGuestMayCallRpc("personal.startSharing")).toBe(false);
     expect(personalGuestMayCallRpc("personal.rotateSharingKey")).toBe(false);
+    expect(personalGuestMayCallRpc("personal.listRelays")).toBe(false);
+    expect(personalGuestMayCallRpc("personal.saveRelay")).toBe(false);
+    expect(personalGuestMayCallRpc("personal.forgetRelay")).toBe(false);
   });
 });
 

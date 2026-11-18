@@ -42,3 +42,23 @@ export const personalResolveHostKey = createEnvironmentRpcCommand(connectionAtom
   label: "environment-data:personal:resolve-host-key",
   tag: PERSONAL_WS_METHODS.resolveHostKey,
 });
+
+export const personalListRelays = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:personal:list-relays",
+  tag: PERSONAL_WS_METHODS.listRelays,
+});
+
+export const personalSaveRelay = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:personal:save-relay",
+  tag: PERSONAL_WS_METHODS.saveRelay,
+});
+
+export const personalForgetRelay = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:personal:forget-relay",
+  tag: PERSONAL_WS_METHODS.forgetRelay,
+});
+
+export const personalGuestRoutes = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:personal:guest-routes",
+  tag: PERSONAL_WS_METHODS.guestRoutes,
+});

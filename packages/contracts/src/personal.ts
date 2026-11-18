@@ -207,6 +207,49 @@ export const DesktopPersonalShareState = Schema.Struct({
 });
 export type DesktopPersonalShareState = typeof DesktopPersonalShareState.Type;
 
+/** A relay this host remembers. The enrollment key and host key never appear here. */
+export const PersonalRelayProfileSummary = Schema.Struct({
+  relayUrl: TrimmedNonEmptyString,
+  hasRelayKey: Schema.Boolean,
+  hostId: Schema.NullOr(TrimmedNonEmptyString),
+  updatedAt: Schema.String,
+});
+export type PersonalRelayProfileSummary = typeof PersonalRelayProfileSummary.Type;
+
+export const PersonalRelayProfiles = Schema.Struct({
+  relays: Schema.Array(PersonalRelayProfileSummary),
+});
+export type PersonalRelayProfiles = typeof PersonalRelayProfiles.Type;
+
+export const PersonalSaveRelayInput = Schema.Struct({
+  relayUrl: Schema.String,
+  /** Omit or leave empty to keep the saved enrollment key. */
+  relayKey: Schema.optionalKey(Schema.String),
+});
+export type PersonalSaveRelayInput = typeof PersonalSaveRelayInput.Type;
+
+export const PersonalForgetRelayInput = Schema.Struct({
+  relayUrl: Schema.String,
+});
+export type PersonalForgetRelayInput = typeof PersonalForgetRelayInput.Type;
+
+/**
+ * One relay route a paired guest may add for this host. The host key is the
+ * guest credential, so this only travels over an already authenticated session.
+ */
+export const PersonalGuestRoute = Schema.Struct({
+  relayUrl: TrimmedNonEmptyString,
+  hostKey: TrimmedNonEmptyString,
+  hostId: TrimmedNonEmptyString,
+  publicUrl: Schema.String,
+});
+export type PersonalGuestRoute = typeof PersonalGuestRoute.Type;
+
+export const PersonalGuestRoutes = Schema.Struct({
+  routes: Schema.Array(PersonalGuestRoute),
+});
+export type PersonalGuestRoutes = typeof PersonalGuestRoutes.Type;
+
 export const PERSONAL_WS_METHODS = {
   relayStatus: "personal.relayStatus",
   startSharing: "personal.startSharing",
@@ -216,6 +259,10 @@ export const PERSONAL_WS_METHODS = {
   rotateSharingKey: "personal.rotateSharingKey",
   revealSharingKey: "personal.revealSharingKey",
   resolveHostKey: "personal.resolveHostKey",
+  listRelays: "personal.listRelays",
+  saveRelay: "personal.saveRelay",
+  forgetRelay: "personal.forgetRelay",
+  guestRoutes: "personal.guestRoutes",
 } as const;
 
 export class PersonalNetworkError extends Schema.TaggedError<PersonalNetworkError>()(
@@ -230,6 +277,7 @@ export class PersonalNetworkError extends Schema.TaggedError<PersonalNetworkErro
       "reveal",
       "resolve",
       "status",
+      "relay",
     ]),
     detail: Schema.String,
     status: Schema.optionalKey(Schema.Number),

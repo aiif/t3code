@@ -1330,7 +1330,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "personal-network",
     title: "Personal network",
     to: "/settings/connections",
-    searchTerms: ["share this computer host key guest relay relay.example.com pair remote access"],
+    searchTerms: ["share this computer host key guest relay saved switch pair remote access"],
     primaryEnvironmentOnly: true,
   },
   {

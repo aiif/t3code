@@ -1,9 +1,10 @@
-// @effect-diagnostics globalDate:off -- Client timestamps come from the platform clock outside an Effect runtime.
+// @effect-diagnostics globalDate:off globalTimers:off -- Client timestamps and request timeouts run outside an Effect runtime.
 import {
   PersonalAdminHostDetail,
   PersonalAdminHosts,
   PersonalHostKeyResult,
   PersonalResolvedHost,
+  type EnvironmentId,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -13,6 +14,12 @@ const PERSONAL_ADMIN_RELAY_STORAGE = "t3.admin.relay";
 
 /** Guest host records: one entry per host key this device holds. */
 export const PERSONAL_HOSTS_STORAGE_KEY = "t3.personal.hosts";
+
+/** Relay URLs already paired for an environment, so route sync never repeats. */
+const PERSONAL_SYNCED_RELAYS_STORAGE_KEY = "t3.personal.synced-relays";
+
+/** Relay keys learned from a host but not paired yet because the relay was offline. */
+const PERSONAL_PENDING_ROUTES_STORAGE_KEY = "t3.personal.pending-routes";
 
 export interface PersonalAdminConfig {
   readonly relayUrl: string;
@@ -57,6 +64,17 @@ const decodeResolved = Schema.decodeUnknownSync(PersonalResolvedHost);
 const decodeAdminHosts = Schema.decodeUnknownSync(PersonalAdminHosts);
 const decodeAdminDetail = Schema.decodeUnknownSync(PersonalAdminHostDetail);
 const decodeHostKey = Schema.decodeUnknownSync(PersonalHostKeyResult);
+const decodeSyncedRelays = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Array(Schema.String)),
+);
+const PersonalPendingRouteSchema = Schema.Struct({
+  environmentId: Schema.String,
+  relayUrl: Schema.String,
+  hostKey: Schema.String,
+});
+const decodePendingRoutes = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Array(PersonalPendingRouteSchema)),
+);
 
 export class PersonalAdminError extends Schema.TaggedError<PersonalAdminError>()(
   "PersonalAdminError",
@@ -309,16 +327,21 @@ export async function resolvePersonalHost(input: {
   }
   const fetchImpl = input.fetchImpl ?? defaultFetch();
   let response: Response;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
   try {
     response = await fetchImpl(`${relayUrl}/v1/hosts/resolve`, {
       method: "POST",
       headers: { authorization: `Bearer ${hostKey}` },
       cache: "no-store",
+      signal: controller.signal,
     });
   } catch {
     throw new PersonalHostError({
       detail: "Could not reach the relay. Check the URL and your connection.",
     });
+  } finally {
+    clearTimeout(timer);
   }
   if (response.status === 401) {
     throw new PersonalHostError({
@@ -393,4 +416,198 @@ export async function refreshPersonalHosts(
   }
   writePersonalHosts(refreshed, input.storage === undefined ? defaultStorage() : input.storage);
   return refreshed;
+}
+
+export interface PersonalRelayRoute {
+  readonly relayUrl: string;
+  readonly hostKey: string;
+}
+
+export interface PersonalPendingRoute extends PersonalRelayRoute {
+  readonly environmentId: EnvironmentId;
+}
+
+export interface PersonalSyncPairOutcome {
+  readonly ok: boolean;
+  readonly error?: string | null;
+}
+
+const MAX_PENDING_ROUTES = 50;
+
+/**
+ * Adds every relay route a paired host advertises. Routes that are offline stay
+ * pending, so a guest can pair them later without another host connection.
+ */
+export async function syncPersonalRelayRoutes(input: {
+  readonly environmentId: EnvironmentId;
+  readonly routes: ReadonlyArray<PersonalRelayRoute>;
+  readonly pair: (input: {
+    readonly host: string;
+    readonly pairingCode: string;
+    readonly expectedEnvironmentId: EnvironmentId;
+  }) => Promise<PersonalSyncPairOutcome>;
+  readonly storage?: PersonalStorage | null;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<ReadonlyArray<PersonalHostRecord>> {
+  const storage = input.storage === undefined ? defaultStorage() : input.storage;
+  const pending = mergePendingRoutes(
+    readPersonalPendingRoutes(storage),
+    input.routes.flatMap((route): ReadonlyArray<PersonalPendingRoute> => {
+      const relayUrl = normalizeRelayUrl(route.relayUrl);
+      const hostKey = route.hostKey.trim();
+      return relayUrl === "" || hostKey === ""
+        ? []
+        : [{ environmentId: input.environmentId, relayUrl, hostKey }];
+    }),
+  );
+  writePersonalPendingRoutes(storage, pending);
+  return drainPersonalRelayRoutes({
+    pair: input.pair,
+    storage,
+    ...(input.fetchImpl === undefined ? {} : { fetchImpl: input.fetchImpl }),
+  });
+}
+
+/** Retries routes learned earlier, including while no host connection is open. */
+export async function retryPersonalRelayRoutes(input: {
+  readonly pair: (input: {
+    readonly host: string;
+    readonly pairingCode: string;
+    readonly expectedEnvironmentId: EnvironmentId;
+  }) => Promise<PersonalSyncPairOutcome>;
+  readonly storage?: PersonalStorage | null;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<ReadonlyArray<PersonalHostRecord>> {
+  return drainPersonalRelayRoutes({
+    pair: input.pair,
+    storage: input.storage === undefined ? defaultStorage() : input.storage,
+    ...(input.fetchImpl === undefined ? {} : { fetchImpl: input.fetchImpl }),
+  });
+}
+
+async function drainPersonalRelayRoutes(input: {
+  readonly pair: (input: {
+    readonly host: string;
+    readonly pairingCode: string;
+    readonly expectedEnvironmentId: EnvironmentId;
+  }) => Promise<PersonalSyncPairOutcome>;
+  readonly storage: PersonalStorage | null;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<ReadonlyArray<PersonalHostRecord>> {
+  const storage = input.storage;
+  let hosts = readPersonalHosts(storage);
+  const paired = new Set(
+    hosts.map((host) => `${normalizeRelayUrl(host.relayUrl)}|${host.hostKey.trim()}`),
+  );
+  const synced = new Set(readPersonalSyncedRelayKeys(storage));
+  const pending = readPersonalPendingRoutes(storage);
+  const remaining: Array<PersonalPendingRoute> = [];
+
+  for (const route of pending) {
+    const relayUrl = normalizeRelayUrl(route.relayUrl);
+    const hostKey = route.hostKey.trim();
+    if (relayUrl === "" || hostKey === "") continue;
+    const syncKey = personalSyncedRelayKey(route.environmentId, relayUrl, hostKey);
+    if (synced.has(syncKey)) continue;
+    if (paired.has(`${relayUrl}|${hostKey}`)) {
+      synced.add(syncKey);
+      continue;
+    }
+
+    let resolved: PersonalResolvedHost;
+    try {
+      resolved = await resolvePersonalHost({
+        relayUrl,
+        hostKey,
+        ...(input.fetchImpl === undefined ? {} : { fetchImpl: input.fetchImpl }),
+      });
+    } catch {
+      remaining.push(route);
+      continue;
+    }
+    if (!resolved.online || resolved.publicUrl.trim() === "") {
+      remaining.push(route);
+      continue;
+    }
+    if (resolved.environmentId !== route.environmentId) continue;
+
+    const outcome = await input.pair({
+      host: resolved.publicUrl,
+      pairingCode: hostKey,
+      expectedEnvironmentId: resolved.environmentId as EnvironmentId,
+    });
+    if (!outcome.ok) {
+      remaining.push(route);
+      continue;
+    }
+
+    hosts = upsertPersonalHost(personalHostRecord({ relayUrl, hostKey, resolved }), storage);
+    paired.add(`${relayUrl}|${hostKey}`);
+    synced.add(syncKey);
+  }
+
+  writePersonalSyncedRelayKeys(storage, [...synced]);
+  writePersonalPendingRoutes(storage, remaining);
+  return hosts;
+}
+
+function personalSyncedRelayKey(
+  environmentId: EnvironmentId,
+  relayUrl: string,
+  hostKey: string,
+): string {
+  return `${environmentId}\n${normalizeRelayUrl(relayUrl)}\n${hostKey.trim()}`;
+}
+
+function personalPendingRouteKey(route: PersonalPendingRoute): string {
+  return `${route.environmentId}\n${normalizeRelayUrl(route.relayUrl)}`;
+}
+
+function mergePendingRoutes(
+  existing: ReadonlyArray<PersonalPendingRoute>,
+  incoming: ReadonlyArray<PersonalPendingRoute>,
+): ReadonlyArray<PersonalPendingRoute> {
+  const byRelay = new Map<string, PersonalPendingRoute>();
+  for (const route of [...existing, ...incoming]) {
+    byRelay.set(personalPendingRouteKey(route), route);
+  }
+  return [...byRelay.values()].slice(-MAX_PENDING_ROUTES);
+}
+
+function readPersonalPendingRoutes(
+  storage: PersonalStorage | null,
+): ReadonlyArray<PersonalPendingRoute> {
+  if (storage === null) return [];
+  const raw = storage.getItem(PERSONAL_PENDING_ROUTES_STORAGE_KEY);
+  if (raw === null || raw.trim() === "") return [];
+  try {
+    return decodePendingRoutes(raw) as ReadonlyArray<PersonalPendingRoute>;
+  } catch {
+    return [];
+  }
+}
+
+function writePersonalPendingRoutes(
+  storage: PersonalStorage | null,
+  routes: ReadonlyArray<PersonalPendingRoute>,
+): void {
+  storage?.setItem(PERSONAL_PENDING_ROUTES_STORAGE_KEY, JSON.stringify(routes));
+}
+
+function readPersonalSyncedRelayKeys(storage: PersonalStorage | null): ReadonlyArray<string> {
+  if (storage === null) return [];
+  const raw = storage.getItem(PERSONAL_SYNCED_RELAYS_STORAGE_KEY);
+  if (raw === null || raw.trim() === "") return [];
+  try {
+    return decodeSyncedRelays(raw);
+  } catch {
+    return [];
+  }
+}
+
+function writePersonalSyncedRelayKeys(
+  storage: PersonalStorage | null,
+  keys: ReadonlyArray<string>,
+): void {
+  storage?.setItem(PERSONAL_SYNCED_RELAYS_STORAGE_KEY, JSON.stringify(keys));
 }

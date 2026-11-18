@@ -2342,6 +2342,44 @@ export const layerWsRpc = (
                   }),
             ),
           ),
+        [PERSONAL_WS_METHODS.listRelays]: (_input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay) ? relay.value.listRelays() : Effect.succeed({ relays: [] }),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.saveRelay]: (input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.saveRelay(input)
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "relay",
+                      detail: "Personal sharing is unavailable in this build.",
+                    }),
+                  ),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.forgetRelay]: (input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay)
+                ? relay.value.forgetRelay(input)
+                : Effect.fail(
+                    new PersonalNetworkError({
+                      operation: "relay",
+                      detail: "Personal sharing is unavailable in this build.",
+                    }),
+                  ),
+            ),
+          ),
+        [PERSONAL_WS_METHODS.guestRoutes]: (_input) =>
+          Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
+            Effect.flatMap((relay) =>
+              Option.isSome(relay) ? relay.value.guestRoutes() : Effect.succeed({ routes: [] }),
+            ),
+          ),
         [PERSONAL_WS_METHODS.startSharing]: (input) =>
           Effect.serviceOption(PersonalRelay.PersonalRelay).pipe(
             Effect.flatMap((relay) =>

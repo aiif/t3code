@@ -1,12 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { PersonalConnector } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
-import * as Ref from "effect/Ref";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -18,7 +16,6 @@ import {
   layerClient,
   layerConnectorProcess,
   PersonalRelayClient,
-  registerBeforeUnregister,
   toPersonalRelayState,
 } from "./PersonalRelay.ts";
 
@@ -157,55 +154,6 @@ describe("ConnectorProcess", () => {
       expect(captured[0]?.args.join(" ")).not.toContain("tunnel-token-secret");
     }).pipe(Effect.scoped, Effect.provide(connectorLayer({ stderr: Stream.empty, captured })));
   });
-});
-
-describe("relay switching", () => {
-  it.effect("registers with the new relay before unregistering the old one", () =>
-    Effect.gen(function* () {
-      const events = yield* Ref.make<ReadonlyArray<string>>([]);
-      const registration = yield* registerBeforeUnregister({
-        previousRelayUrl: "https://old.example.test",
-        nextRelayUrl: "https://new.example.test",
-        register: Ref.update(events, (current) => [...current, "register"]).pipe(
-          Effect.as("registered"),
-        ),
-        unregister: (relayUrl) =>
-          Ref.update(events, (current) => [...current, `unregister:${relayUrl}`]),
-      });
-      expect(registration).toBe("registered");
-      expect(yield* Ref.get(events)).toEqual(["register", "unregister:https://old.example.test"]);
-    }),
-  );
-
-  it.effect("leaves the old relay registered when the new registration fails", () =>
-    Effect.gen(function* () {
-      const events = yield* Ref.make<ReadonlyArray<string>>([]);
-      const exit = yield* registerBeforeUnregister({
-        previousRelayUrl: "https://old.example.test",
-        nextRelayUrl: "https://new.example.test",
-        register: Ref.update(events, (current) => [...current, "register"]).pipe(
-          Effect.andThen(Effect.fail("missing enrollment key")),
-        ),
-        unregister: (relayUrl) =>
-          Ref.update(events, (current) => [...current, `unregister:${relayUrl}`]),
-      }).pipe(Effect.exit);
-      expect(Exit.isFailure(exit)).toBe(true);
-      expect(yield* Ref.get(events)).toEqual(["register"]);
-    }),
-  );
-
-  it.effect("does not unregister when the relay URL is unchanged", () =>
-    Effect.gen(function* () {
-      const events = yield* Ref.make<ReadonlyArray<string>>([]);
-      yield* registerBeforeUnregister({
-        previousRelayUrl: "https://same.example.test",
-        nextRelayUrl: "https://same.example.test",
-        register: Ref.update(events, (current) => [...current, "register"]),
-        unregister: () => Ref.update(events, (current) => [...current, "unregister"]),
-      });
-      expect(yield* Ref.get(events)).toEqual(["register"]);
-    }),
-  );
 });
 
 const hostFile = (overrides: Partial<PersonalHostFile> = {}): PersonalHostFile => ({

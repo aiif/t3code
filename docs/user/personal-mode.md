@@ -14,8 +14,8 @@ sessions. It uses a separate **admin key** and cannot open projects by itself.
 The relay URL you enter selects the relay. Clients have no separate relay-type
 setting, and one host uses one relay at a time.
 
-- **Self-hosted relay** — the default at `https://relay.example.com`. No enrollment
-  key.
+- **Self-hosted relay** — the relay you deploy, for example
+  `https://relay.example.com`. No enrollment key.
 - **Cloudflare Tunnel relay** — optional, deployed in your own Cloudflare
   account. Hosts also need the deployment's enrollment key.
 
@@ -26,13 +26,20 @@ The rest of this page applies to either relay; see
 ## Sharing a computer
 
 1. Open **Settings → Connections → Personal network**.
-2. Set the relay URL (default `https://relay.example.com`) and a label such as
-   "Home PC".
+2. Pick a saved relay or choose **New relay...**, then enter its URL (for
+   example `https://relay.example.com`) and a label such as "Home PC".
 3. For a Cloudflare relay, paste the **enrollment key** the deployment printed.
-   The default relay does not use one.
+   A self-hosted relay does not use one.
 4. Choose **Register**. The relay returns this computer's host key.
 5. **Reveal** or **Copy** the key and give it to the devices that should reach
    this computer.
+
+The panel remembers each relay URL and enrollment key. **Save relay** stores one
+without switching, and **Switch** moves this computer to another relay without
+asking guests to enter anything again: the relay keeps the host registered, so
+switching back reuses the same host id, host key, and address. The relay you
+switch away from goes offline but stays registered; **Stop sharing** unregisters
+the current relay and invalidates its key.
 
 While the desktop app is running — window or tray — and sharing is on, the host
 stays registered, heartbeats, and keeps its connector running, so guests can
@@ -127,7 +134,7 @@ removes the proxied DNS record for each host.
 
 ### Managing a Cloudflare host
 
-Pause, resume, rotate, and stop work as they do on the default relay. Pausing
+Pause, resume, rotate, and stop work as they do on a self-hosted relay. Pausing
 stops the tunnel; resuming a quick tunnel gets a new address, while a named
 tunnel keeps its hostname. Rotating invalidates the old host key and disconnects
 its guests; they must enter the new key.
@@ -137,11 +144,13 @@ key stops working and it moves to **Removed hosts**. **Restore** keeps the host
 id and key, so after you restore it, register from the host again and guests can
 re-pair with the same key.
 
-To move a host between relays, enter the other relay's URL (and enrollment key
-for a Cloudflare relay) and register. The host registers with the new relay
-before it leaves the old one, so a missing or wrong enrollment key leaves the
-existing setup working. The old host key stops working after a successful
-switch.
+To move a host between relays, pick the other saved relay (or enter its URL and
+enrollment key on a Cloudflare relay) and choose **Switch**. **Save relay** first
+when guests have never used that relay: saving registers it, and paired guests
+pull its key within a minute. The previous relay keeps the host registered but
+offline, so switching back reuses the same host key and guests do not re-enter
+it. A relay this computer has never used still issues its own key; paired guests
+receive it automatically the next time they sync with the host.
 
 ### Limits
 
@@ -175,6 +184,12 @@ switch.
    it as another environment.
 
 A Cloudflare relay changes nothing here: set its relay URL and the host key.
+
+A paired guest also pulls the host's other saved relays. Once a host saves a
+relay, each guest adds that relay as another route automatically on its next
+sync, so switching the host between saved relays needs no new key on any guest.
+The relay must be online when the guest pairs with it; a relay saved while the
+host is offline stays pending and is retried.
 
 Each host is a separate environment. Several can be connected and used at the
 same time; there is no single active host. The existing Connections list shows
@@ -240,6 +255,9 @@ thread.
 
 - A host key is fully trusted for that one host, including every project on it.
   Give it only to people who should operate that machine.
+- A paired guest can ask the host for its other saved relay keys. That only adds
+  routes back to the same host, so it grants nothing the guest did not already
+  have.
 - The admin key is the relay's root credential. Keep it off hosts and guests.
 - Host keys are random 32-byte values, encrypted at rest on the relay, and
   revocable.

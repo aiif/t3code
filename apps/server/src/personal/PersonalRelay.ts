@@ -3,8 +3,11 @@ import {
   type PersonalConnector,
   PersonalConnectorKind,
   PersonalConnectorMode,
+  type PersonalGuestRoute,
+  type PersonalGuestRoutes,
   type PersonalHostRegistration,
   PersonalHostRegistrationResponse,
+  type PersonalRelayProfiles,
   type PersonalRelayState,
   type PersonalResolvedHost,
   PersonalNetworkError,
@@ -41,6 +44,17 @@ import {
   readPersonalHostFile,
   writePersonalHostFile,
 } from "./hostSharingState.ts";
+import {
+  clearRelayRegistration,
+  findRelayProfile,
+  type PersonalRelayProfile,
+  readRelayProfiles,
+  relayKeyFor,
+  relayProfileSummaries,
+  removeRelayProfile,
+  upsertRelayProfile,
+  writeRelayProfiles,
+} from "./relayProfiles.ts";
 import {
   connectorModeOf,
   connectorPlan,
@@ -264,6 +278,15 @@ export class PersonalRelay extends Context.Service<
       readonly relayUrl: string;
       readonly hostKey: string;
     }) => Effect.Effect<PersonalResolvedHost, PersonalNetworkError>;
+    readonly listRelays: () => Effect.Effect<PersonalRelayProfiles>;
+    readonly saveRelay: (input: {
+      readonly relayUrl: string;
+      readonly relayKey?: string | undefined;
+    }) => Effect.Effect<PersonalRelayProfiles, PersonalNetworkError>;
+    readonly forgetRelay: (input: {
+      readonly relayUrl: string;
+    }) => Effect.Effect<PersonalRelayProfiles, PersonalNetworkError>;
+    readonly guestRoutes: () => Effect.Effect<PersonalGuestRoutes>;
     readonly notify: (input: PersonalNotifyInput) => Effect.Effect<void>;
   }
 >()("t3/personal/PersonalRelay") {}
@@ -599,24 +622,9 @@ export const toPersonalRelayState = (host: PersonalHostFile | null): PersonalRel
       };
 
 /**
- * Switching relays registers with the new one first: a missing enrollment key
- * must leave the existing host untouched instead of unregistering it.
+ * Switching relays only changes which connector runs. The host record stays on
+ * the previous relay, so switching back keeps the same host id and host key.
  */
-export const registerBeforeUnregister = Effect.fn("PersonalRelay.registerBeforeUnregister")(
-  function* <A, E, R>(input: {
-    readonly previousRelayUrl: string | null;
-    readonly nextRelayUrl: string;
-    readonly register: Effect.Effect<A, E, R>;
-    readonly unregister: (relayUrl: string) => Effect.Effect<void, never, R>;
-  }) {
-    const registration = yield* input.register;
-    if (input.previousRelayUrl !== null && input.previousRelayUrl !== input.nextRelayUrl) {
-      yield* input.unregister(input.previousRelayUrl).pipe(Effect.ignore);
-    }
-    return registration;
-  },
-);
-
 const makeEnabled = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const environment = yield* ServerEnvironment.ServerEnvironmentIdentity;
@@ -668,6 +676,51 @@ const makeEnabled = Effect.gen(function* () {
   const statusRef = yield* Ref.make<PersonalRelayState>(
     initialHost === null ? disabledState(config) : toPersonalRelayState(initialHost),
   );
+  const initialProfiles = yield* readRelayProfiles({ stateDir: config.stateDir }).pipe(
+    provideHostFileServices,
+    Effect.catchCause(() => Effect.succeed([] as ReadonlyArray<PersonalRelayProfile>)),
+  );
+  const profilesRef = yield* Ref.make<ReadonlyArray<PersonalRelayProfile>>(initialProfiles);
+  const profilesLock = yield* Semaphore.make(1);
+  const withProfiles = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    profilesLock.withPermits(1)(effect);
+  const persistProfiles = Effect.fn("PersonalRelay.persistProfiles")(function* (
+    profiles: ReadonlyArray<PersonalRelayProfile>,
+  ) {
+    yield* writeRelayProfiles({ stateDir: config.stateDir, profiles }).pipe(
+      provideHostFileServices,
+      Effect.mapError(
+        (cause) => new PersonalNetworkError({ operation: "relay", detail: String(cause) }),
+      ),
+    );
+    yield* Ref.set(profilesRef, profiles);
+  });
+  const rememberRelay = Effect.fn("PersonalRelay.rememberRelay")(function* (input: {
+    readonly relayUrl: string;
+    readonly relayKey?: string | undefined;
+    readonly hostId?: string | undefined;
+    readonly hostKey?: string | undefined;
+    readonly publicUrl?: string | undefined;
+  }) {
+    yield* withProfiles(
+      Effect.gen(function* () {
+        const profiles = upsertRelayProfile(yield* Ref.get(profilesRef), {
+          ...input,
+          now: DateTime.formatIso(yield* DateTime.now),
+        });
+        yield* persistProfiles(profiles);
+      }),
+    );
+  });
+  if (initialHost !== null) {
+    yield* rememberRelay({
+      relayUrl: initialHost.relayUrl,
+      relayKey: initialHost.relayKey,
+      hostId: initialHost.hostId,
+      hostKey: initialHost.hostKey,
+      publicUrl: initialHost.publicUrl,
+    }).pipe(Effect.ignore);
+  }
 
   const writeStatusFile = Effect.fn("PersonalRelay.writeStatusFile")(function* (
     status: PersonalRelayState,
@@ -748,6 +801,12 @@ const makeEnabled = Effect.gen(function* () {
     };
     yield* persistHost(next);
     yield* grants.setHostKeyGrant({ hostKey: input.hostKey, hostId: next.hostId });
+    yield* rememberRelay({
+      relayUrl: next.relayUrl,
+      hostId: next.hostId,
+      hostKey: next.hostKey,
+      publicUrl: next.publicUrl,
+    }).pipe(Effect.ignore);
     return next;
   });
 
@@ -774,6 +833,13 @@ const makeEnabled = Effect.gen(function* () {
     yield* Ref.set(hostRef, next);
     yield* persistPersonalHost(next);
     yield* grants.setHostKeyGrant({ hostKey: next.hostKey, hostId: next.hostId });
+    yield* rememberRelay({
+      relayUrl: next.relayUrl,
+      relayKey: input.relayKey ?? next.relayKey,
+      hostId: next.hostId,
+      hostKey: next.hostKey,
+      publicUrl: next.publicUrl,
+    }).pipe(Effect.ignore);
     yield* updateStatus((current) => ({
       ...current,
       enabled: true,
@@ -880,6 +946,12 @@ const makeEnabled = Effect.gen(function* () {
     };
     yield* Ref.set(hostRef, next);
     yield* persistPersonalHost(next).pipe(Effect.ignore);
+    yield* rememberRelay({
+      relayUrl: next.relayUrl,
+      hostId: next.hostId,
+      hostKey: next.hostKey,
+      publicUrl,
+    }).pipe(Effect.ignore);
     yield* updateStatus((status) => ({ ...status, publicUrl }));
   });
 
@@ -988,6 +1060,17 @@ const makeEnabled = Effect.gen(function* () {
               yield* grants.clearHostKeyGrant();
               yield* Ref.set(hostRef, null);
               yield* clearHost;
+              if (host !== null) {
+                yield* withProfiles(
+                  persistProfiles(
+                    clearRelayRegistration(
+                      yield* Ref.get(profilesRef),
+                      host.relayUrl,
+                      DateTime.formatIso(yield* DateTime.now),
+                    ),
+                  ).pipe(Effect.ignore),
+                );
+              }
               yield* updateStatus(() => ({
                 ...disabledState(config),
                 lastError: "This host was removed from the relay.",
@@ -1043,8 +1126,10 @@ const makeEnabled = Effect.gen(function* () {
           });
         }
         const previous = yield* Ref.get(hostRef);
+        const profiles = yield* Ref.get(profilesRef);
         const relayKey =
           input.relayKey?.trim() ||
+          relayKeyFor(profiles, relayUrl) ||
           (previous?.relayUrl === relayUrl ? previous.relayKey : undefined) ||
           configRelayKey;
         const label =
@@ -1053,30 +1138,18 @@ const makeEnabled = Effect.gen(function* () {
           relayUrl,
           previousRelayUrl: previous?.relayUrl ?? null,
           relaySwitched: previous !== null && previous.relayUrl !== relayUrl,
+          previousRelayLeftRegistered: previous !== null && previous.relayUrl !== relayUrl,
           hasRelayKey: relayKey !== undefined,
           label,
         });
         const registration = normalizeHostRegistration(
-          yield* registerBeforeUnregister({
-            previousRelayUrl: previous?.relayUrl ?? null,
-            nextRelayUrl: relayUrl,
-            register: client.register({
-              relayUrl,
-              environmentId,
-              label,
-              platform: yield* HostProcess.Platform,
-              originPort: config.port,
-              ...(relayKey === undefined ? {} : { relayKey }),
-            }),
-            unregister: (unregisterRelayUrl) =>
-              previous === null
-                ? Effect.void
-                : client
-                    .unregister({
-                      relayUrl: unregisterRelayUrl,
-                      hostToken: previous.hostToken,
-                    })
-                    .pipe(Effect.ignore),
+          yield* client.register({
+            relayUrl,
+            environmentId,
+            label,
+            platform: yield* HostProcess.Platform,
+            originPort: config.port,
+            ...(relayKey === undefined ? {} : { relayKey }),
           }),
         );
         yield* Effect.logInfo("personal relay registered", {
@@ -1088,6 +1161,14 @@ const makeEnabled = Effect.gen(function* () {
           publicUrl: registration.publicUrl,
           hostKeyChanged: previous !== null && previous.hostKey !== registration.hostKey,
         });
+        if (
+          previous !== null &&
+          previous.relayUrl === relayUrl &&
+          (previous.hostId !== registration.hostId || previous.hostKey !== registration.hostKey)
+        ) {
+          // The relay re-created this host under the same URL; the old key is gone.
+          yield* revokeGuestSessions(previous.hostId);
+        }
         yield* stopConnector;
         const host: PersonalHostFile = {
           ...hostFileFromRegistration({
@@ -1102,6 +1183,13 @@ const makeEnabled = Effect.gen(function* () {
         yield* Ref.set(hostRef, host);
         yield* persistPersonalHost(host);
         yield* grants.setHostKeyGrant({ hostKey: host.hostKey, hostId: host.hostId });
+        yield* rememberRelay({
+          relayUrl: host.relayUrl,
+          relayKey: host.relayKey,
+          hostId: host.hostId,
+          hostKey: host.hostKey,
+          publicUrl: host.publicUrl,
+        });
         yield* updateStatus((current) => ({
           ...current,
           enabled: true,
@@ -1121,10 +1209,23 @@ const makeEnabled = Effect.gen(function* () {
       }),
     ).pipe(
       Effect.tapError((error) =>
-        Effect.logWarning("personal relay start failed", {
-          relayUrl: input.relayUrl,
-          operation: error.operation,
-          detail: error.detail,
+        Effect.gen(function* () {
+          yield* Effect.logWarning("personal relay start failed", {
+            relayUrl: input.relayUrl,
+            operation: error.operation,
+            detail: error.detail,
+          });
+          if (error.status === 401 || error.status === 410) {
+            yield* withProfiles(
+              persistProfiles(
+                clearRelayRegistration(
+                  yield* Ref.get(profilesRef),
+                  input.relayUrl,
+                  DateTime.formatIso(yield* DateTime.now),
+                ),
+              ).pipe(Effect.ignore),
+            );
+          }
         }),
       ),
     );
@@ -1147,6 +1248,17 @@ const makeEnabled = Effect.gen(function* () {
         }
         yield* Ref.set(hostRef, null);
         yield* clearHost;
+        if (host !== null) {
+          yield* withProfiles(
+            persistProfiles(
+              clearRelayRegistration(
+                yield* Ref.get(profilesRef),
+                host.relayUrl,
+                DateTime.formatIso(yield* DateTime.now),
+              ),
+            ).pipe(Effect.ignore),
+          );
+        }
         yield* updateStatus(() => disabledState(config));
         return yield* Ref.get(statusRef);
       }),
@@ -1251,6 +1363,12 @@ const makeEnabled = Effect.gen(function* () {
         yield* persistPersonalHost(next);
         yield* Ref.set(hostRef, next);
         yield* grants.setHostKeyGrant({ hostKey: next.hostKey, hostId: next.hostId });
+        yield* rememberRelay({
+          relayUrl: next.relayUrl,
+          hostId: next.hostId,
+          hostKey: next.hostKey,
+          publicUrl: next.publicUrl,
+        }).pipe(Effect.ignore);
         yield* Effect.logInfo("personal relay host key rotated", {
           hostId: next.hostId,
           relayUrl: next.relayUrl,
@@ -1280,6 +1398,109 @@ const makeEnabled = Effect.gen(function* () {
       hostKey: input.hostKey,
     });
 
+  const listRelays: PersonalRelay["Service"]["listRelays"] = () =>
+    Ref.get(profilesRef).pipe(
+      Effect.map((profiles) => ({ relays: relayProfileSummaries(profiles) })),
+    );
+
+  const saveRelay: PersonalRelay["Service"]["saveRelay"] = (input) =>
+    lock(
+      withProfiles(
+        Effect.gen(function* () {
+          const relayUrl = baseUrlOf(input.relayUrl);
+          if (!/^https?:\/\//u.test(relayUrl)) {
+            return yield* new PersonalNetworkError({
+              operation: "relay",
+              detail: "The relay URL must be an http or https origin.",
+            });
+          }
+          const savedAt = DateTime.formatIso(yield* DateTime.now);
+          let profiles = upsertRelayProfile(yield* Ref.get(profilesRef), {
+            relayUrl,
+            relayKey: input.relayKey,
+            now: savedAt,
+          });
+          const current = yield* Ref.get(hostRef);
+          const active = current !== null && current.enabled && current.relayUrl === relayUrl;
+          const saved = findRelayProfile(profiles, relayUrl);
+          if (
+            !active &&
+            saved !== null &&
+            (saved.hostKey === undefined || input.relayKey?.trim())
+          ) {
+            const relayKey = saved.relayKey?.trim() || configRelayKey;
+            const label = current?.label ?? config.personalLabel?.trim() ?? null;
+            const prepared = yield* client
+              .register({
+                relayUrl,
+                environmentId,
+                label,
+                platform: yield* HostProcess.Platform,
+                originPort: config.port,
+                ...(relayKey === undefined ? {} : { relayKey }),
+              })
+              .pipe(Effect.option);
+            if (Option.isSome(prepared)) {
+              const registration = normalizeHostRegistration(prepared.value);
+              profiles = upsertRelayProfile(profiles, {
+                relayUrl,
+                relayKey,
+                hostId: registration.hostId,
+                hostKey: registration.hostKey,
+                publicUrl: registration.publicUrl,
+                now: DateTime.formatIso(yield* DateTime.now),
+              });
+              yield* Effect.logInfo("personal relay prepared", {
+                relayUrl,
+                hostId: registration.hostId,
+                publicUrl: registration.publicUrl,
+              });
+            }
+          }
+          yield* persistProfiles(profiles);
+          return { relays: relayProfileSummaries(profiles) };
+        }),
+      ),
+    );
+
+  const forgetRelay: PersonalRelay["Service"]["forgetRelay"] = (input) =>
+    lock(
+      withProfiles(
+        Effect.gen(function* () {
+          const relayUrl = baseUrlOf(input.relayUrl);
+          const host = yield* Ref.get(hostRef);
+          if (host !== null && host.enabled && host.relayUrl === relayUrl) {
+            return yield* new PersonalNetworkError({
+              operation: "relay",
+              detail: "Stop sharing before forgetting this relay.",
+            });
+          }
+          const profiles = removeRelayProfile(yield* Ref.get(profilesRef), relayUrl);
+          yield* persistProfiles(profiles);
+          return { relays: relayProfileSummaries(profiles) };
+        }),
+      ),
+    );
+
+  const guestRoutes: PersonalRelay["Service"]["guestRoutes"] = () =>
+    Ref.get(profilesRef).pipe(
+      Effect.map((profiles) => ({
+        routes: profiles.flatMap((profile): ReadonlyArray<PersonalGuestRoute> => {
+          const hostKey = profile.hostKey?.trim() ?? "";
+          const hostId = profile.hostId?.trim() ?? "";
+          if (hostKey === "" || hostId === "") return [];
+          return [
+            {
+              relayUrl: profile.relayUrl,
+              hostKey,
+              hostId,
+              publicUrl: profile.publicUrl?.trim() ?? "",
+            },
+          ];
+        }),
+      })),
+    );
+
   const notifyInternal = Effect.fn("PersonalRelay.notify")(function* (input: PersonalNotifyInput) {
     const host = yield* Ref.get(hostRef);
     if (host === null || !host.enabled || host.paused) return;
@@ -1302,6 +1523,10 @@ const makeEnabled = Effect.gen(function* () {
     rotateKey,
     revealKey,
     resolveHost,
+    listRelays,
+    saveRelay,
+    forgetRelay,
+    guestRoutes,
     notify,
   });
 });

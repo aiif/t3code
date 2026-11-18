@@ -227,6 +227,10 @@ export const RPC_REQUIRED_SCOPES = {
   [PERSONAL_WS_METHODS.rotateSharingKey]: AuthSettingsWriteScope,
   [PERSONAL_WS_METHODS.revealSharingKey]: AuthSettingsWriteScope,
   [PERSONAL_WS_METHODS.resolveHostKey]: AuthOrchestrationReadScope,
+  [PERSONAL_WS_METHODS.listRelays]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.saveRelay]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.forgetRelay]: AuthSettingsWriteScope,
+  [PERSONAL_WS_METHODS.guestRoutes]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
 export function requiredScopeForRpcMethod(method: string): AuthEnvironmentScope {

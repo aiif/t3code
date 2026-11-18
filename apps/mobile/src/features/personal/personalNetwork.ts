@@ -15,7 +15,7 @@ import * as SecureStore from "expo-secure-store";
  * Host keys are guest credentials, so they live in the platform keystore
  * rather than app preferences. Each key is one independent host.
  */
-const personalNetworkStorage: PersonalStorage = {
+export const personalNetworkStorage: PersonalStorage = {
   getItem: (key) => {
     try {
       return SecureStore.getItem(key);

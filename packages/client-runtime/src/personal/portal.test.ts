@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   PERSONAL_ADMIN_KEY_STORAGE,
@@ -16,6 +16,7 @@ import {
   restoreAdminHost,
   rotateAdminHostKey,
   savePersonalAdminConfig,
+  syncPersonalRelayRoutes,
   upsertPersonalHost,
   type PersonalStorage,
 } from "./portal.js";
@@ -243,5 +244,78 @@ describe("guest hosts", () => {
     const storage = memoryStorage();
     storage.setItem(PERSONAL_HOSTS_STORAGE_KEY, "{not json");
     expect(readPersonalHosts(storage)).toEqual([]);
+  });
+});
+
+describe("relay route sync", () => {
+  const environmentId = resolved.environmentId as never;
+
+  it("pairs a new route once and remembers it", async () => {
+    const storage = memoryStorage();
+    const pair = vi.fn(async () => ({ ok: true }));
+    const fetchImpl = async () => jsonResponse(resolved);
+
+    const hosts = await syncPersonalRelayRoutes({
+      environmentId,
+      routes: [{ relayUrl: RELAY, hostKey: HOST_KEY }],
+      pair,
+      storage,
+      fetchImpl,
+    });
+
+    expect(pair).toHaveBeenCalledExactlyOnceWith({
+      host: resolved.publicUrl,
+      pairingCode: HOST_KEY,
+      expectedEnvironmentId: environmentId,
+    });
+    expect(hosts).toHaveLength(1);
+    expect(hosts[0]).toMatchObject({ relayUrl: RELAY, hostKey: HOST_KEY });
+
+    const again = await syncPersonalRelayRoutes({
+      environmentId,
+      routes: [{ relayUrl: RELAY, hostKey: HOST_KEY }],
+      pair,
+      storage,
+      fetchImpl,
+    });
+    expect(pair).toHaveBeenCalledTimes(1);
+    expect(again).toHaveLength(1);
+  });
+
+  it("retries a route while the relay reports the host offline", async () => {
+    const storage = memoryStorage();
+    const pair = vi.fn(async () => ({ ok: true }));
+    const fetchImpl = async () => jsonResponse({ ...resolved, online: false });
+
+    await syncPersonalRelayRoutes({
+      environmentId,
+      routes: [{ relayUrl: RELAY, hostKey: HOST_KEY }],
+      pair,
+      storage,
+      fetchImpl,
+    });
+    expect(pair).not.toHaveBeenCalled();
+
+    await syncPersonalRelayRoutes({
+      environmentId,
+      routes: [{ relayUrl: RELAY, hostKey: HOST_KEY }],
+      pair,
+      storage,
+      fetchImpl: async () => jsonResponse(resolved),
+    });
+    expect(pair).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a key that resolves to a different environment", async () => {
+    const storage = memoryStorage();
+    const pair = vi.fn(async () => ({ ok: true }));
+    await syncPersonalRelayRoutes({
+      environmentId,
+      routes: [{ relayUrl: RELAY, hostKey: HOST_KEY }],
+      pair,
+      storage,
+      fetchImpl: async () => jsonResponse({ ...resolved, environmentId: "env-other" }),
+    });
+    expect(pair).not.toHaveBeenCalled();
   });
 });

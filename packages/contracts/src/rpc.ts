@@ -87,11 +87,15 @@ import {
 import { ClientActivityReportInput } from "./background.ts";
 import {
   PERSONAL_WS_METHODS,
+  PersonalForgetRelayInput,
+  PersonalGuestRoutes,
   PersonalHostKeyResult,
   PersonalNetworkError,
+  PersonalRelayProfiles,
   PersonalRelayState,
   PersonalResolveHostInput,
   PersonalResolvedHost,
+  PersonalSaveRelayInput,
   PersonalShareInput,
 } from "./personal.ts";
 import {
@@ -710,6 +714,30 @@ const WsPersonalResolveHostKeyRpc = Rpc.make(PERSONAL_WS_METHODS.resolveHostKey,
   payload: PersonalResolveHostInput,
   success: PersonalResolvedHost,
   error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalListRelaysRpc = Rpc.make(PERSONAL_WS_METHODS.listRelays, {
+  payload: Schema.Struct({}),
+  success: PersonalRelayProfiles,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsPersonalSaveRelayRpc = Rpc.make(PERSONAL_WS_METHODS.saveRelay, {
+  payload: PersonalSaveRelayInput,
+  success: PersonalRelayProfiles,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalForgetRelayRpc = Rpc.make(PERSONAL_WS_METHODS.forgetRelay, {
+  payload: PersonalForgetRelayInput,
+  success: PersonalRelayProfiles,
+  error: Schema.Union([PersonalNetworkError, EnvironmentAuthorizationError]),
+});
+
+const WsPersonalGuestRoutesRpc = Rpc.make(PERSONAL_WS_METHODS.guestRoutes, {
+  payload: Schema.Struct({}),
+  success: PersonalGuestRoutes,
+  error: EnvironmentAuthorizationError,
 });
 
 export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
@@ -2179,6 +2207,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsPersonalRotateSharingKeyRpc,
   WsPersonalRevealSharingKeyRpc,
   WsPersonalResolveHostKeyRpc,
+  WsPersonalListRelaysRpc,
+  WsPersonalSaveRelayRpc,
+  WsPersonalForgetRelayRpc,
+  WsPersonalGuestRoutesRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,
