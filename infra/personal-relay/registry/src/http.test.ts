@@ -1,7 +1,8 @@
 import { expect, it } from "vite-plus/test";
+import type * as NodeHttp from "node:http";
 import type * as NodeNet from "node:net";
 
-import { createRegistryServer } from "./http.ts";
+import { createRegistryServer, requestIp } from "./http.ts";
 import { makeTestRegistry, TEST_ADMIN_KEY } from "./testkit.ts";
 
 async function startServer() {
@@ -212,6 +213,51 @@ it("subscribes with a host key and delivers a notification from that host", asyn
   } finally {
     await harness.close();
   }
+});
+
+it("answers Caddy's on-demand TLS ask for active host domains only", async () => {
+  const harness = await startServer();
+  try {
+    const host = await register(harness, "env-ask");
+
+    const allowed = await fetch(
+      harness.url(`/internal/tls/ask?domain=${host.hostId}.t3.example.test`),
+    );
+    expect(allowed.status).toBe(200);
+
+    const unknown = await fetch(
+      harness.url("/internal/tls/ask?domain=unknownhost.t3.example.test"),
+    );
+    expect(unknown.status).toBe(404);
+
+    const foreign = await fetch(
+      harness.url(`/internal/tls/ask?domain=${host.hostId}.other.example.test`),
+    );
+    expect(foreign.status).toBe(404);
+
+    const removed = await fetch(harness.url(`/v1/admin/hosts/${host.hostId}/remove`), {
+      method: "POST",
+      headers: { authorization: `Bearer ${TEST_ADMIN_KEY}` },
+    });
+    expect(removed.status).toBe(200);
+    const revoked = await fetch(
+      harness.url(`/internal/tls/ask?domain=${host.hostId}.t3.example.test`),
+    );
+    expect(revoked.status).toBe(404);
+  } finally {
+    await harness.close();
+  }
+});
+
+it("uses x-real-ip, then the last forwarded hop, for rate-limit keys", () => {
+  const request = (headers: Record<string, string>, remoteAddress: string) =>
+    ({ headers, socket: { remoteAddress } }) as unknown as NodeHttp.IncomingMessage;
+
+  expect(requestIp(request({ "x-real-ip": "203.0.113.9" }, "127.0.0.1"))).toBe("203.0.113.9");
+  expect(requestIp(request({ "x-forwarded-for": "198.51.100.1, 203.0.113.9" }, "127.0.0.1"))).toBe(
+    "203.0.113.9",
+  );
+  expect(requestIp(request({}, "127.0.0.1"))).toBe("127.0.0.1");
 });
 
 it("answers CORS preflight for the portal and returns JSON errors", async () => {

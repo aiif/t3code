@@ -267,6 +267,17 @@ export class RegistryService {
     return `${this.#portalScheme}//${hostId}.${this.#hostDomain}`;
   }
 
+  /** Caddy's on-demand TLS ask: only an active host's exact public hostname is allowed. */
+  servesHostDomain(domain: string): boolean {
+    const normalized = domain.trim().toLowerCase().replace(/\.$/u, "");
+    const suffix = `.${this.#hostDomain.toLowerCase()}`;
+    if (!normalized.endsWith(suffix)) return false;
+    const hostId = normalized.slice(0, -suffix.length);
+    if (!/^[a-z0-9]{6,32}$/u.test(hostId)) return false;
+    const host = this.#store.getHost(hostId);
+    return host !== null && host.revokedAt === null;
+  }
+
   isOnline(host: HostRow): boolean {
     return (
       host.revokedAt === null &&

@@ -52,16 +52,26 @@ function bearerToken(request: NodeHttp.IncomingMessage): string | null {
   return token.length === 0 ? null : token;
 }
 
+function headerValue(value: string | string[] | undefined): string | null {
+  const first = Array.isArray(value) ? value[0] : value;
+  const trimmed = first?.trim() ?? "";
+  return trimmed === "" ? null : trimmed;
+}
+
 /** `/v1/...` in production; the bare path keeps local curl checks working. */
 function routePath(url: string): string {
   const pathname = new URL(url, "http://registry.local").pathname.replace(/\/+$/, "");
   return pathname.startsWith("/v1/") || pathname === "/v1" ? pathname.slice(3) || "/" : pathname;
 }
 
-function requestIp(request: NodeHttp.IncomingMessage): string {
-  const forwarded = request.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.length > 0) {
-    return forwarded.split(",")[0]?.trim() || "unknown";
+export function requestIp(request: NodeHttp.IncomingMessage): string {
+  const real = headerValue(request.headers["x-real-ip"]);
+  if (real !== null) return real;
+  const forwarded = headerValue(request.headers["x-forwarded-for"]);
+  if (forwarded !== null) {
+    const parts = forwarded.split(",");
+    const last = parts[parts.length - 1]?.trim() ?? "";
+    if (last !== "") return last;
   }
   return request.socket.remoteAddress ?? "unknown";
 }
@@ -146,6 +156,17 @@ export function createRegistryServer(options: RegistryHttpOptions): NodeHttp.Ser
         if (method === "GET" && path === "/push/public-key") {
           sendJson(request, response, 200, { publicKey: options.vapidPublicKey });
           finish(200);
+          return;
+        }
+
+        // Caddy asks before issuing an on-demand certificate for a host subdomain.
+        if (method === "GET" && path === "/internal/tls/ask") {
+          const domain =
+            new URL(request.url ?? "/", "http://registry.local").searchParams.get("domain") ?? "";
+          const status = service.servesHostDomain(domain) ? 200 : 404;
+          response.writeHead(status, { "cache-control": "no-store" });
+          response.end();
+          finish(status);
           return;
         }
 

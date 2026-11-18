@@ -307,3 +307,22 @@ describe("web push", () => {
     registry.close();
   });
 });
+
+describe("on-demand TLS host check", () => {
+  it("normalizes the domain and rejects unknown, revoked, and deeper names", () => {
+    const registry = makeTestRegistry();
+    const host = registerTestHost(registry);
+    const domain = `${host.hostId}.t3.example.test`;
+
+    expect(registry.service.servesHostDomain(domain)).toBe(true);
+    expect(registry.service.servesHostDomain(`  ${domain.toUpperCase()}.  `)).toBe(true);
+    expect(registry.service.servesHostDomain(`unknownhost.t3.example.test`)).toBe(false);
+    expect(registry.service.servesHostDomain(`${host.hostId}.other.example.test`)).toBe(false);
+    expect(registry.service.servesHostDomain(`a.${domain}`)).toBe(false);
+    expect(registry.service.servesHostDomain(domain.slice(0, -1))).toBe(false);
+
+    registry.service.removeHost(host.hostId, "test");
+    expect(registry.service.servesHostDomain(domain)).toBe(false);
+    registry.close();
+  });
+});
