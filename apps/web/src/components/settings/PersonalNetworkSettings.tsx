@@ -113,17 +113,31 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
     }
   };
 
-  const startSharing = () =>
-    run(() =>
-      start({
+  const startSharing = () => {
+    const previousKey = hostKey;
+    return run(async () => {
+      const result = await start({
         environmentId,
         input: {
           relayUrl: relayUrl.trim(),
           ...(relayKey.trim() === "" ? {} : { relayKey: relayKey.trim() }),
           ...(label.trim() === "" ? {} : { label: label.trim() }),
         },
-      }),
-    );
+      });
+      if (result._tag === "Success") {
+        // Saving can register with a different relay and issue a new host key.
+        // The start response carries relay state, not the key, so reveal it now
+        // instead of leaving the previously displayed key on screen.
+        const revealed = await reveal({ environmentId, input: {} });
+        const nextKey = resultValue(revealed as CommandResult<{ hostKey: string }>);
+        setHostKey(nextKey);
+        if (previousKey !== null && nextKey !== null && previousKey !== nextKey) {
+          setMessage("Host key changed. Guests must add the new key.");
+        }
+      }
+      return result;
+    });
+  };
 
   const copyHostKey = async () => {
     if (hostKey === null) return;
