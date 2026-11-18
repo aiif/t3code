@@ -166,6 +166,27 @@ export function upsertRoute(
       insertRoute(routes, route, { aheadOfSameKind: true });
 }
 
+/**
+ * The route a connection settled on goes first among routes of its kind, so a
+ * restart, and the address shown for the environment, follow the relay or
+ * address that last worked. Other kinds keep their rank, so a reachable LAN
+ * address still comes before a relay.
+ */
+export function preferConnectedRoute(
+  routes: ReadonlyArray<ConnectionRoute>,
+  routeId: string,
+): ReadonlyArray<ConnectionRoute> | null {
+  const index = routes.findIndex((route) => connectionRouteId(route.target) === routeId);
+  if (index <= 0) return null;
+  const kind = connectionRouteKind(routes[index]!);
+  const firstOfKind = routes.findIndex((route) => connectionRouteKind(route) === kind);
+  if (firstOfKind === -1 || firstOfKind === index) return null;
+  const next = [...routes];
+  const [route] = next.splice(index, 1);
+  next.splice(firstOfKind, 0, route!);
+  return next;
+}
+
 export function findRouteToSameAddress(
   routes: ReadonlyArray<ConnectionRoute>,
   route: ConnectionRoute,

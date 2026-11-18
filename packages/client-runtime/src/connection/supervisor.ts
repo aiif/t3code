@@ -150,6 +150,10 @@ export interface EnvironmentSupervisorOptions {
     readonly activeRoute: ConnectionRoute;
     readonly reported: ReadonlyArray<ReportedEndpoint>;
   }) => Effect.Effect<Option.Option<ConnectionCatalogEntry>>;
+  /** Saves the route the connection settled on so later attempts start from it. */
+  readonly rememberConnectedRoute?: (
+    route: ConnectionRoute,
+  ) => Effect.Effect<Option.Option<ConnectionCatalogEntry>>;
 }
 
 function retryDelayMs(failureCount: number, random: number): number {
@@ -1036,6 +1040,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     const connectedAt = yield* Clock.currentTimeMillis;
     yield* SubscriptionRef.set(prepared, Option.some(connectedLease.prepared));
     yield* SubscriptionRef.set(session, Option.some(connectedLease.session));
+    if (options?.rememberConnectedRoute !== undefined && connectedLease.activeRoute !== undefined) {
+      const remembered = yield* options.rememberConnectedRoute(connectedLease.activeRoute);
+      if (Option.isSome(remembered)) {
+        yield* Ref.set(currentEntry, remembered.value);
+      }
+    }
     if (options?.learnRoutes !== undefined) {
       yield* learnRoutesFrom(options.learnRoutes, connectedLease).pipe(Effect.forkScoped);
     }

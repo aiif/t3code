@@ -51,6 +51,7 @@ import {
   findRouteToSameAddress,
   hasSavedBearerRoute,
   mergeLearnedRoutes,
+  preferConnectedRoute,
   routesAfterRemoving,
   upsertRoute,
   type ReportedEndpoint,
@@ -368,6 +369,7 @@ export const make = Effect.gen(function* () {
             // before an enabled, compatible environment starts connecting.
             initiallyDesired: entry.enabled && entry.unsupportedReason === undefined,
             learnRoutes: (input) => learnRoutes({ environmentId, ...input }),
+            rememberConnectedRoute: (route) => rememberConnectedRoute({ environmentId, route }),
           }).pipe(
             Effect.provideService(Connectivity.Connectivity, connectivity),
             Effect.provideService(ConnectionDriver.ConnectionDriver, driver),
@@ -916,6 +918,24 @@ export const make = Effect.gen(function* () {
     typeof globalThis.location === "undefined" || globalThis.location.protocol !== "https:";
 
   /**
+   * Saves route order without replacing the live supervisor, which a reorder
+   * from the settings screen does.
+   */
+  const saveRouteOrder = Effect.fn("EnvironmentRegistry.saveRouteOrder")(function* (
+    next: ConnectionCatalogEntry,
+  ) {
+    const environmentId = next.target.environmentId;
+    yield* registrations.setRoutes(environmentId, persistedRoutes(next));
+    const lease = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);
+    if (lease !== undefined) {
+      yield* SubscriptionRef.update(serviceScopes, (current) =>
+        new Map(current).set(environmentId, { ...lease, entry: next }),
+      );
+    }
+    yield* SubscriptionRef.update(entries, (current) => new Map(current).set(environmentId, next));
+  });
+
+  /**
    * Learned routes reuse the active route's credential, so they do not revoke pull request routing
    * trust the way a newly paired address does.
    */
@@ -956,16 +976,7 @@ export const make = Effect.gen(function* () {
           }
           yield* profiles.put(profile);
         }
-        yield* registrations.setRoutes(input.environmentId, persistedRoutes(next));
-        const lease = (yield* SubscriptionRef.get(serviceScopes)).get(input.environmentId);
-        if (lease !== undefined) {
-          yield* SubscriptionRef.update(serviceScopes, (current) =>
-            new Map(current).set(input.environmentId, { ...lease, entry: next }),
-          );
-        }
-        yield* SubscriptionRef.update(entries, (current) =>
-          new Map(current).set(input.environmentId, next),
-        );
+        yield* saveRouteOrder(next);
         return Option.some(next);
       }),
     ).pipe(
@@ -977,6 +988,42 @@ export const make = Effect.gen(function* () {
       ),
     );
   });
+
+  /**
+   * The route a connection settled on becomes the first of its kind. A guest
+   * that fails over to another relay then starts there next launch instead of
+   * probing the relay the host left, and the address shown for the
+   * environment follows it. The order is saved like a manual reorder.
+   */
+  const rememberConnectedRoute = Effect.fn("EnvironmentRegistry.rememberConnectedRoute")(
+    function* (input: { readonly environmentId: EnvironmentId; readonly route: ConnectionRoute }) {
+      return yield* withLeaseLock(
+        input.environmentId,
+        Effect.gen(function* () {
+          if ((yield* Ref.get(platformEnvironmentIds)).has(input.environmentId)) {
+            return Option.none<ConnectionCatalogEntry>();
+          }
+          const entry = (yield* SubscriptionRef.get(entries)).get(input.environmentId);
+          if (entry === undefined) return Option.none<ConnectionCatalogEntry>();
+          const routes = preferConnectedRoute(
+            connectionRoutes(entry),
+            connectionRouteId(input.route.target),
+          );
+          if (routes === null) return Option.none<ConnectionCatalogEntry>();
+          const next = entryWithRoutes(entry, routes);
+          yield* saveRouteOrder(next);
+          return Option.some(next);
+        }),
+      ).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Could not save the route the connection settled on.", {
+            environmentId: input.environmentId,
+            error,
+          }).pipe(Effect.as(Option.none<ConnectionCatalogEntry>())),
+        ),
+      );
+    },
+  );
 
   const removeRoute = Effect.fn("EnvironmentRegistry.removeRoute")(function* (
     environmentId: EnvironmentId,

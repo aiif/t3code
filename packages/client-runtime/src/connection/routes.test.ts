@@ -19,6 +19,7 @@ import {
   isNearbyAddress,
   mergeLearnedRoutes,
   pendingRouteOrder,
+  preferConnectedRoute,
   removedWithRelay,
   routeKeepsItsHost,
   routesAfterRemoving,
@@ -113,6 +114,20 @@ describe("connection routes", () => {
     expect(insertRoute([LAN, RELAY], TAILNET)).toEqual([LAN, TAILNET, RELAY]);
     expect(insertRoute([TAILNET], LAN)).toEqual([LAN, TAILNET]);
     expect(insertRoute([LAN, TAILNET], RELAY)).toEqual([LAN, TAILNET, RELAY]);
+  });
+
+  it("moves the route a connection settled on ahead of its own kind only", () => {
+    const secondRelay = direct("relay-b", "https://b.relay.example.com/");
+    expect(preferConnectedRoute([PUBLIC, secondRelay], "relay-b")).toEqual([secondRelay, PUBLIC]);
+    // A LAN still outranks a public relay the connection settled on.
+    expect(preferConnectedRoute([LAN, PUBLIC, secondRelay], "relay-b")).toEqual([
+      LAN,
+      secondRelay,
+      PUBLIC,
+    ]);
+    // Already first, or not saved, changes nothing.
+    expect(preferConnectedRoute([secondRelay, PUBLIC], "relay-b")).toBeNull();
+    expect(preferConnectedRoute([PUBLIC], "relay-b")).toBeNull();
   });
 
   it("keeps a user's order when a saved route is replaced", () => {

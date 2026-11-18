@@ -1812,6 +1812,27 @@ describe("EnvironmentSupervisor", () => {
 });
 
 describe("EnvironmentSupervisor routes", () => {
+  it.effect("reports the route the connection settled on", () =>
+    Effect.gen(function* () {
+      const remembered = yield* Ref.make<ReadonlyArray<string>>([]);
+      const harness = yield* makeHarness({
+        checkRoute: (route) =>
+          Effect.succeed(route.target._tag === "BearerConnectionTarget" ? "silent" : "unchecked"),
+        prepare: (_attempt, target) => Effect.succeed(preparedFor(target)),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_THEN_RELAY_ENTRY, {
+        initiallyDesired: true,
+        rememberConnectedRoute: (route) =>
+          Ref.update(remembered, (all) => [...all, connectionRouteId(route.target)]).pipe(
+            Effect.as(Option.none()),
+          ),
+      }).pipe(Effect.provide(harness.dependencies));
+
+      yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+      expect(yield* Ref.get(remembered)).toEqual(["relay"]);
+    }),
+  );
+
   it.effect("connects over relay before a slow LAN reachability check times out", () =>
     Effect.gen(function* () {
       const checkingLan = yield* Deferred.make<void>();

@@ -2336,4 +2336,56 @@ describe("EnvironmentRegistry routes", () => {
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
+
+  it.effect("starts from the relay the guest last connected over", () =>
+    Effect.gen(function* () {
+      const relayB = new BearerConnectionTarget({
+        ...LAN_TARGET,
+        connectionId: "bearer:relay-b",
+      });
+      const relayBProfile = new BearerConnectionProfile({
+        ...LAN_PROFILE,
+        connectionId: relayB.connectionId,
+        httpBaseUrl: "https://b.relay.example.test/",
+        wsBaseUrl: "wss://b.relay.example.test/",
+      });
+      const relayAProfile = new BearerConnectionProfile({
+        ...LAN_PROFILE,
+        httpBaseUrl: "https://a.relay.example.test/",
+        wsBaseUrl: "wss://a.relay.example.test/",
+      });
+      const harness = yield* makeHarness(
+        [LAN_TARGET, relayB],
+        [relayAProfile, relayBProfile],
+        [
+          [LAN_TARGET.connectionId, BEARER_CREDENTIAL],
+          [relayB.connectionId, BEARER_CREDENTIAL],
+        ],
+        {
+          // The host moved to relay B; relay A no longer answers.
+          checkRoute: (route) =>
+            route.target._tag === "BearerConnectionTarget" &&
+            route.target.connectionId === LAN_TARGET.connectionId
+              ? "silent"
+              : "answered",
+        },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          LAN_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          relayB,
+          LAN_TARGET,
+        ]);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).get(LAN_TARGET.environmentId)?.target,
+        ).toEqual(relayB);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
 });
