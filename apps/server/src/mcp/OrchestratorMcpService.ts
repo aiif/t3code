@@ -1326,7 +1326,7 @@ const make = Effect.gen(function* () {
       : Effect.suspend(() => projects.getById(parent.thread.projectId)).pipe(
           Effect.map(Option.getOrUndefined),
           Effect.map((project) => project?.workspaceRoot),
-          Effect.catchCause(() => Effect.succeed(undefined)),
+          Effect.catchCause(() => Effect.undefined),
         );
 
   const secretRequests = yield* SecretRequests.SecretRequests;
