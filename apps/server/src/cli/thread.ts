@@ -785,6 +785,12 @@ const threadStartCommand = Command.make("start", {
     Flag.withDescription("Thread title. Defaults to the message's first line."),
     Flag.optional,
   ),
+  agent: Flag.String("agent").pipe(
+    Flag.withDescription(
+      "Named agent definition from t3 agent list. Its prompt and defaults apply to the first turn.",
+    ),
+    Flag.optional,
+  ),
   provider: Flag.String("provider").pipe(
     Flag.withDescription("Provider instance id. Pass with --model."),
     Flag.optional,
@@ -827,6 +833,7 @@ const threadStartCommand = Command.make("start", {
               projectId: project.id,
               title,
               message,
+              ...(Option.isSome(flags.agent) ? { agent: flags.agent.value } : {}),
               ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
               ...(Option.isSome(flags.provider) && Option.isSome(flags.model)
                 ? {
