@@ -27,6 +27,19 @@ T3 Code runs the coding agents on your machine and gives them one fast interface
 
 It works with Claude Code, Codex, Cursor, OpenCode, Grok Build, Antigravity, Kiro, Pi, Muse Code, fx, and any [ACP](./docs/user/providers-acp.md) agent. If an agent is set up on your computer, T3 Code can control it.
 
+## About this fork
+
+This repository is a fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) rebuilt around one goal: a private, self-hosted T3 Code network that needs no T3 account.
+
+- **Personal network.** A machine running the desktop or CLI server registers as a **host** with a relay you control and gets its own **host key**. Enter that key in the desktop app or the native Android APK to operate that machine; one client can hold keys for several hosts and use them at the same time. A guest can read and drive that host's projects and threads, but cannot change settings, open terminals, or push Git. Closing the desktop window hides to the tray and sharing keeps running; only tray **Quit** or **Pause sharing** takes the host offline.
+- **Two relays, same flow.** A self-hosted VPS relay — `npx @aiif/t3relay@latest init` for the Docker installer, or `npx @aiif/t3relay@latest prompt` for an AI-native systemd install; hosts tunnel out with `frpc`. Or a Cloudflare Tunnel relay in your own Cloudflare account — `npx t3cf@latest init`; hosts connect with `cloudflared` and get quick or named addresses. Both use the same host keys, admin console, and guest flow.
+- **Admin console.** Open the relay origin with the **admin key** to list every host and its host key, watch online state and guest sessions, and rotate, remove, or restore hosts.
+- **Fork releases.** This fork's [releases](https://github.com/aiif/t3code/releases) carry a Windows x64 installer and a native Android arm64 APK (macOS DMG opt-in), built in personal mode: T3 Connect is hidden and copied links point at your relay's portal. The desktop app auto-updates from these releases. The install channels below serve upstream builds.
+
+Headless machines join with `t3 personal join --relay https://relay.example.com --label "Studio PC"`.
+
+Docs: [Personal network](./docs/user/personal-mode.md) · [Self-hosted relay operations](./docs/operations/personal-relay.md) · [Cloudflare relay operations](./docs/operations/personal-relay-cloudflare.md) · [Fork release runbook](./docs/operations/fork-release.md)
+
 ## What you get
 
 - **Your subscriptions.** T3 Code does not resell tokens. It drives the agents you are already signed in to.
@@ -87,6 +100,7 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 
 - [Install and first run](./docs/user/install.md)
 - [Remote access from a phone or another machine](./docs/user/remote-access.md)
+- [Personal network](./docs/user/personal-mode.md)
 - [Permission modes](./docs/user/permission-modes.md)
 - [Source control](./docs/user/source-control.md)
 - [Connect outside agents over MCP](./docs/user/outside-agents.md)

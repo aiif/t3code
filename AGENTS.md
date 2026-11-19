@@ -209,6 +209,17 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 - Our users drive agents all day and notice a dropped frame, a lying spinner, and a stale label. No continuously repainting animations; they peg the GPU on high-refresh displays.
 - If a rule here fights the task in front of you, say so loudly and get a human sign-off before breaking it.
 
+## Fork discipline
+
+This fork absorbs `upstream/main` regularly. The standing sync procedure is [SYNC.md](./SYNC.md); when asked to sync, follow it instead of improvising a merge. When writing any change, keep the merge surface small without sacrificing quality:
+
+- Fork-only behavior lives in new files (`apps/server/src/personal/`, `packages/contracts/src/personal.ts`, `infra/personal-relay*`), not new lines in upstream files. New files never conflict; upstream files do.
+- When an upstream file must change, append: add imports, table entries, and handler blocks at the end of existing lists. Do not reorder, rename, or rewrite upstream lines you do not need to touch. The fork's first 60 commits deleted under 100 upstream lines; keep that the ceiling.
+- Concentrate new hooks in the existing seams (`ws.ts` RPC table, the auth chain, contracts) rather than spreading edits across new places.
+- SQLite migrations must be idempotent so an id collision with upstream is resolved by renumbering ours above theirs; record the DB repair in SYNC.md when that happens.
+- Keep fork code recognizable: `personal` in paths and identifiers, `T3CODE_PERSONAL_*` env flags, the `@aiif/` npm scope. [SYNC.md](./SYNC.md) resolves merge conflicts by recognizing fork behavior through these conventions; new fork work that keeps them stays protected without updating any list.
+- When the right implementation is genuinely invasive, do the right implementation and say the tradeoff in the commit message so it is a decision, not an accident.
+
 ## Additional tips
 
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
