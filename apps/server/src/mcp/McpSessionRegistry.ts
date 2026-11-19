@@ -1,4 +1,4 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { type AgentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -20,6 +20,10 @@ export interface McpCredentialRequest {
   readonly browserToolsAvailable?: boolean;
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
   readonly subagent?: boolean;
+  /** The named agent definition the thread runs with; limits read this, never the marker text. */
+  readonly agentId?: AgentId;
+  /** False when the agent definition forbids delegation. */
+  readonly delegationAllowed?: boolean;
 }
 
 export interface McpIssuedCredential {
@@ -133,6 +137,10 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerSessionId,
           providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
           subagent: request.subagent === true,
+          ...(request.agentId === undefined ? {} : { agentId: request.agentId }),
+          ...(request.delegationAllowed === undefined
+            ? {}
+            : { delegationAllowed: request.delegationAllowed }),
         },
         client: undefined,
         capabilities: new Set<McpInvocationContext.McpCapability>([

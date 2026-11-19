@@ -2606,6 +2606,8 @@ const make = Effect.gen(function* () {
             constraints: [...constraints],
           };
         }),
+        // agents/registry fills this from AgentRegistry; keep the wire shape stable until then.
+        agents: [],
         features: {
           appOwnedSubagents: true,
           asyncPolling: true,
@@ -2615,6 +2617,9 @@ const make = Effect.gen(function* () {
           incrementalThreadRead: true,
           scheduledTasks: true,
           maxBatchThreads: 20,
+          agentDefinitions: false,
+          agentDelegation: false,
+          maxAgents: 20,
         },
       };
     }),

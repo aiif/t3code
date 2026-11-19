@@ -578,6 +578,10 @@
     "./speech": {
       "types": "./src/speech.ts",
       "import": "./src/speech.ts"
+    },
+    "./agentInstruction": {
+      "types": "./src/agentInstruction.ts",
+      "import": "./src/agentInstruction.ts"
     }
   },
   "scripts": {

@@ -95,3 +95,29 @@ it("acts at an administrator's ceiling for a client approved above it", () => {
   expect(modes(scope("auto-accept-edits"), "auto").runtimeMode).toBe("auto-accept-edits");
   expect(modes(scope("full-access")).runtimeMode).toBe("full-access");
 });
+
+it.effect("hides delegation tools only for a non-delegating agent", () => {
+  const scope = (delegationAllowed?: boolean): McpInvocationContext.McpInvocationScope => ({
+    environmentId: EnvironmentId.make("environment-1"),
+    requestNamespace: "provider-session-1",
+    thread: {
+      threadId: ThreadId.make("thread-1"),
+      providerSessionId: "provider-session-1",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      ...(delegationAllowed === undefined ? {} : { delegationAllowed }),
+    },
+    client: undefined,
+    capabilities: new Set(["orchestration"]),
+    issuedAt: 1,
+  });
+  const hidden = (invocation: McpInvocationContext.McpInvocationScope) =>
+    Effect.sync(() => McpInvocationContext.hiddenFromAgentsWithoutDelegation()).pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+    );
+
+  return Effect.gen(function* () {
+    expect(yield* hidden(scope(false))).toBe(false);
+    expect(yield* hidden(scope(true))).toBe(true);
+    expect(yield* hidden(scope())).toBe(true);
+  });
+});

@@ -1,5 +1,6 @@
 import {
   type AuthMcpClientAccess,
+  type AgentId,
   type EnvironmentId,
   McpCapabilityUnavailableError,
   OrchestratorMcpFailure,
@@ -30,6 +31,10 @@ export interface McpThreadCaller {
   readonly providerInstanceId: ProviderInstanceId;
   /** A delegated child task; its parent owns the work it hands back. */
   readonly subagent?: boolean;
+  /** The named agent definition this thread runs with, if any. Authorization reads this, never the marker text. */
+  readonly agentId?: AgentId;
+  /** False for an agent definition that may not delegate; absent keeps ordinary behavior. */
+  readonly delegationAllowed?: boolean;
 }
 
 export interface McpClientCaller {
@@ -185,6 +190,16 @@ export const hiddenWhileLinksOff = (): boolean => {
   const fiber = Fiber.getCurrent();
   const scope = fiber && Context.getOrUndefined(fiber.context, McpInvocationContext);
   return scope?.linkedEnvironments !== false;
+};
+
+/**
+ * `McpSchema.EnabledWhen` for tools a non-delegating agent must not see.
+ * Hiding them is discovery only; handlers re-check the same flag.
+ */
+export const hiddenFromAgentsWithoutDelegation = (): boolean => {
+  const fiber = Fiber.getCurrent();
+  const scope = fiber && Context.getOrUndefined(fiber.context, McpInvocationContext);
+  return scope?.thread?.delegationAllowed !== false;
 };
 
 export type McpCapabilityError<C extends McpCapability> = C extends "preview"

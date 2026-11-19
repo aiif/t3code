@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { AuthMcpClientAccess } from "./auth.ts";
+import { AgentId, AgentSummary } from "./agentDefinition.ts";
 import {
   ContextTransferId,
   EnvironmentId,
@@ -170,6 +171,10 @@ export type OrchestratorMcpTerminalDelegatedTaskStatus =
 
 export const OrchestratorMcpDelegateTaskInput = Schema.Struct({
   task: OrchestratorMcpPrompt,
+  agent: Schema.optional(AgentId).annotate({
+    description:
+      "Named agent from t3_agent_list. Its prompt, provider/model, and modes are defaults; explicit target/model/mode override. Use t3_agent_read for the full spec.",
+  }),
   target: Schema.optional(OrchestratorMcpTarget),
   title: Schema.optional(OrchestratorMcpTitle),
   role: Schema.optional(OrchestratorMcpTaskRole),
@@ -213,6 +218,8 @@ const OrchestratorMcpExecutedModel = Schema.NullOr(Schema.String).annotate({
 
 export const OrchestratorMcpDelegateTaskResult = Schema.Struct({
   taskId: NodeId,
+  /** The named agent definition the child runs with, if any. */
+  agentId: Schema.optional(AgentId),
   /** Null for a task that runs in a linked environment; see `remoteChild`. */
   childThreadId: Schema.NullOr(ThreadId),
   /** The linked environment and thread a remote task runs as. */
@@ -274,6 +281,7 @@ export type OrchestratorMcpTaskCancelResult = typeof OrchestratorMcpTaskCancelRe
 
 export const OrchestratorMcpCreateThreadRequest = Schema.Struct({
   prompt: Schema.optional(OrchestratorMcpPrompt),
+  agent: Schema.optional(AgentId),
   title: Schema.optional(OrchestratorMcpTitle),
   target: Schema.optional(OrchestratorMcpTarget),
   runtimeMode: Schema.optional(OrchestratorMcpRuntimeMode),
@@ -304,6 +312,7 @@ export const OrchestratorMcpCreatedThread = Schema.Struct({
   runId: Schema.NullOr(RunId),
   status: OrchestratorMcpCreatedThreadStatus,
   title: Schema.String,
+  agentId: Schema.optional(AgentId),
   createdBy: OrchestrationV2Actor,
   creationSource: OrchestrationV2CreationSource,
   providerInstanceId: ProviderInstanceId,
@@ -397,6 +406,7 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   link: Schema.optional(Schema.String),
+  agentId: Schema.optional(AgentId),
   createdBy: OrchestrationV2Actor,
   creationSource: OrchestrationV2CreationSource,
   status: OrchestratorMcpThreadStatus,
@@ -459,6 +469,7 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   link: Schema.optional(Schema.String),
+  agentId: Schema.optional(AgentId),
   createdBy: OrchestrationV2Actor,
   creationSource: OrchestrationV2CreationSource,
   status: OrchestratorMcpThreadStatus,
@@ -687,6 +698,9 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   providers: Schema.Array(OrchestratorMcpProviderCapability),
+  /** Short list: built-ins first, then project, then global. Prompts live in t3_agent_read. */
+  agents: Schema.Array(AgentSummary),
+  omittedAgents: Schema.optional(NonNegativeInt),
   features: Schema.Struct({
     appOwnedSubagents: Schema.Boolean,
     asyncPolling: Schema.Boolean,
@@ -696,6 +710,9 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
     incrementalThreadRead: Schema.Boolean,
     scheduledTasks: Schema.Boolean,
     maxBatchThreads: Schema.Number,
+    agentDefinitions: Schema.Boolean,
+    agentDelegation: Schema.Boolean,
+    maxAgents: Schema.Number,
   }),
 });
 export type OrchestratorMcpCapabilitiesResult = typeof OrchestratorMcpCapabilitiesResult.Type;
@@ -953,6 +970,11 @@ export class OrchestratorMcpFailure extends Schema.TaggedError<OrchestratorMcpFa
       "orchestration_error",
       "thread_credential_required",
       "target_required",
+      "agent_not_found",
+      "agent_invalid",
+      "agent_forbidden",
+      "agent_depth_exceeded",
+      "agent_parallel_limit_reached",
     ]),
     message: Schema.String,
   },
