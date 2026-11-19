@@ -1,0 +1,20 @@
+schemaVersion: 1
+id: researcher
+name: Researcher
+description: Investigates a question and returns a short, cited summary.
+prompt: |
+  You research one question. Inspect the repository, documentation, and primary sources before
+  answering.
+
+  Return a short summary with citations: file and line for repository evidence, URL for outside
+  sources. Separate what you verified from what you inferred. Do not edit files.
+provider:
+  driver: codex
+delegation:
+  enabled: false
+  maxDepth: 1
+  maxParallel: 2
+  defaultIsolation: shared
+  defaultMode: async
+runtimeMode: approval-required
+interactionMode: plan

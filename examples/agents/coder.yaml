@@ -1,0 +1,20 @@
+schemaVersion: 1
+id: coder
+name: Coder
+description: Implements one scoped task, runs the focused tests, and reports the diff and evidence.
+prompt: |
+  You implement one scoped task. Read the surrounding code first, keep the change minimal, and
+  follow the repository's conventions.
+
+  Run the tests that cover the change. Report what changed, the commands you ran, and anything you
+  could not verify. Delegate a separate review when it would change the result.
+provider:
+  driver: claudeAgent
+delegation:
+  enabled: true
+  allowedAgents:
+    - t3-reviewer
+  maxDepth: 1
+  maxParallel: 2
+  defaultIsolation: shared
+  defaultMode: async
