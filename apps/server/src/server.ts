@@ -32,6 +32,7 @@ import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as NonBlockingSpawner from "./process/NonBlockingSpawner.ts";
 import * as KeepAwake from "./background/KeepAwake.ts";
 import * as ServerConfig from "./config.ts";
+import * as AgentRegistry from "./agents/AgentRegistry.ts";
 import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
 import {
@@ -858,6 +859,14 @@ const layerMakeRoutes = Layer.mergeAll(
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
+    // Agent definitions live under the server's configured T3 home, not a process default.
+    Layer.provide(
+      Layer.unwrap(
+        ServerConfig.ServerConfig.pipe(
+          Effect.map((config) => Layer.succeed(AgentRegistry.AgentHomeDir, config.baseDir)),
+        ),
+      ),
+    ),
   ),
   // Follows delegated tasks running in linked environments, including after a restart.
   Layer.effectDiscard(

@@ -14,7 +14,6 @@ import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
 import * as AgentRegistryModule from "../agents/AgentRegistry.ts";
 import { validateAgentPaths as validateAgentPathsFromDefinition } from "../agents/AgentDefinition.ts";
 import { BUILTIN_AGENTS } from "../agents/builtin.ts";
-import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 
@@ -119,7 +118,7 @@ const agentPathsArgument = Argument.String("path").pipe(
 type AgentRegistryLayer = Layer.Layer<AgentRegistryModule.AgentRegistry, never, never>;
 
 const registryModule = AgentRegistryModule as unknown as {
-  readonly layer?: Layer.Layer<AgentRegistryModule.AgentRegistry, never, ServerConfig.ServerConfig>;
+  readonly layer?: Layer.Layer<AgentRegistryModule.AgentRegistry, never, never>;
 };
 
 /** Built-ins only until the filesystem-backed registry from the agents lane lands. */
@@ -127,11 +126,8 @@ const builtinRegistryLayer: AgentRegistryLayer = AgentRegistryModule.layerStatic
   BUILTIN_AGENTS.map((definition) => ({ definition, source: "builtin" as const })),
 );
 
-const liveRegistryLayer: Layer.Layer<
-  AgentRegistryModule.AgentRegistry,
-  never,
-  ServerConfig.ServerConfig
-> = registryModule.layer ?? builtinRegistryLayer;
+const liveRegistryLayer: Layer.Layer<AgentRegistryModule.AgentRegistry, never, never> =
+  registryModule.layer ?? builtinRegistryLayer;
 
 const resolveAgentBaseDir = Effect.fn("cli.agent.baseDir")(function* (
   configured: Option.Option<string>,
@@ -164,7 +160,7 @@ const withAgentRegistry = Effect.fn("cli.agent.withRegistry")(function* <A, E, R
   const logLevel = yield* GlobalFlag.LogLevel;
   const config = yield* resolveCliAuthConfig(flags, logLevel, { quietLogs: flags.json });
   const layer: Layer.Layer<AgentRegistryModule.AgentRegistry> = liveRegistryLayer.pipe(
-    Layer.provide(ServerConfig.layer(config)),
+    Layer.provide(Layer.succeed(AgentRegistryModule.AgentHomeDir, config.baseDir)),
   );
   return yield* program.pipe(Effect.provide(layer));
 });

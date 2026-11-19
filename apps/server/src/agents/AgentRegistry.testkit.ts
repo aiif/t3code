@@ -8,16 +8,15 @@ import {
   type ProviderOptionDescriptor,
   type ServerProvider,
 } from "@t3tools/contracts";
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import * as ServerConfig from "../config.ts";
 import { BUILTIN_AGENTS } from "./builtin.ts";
 import {
   type ResolvedAgentDefinition,
+  AgentHomeDir,
   layer as liveAgentRegistryLayer,
   layerStatic,
 } from "./AgentRegistry.ts";
@@ -82,10 +81,7 @@ export const staticAgentRegistryLayer = (
 
 /** The live loader reading the fixture's global directory and project root. */
 export const agentRegistryLayer = (fixture: AgentFixture) =>
-  liveAgentRegistryLayer.pipe(
-    Layer.provide(ServerConfig.layerTest(process.cwd(), fixture.home)),
-    Layer.provide(NodeServices.layer),
-  );
+  liveAgentRegistryLayer.pipe(Layer.provide(Layer.succeed(AgentHomeDir, fixture.home)));
 
 const indent = (value: string, spaces = 2): string =>
   value
