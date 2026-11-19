@@ -49,6 +49,8 @@ import * as McpToolAccess from "./McpToolAccess.ts";
 import * as McpToolExposure from "./McpToolExposure.ts";
 import { MCP_TOOL_EXPOSURE_HEADER } from "@t3tools/provider-core/server/mcpSession";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as AgentRegistry from "../agents/AgentRegistry.ts";
+import * as AgentTaskResolver from "./AgentTaskResolver.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
@@ -1256,7 +1258,13 @@ export const layerPreviewToolkit = Layer.mergeAll(
 export const layerOrchestratorToolkit = toolkitRegistration(
   OrchestratorToolkit,
   OrchestratorHandlers.layer,
-).pipe(Layer.provide(OrchestratorMcpService.layer), Layer.provide(ThreadMetadataMcpService.layer));
+).pipe(
+  Layer.provide(OrchestratorMcpService.layer),
+  Layer.provide(ThreadMetadataMcpService.layer),
+  // Replace both with the real layers when agents/registry and agents/runtime land.
+  Layer.provide(AgentRegistry.layerEmpty),
+  Layer.provide(AgentTaskResolver.layerUnavailable),
+);
 
 export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer);
 

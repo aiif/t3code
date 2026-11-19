@@ -47,6 +47,24 @@ export class AgentTaskResolver extends Context.Service<AgentTaskResolver, AgentT
   "t3/mcp/AgentTaskResolver",
 ) {}
 
+/**
+ * Placeholder until the registry-backed resolver lands: every lookup fails as
+ * an unknown agent, so the MCP layer graph compiles without changing behavior.
+ */
+export const layerUnavailable = Layer.succeed(
+  AgentTaskResolver,
+  AgentTaskResolver.of({
+    resolve: Effect.fn("AgentTaskResolver.resolve")(() =>
+      Effect.fail(
+        new OrchestratorMcpFailure({
+          code: "agent_not_found",
+          message: "Agent definitions are not available in this build yet.",
+        }),
+      ),
+    ),
+  }),
+);
+
 /** A fixed resolver for tests and for lanes that start before the registry-backed one lands. */
 export const layerStatic = (task: ResolvedAgentTask) =>
   Layer.succeed(

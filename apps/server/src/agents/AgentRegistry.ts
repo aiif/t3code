@@ -82,6 +82,20 @@ export function toAgentSummary(resolved: ResolvedAgentDefinition): AgentSummary 
   };
 }
 
+/**
+ * Placeholder until agents/registry lands the file loader: no definitions, so
+ * the MCP layer graph compiles and old behavior stays unchanged.
+ */
+export const layerEmpty = Layer.succeed(
+  AgentRegistry,
+  AgentRegistry.of({
+    list: Effect.fn("AgentRegistry.list")(() => Effect.succeed({ agents: [] })),
+    read: Effect.fn("AgentRegistry.read")(({ agentId }) =>
+      Effect.fail(new AgentRegistryError({ agentId, reason: "not_found" })),
+    ),
+  }),
+);
+
 /** A fixed registry for tests and for lanes that start before the loader lands. */
 export const layerStatic = (entries: ReadonlyArray<ResolvedAgentDefinition>) =>
   Layer.succeed(
