@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import {
+  AgentId,
   EnvironmentId,
   type ModelSelection,
   type OrchestrationV2AppThread,
@@ -43,6 +44,8 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import * as AgentRegistry from "../agents/AgentRegistry.ts";
+import { staticAgentRegistryLayer } from "../agents/AgentRegistry.testkit.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
@@ -651,6 +654,7 @@ function layerTest(input: {
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
   readonly installationGateLayer?: Layer.Layer<ProviderInstallationGate.ProviderInstallationGate>;
+  readonly agentRegistryLayer?: Layer.Layer<AgentRegistry.AgentRegistry>;
 }) {
   const layerConfiguredEventSink =
     input.flakyReleaseWrites !== undefined
@@ -744,6 +748,7 @@ function layerTest(input: {
           input.installationGateLayer ?? ProviderInstallationGate.layer,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
+          ...(input.agentRegistryLayer === undefined ? [] : [input.agentRegistryLayer]),
         ),
       ),
     ),
@@ -2541,6 +2546,91 @@ it.effect.each([
       });
 
       yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 1_000, mcpConfigs })));
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 derives agentId and delegationAllowed into MCP credentials and reissues on change",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const mcpConfigs = yield* Ref.make<
+        ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
+      >([]);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const registry = yield* McpSessionRegistry.McpSessionRegistry;
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-agent-reuse");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+
+        const created = yield* makeThreadCreatedEvent({ idAllocator, threadId, now });
+        yield* eventSink.write({
+          events: [
+            { ...created, payload: { ...created.payload, agentId: AgentId.make("t3-tech-lead") } },
+          ],
+        });
+
+        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        const first = (yield* mcpSessions.read(threadId))!;
+        assert.isDefined(first);
+        const firstResolved = yield* registry.resolve(
+          first.authorizationHeader.replace(/^Bearer\s+/, ""),
+        );
+        assert.equal(firstResolved?.thread.agentId, AgentId.make("t3-tech-lead"));
+        assert.equal(firstResolved?.thread.delegationAllowed, true);
+
+        // The same agent reuses the credential.
+        yield* manager.detach({ providerSessionId, threadId, detail: "Reattach same agent." });
+        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        assert.equal(
+          (yield* mcpSessions.read(threadId))?.providerSessionId,
+          first.providerSessionId,
+        );
+
+        // Switching to a non-delegating agent must replace the stale authority.
+        const switched = yield* projections.getThread(threadId);
+        yield* eventSink.write({
+          events: [
+            {
+              id: yield* idAllocator.allocate.event({ threadId }),
+              type: "thread.metadata-updated",
+              threadId,
+              occurredAt: yield* DateTime.now,
+              payload: { ...switched, agentId: AgentId.make("t3-coder") },
+            },
+          ],
+        });
+        yield* manager.detach({ providerSessionId, threadId, detail: "Switch agent." });
+        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        const replacement = (yield* mcpSessions.read(threadId))!;
+        assert.notEqual(replacement.providerSessionId, first.providerSessionId);
+        const replacementResolved = yield* registry.resolve(
+          replacement.authorizationHeader.replace(/^Bearer\s+/, ""),
+        );
+        assert.equal(replacementResolved?.thread.agentId, AgentId.make("t3-coder"));
+        assert.equal(replacementResolved?.thread.delegationAllowed, false);
+
+        yield* manager.close(providerSessionId);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 1_000,
+            mcpConfigs,
+            agentRegistryLayer: staticAgentRegistryLayer(),
+          }),
+        ),
+      );
     }),
 );
 

@@ -2,6 +2,7 @@ import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
+  type AgentId,
   isOrchestrationV2WorkActive,
   ModelSelection,
   type OrchestrationV2AppThread,
@@ -53,6 +54,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import * as AgentRegistry from "../agents/AgentRegistry.ts";
 import * as EventSink from "./EventSink.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -332,6 +334,30 @@ export interface ProviderSessionManagerV2LayerOptions {
   readonly configureMcp?: boolean;
 }
 
+/**
+ * The credential's `delegationAllowed`: `undefined` without a named agent,
+ * else the agent definition's delegation flag. An unresolved definition fails
+ * closed so a broken agent thread never keeps delegation authority.
+ */
+const delegationAllowedFor = (
+  agentRegistry: Option.Option<AgentRegistry.AgentRegistryShape>,
+  agentId: AgentId | undefined,
+  projectRoot: string | undefined,
+): Effect.Effect<boolean | undefined> =>
+  agentId === undefined
+    ? Effect.undefined
+    : Option.isNone(agentRegistry)
+      ? Effect.succeed(false)
+      : agentRegistry.value
+          .read({
+            agentId,
+            ...(projectRoot === undefined ? {} : { projectRoot }),
+          })
+          .pipe(
+            Effect.map((resolved) => resolved.definition.delegation?.enabled ?? false),
+            Effect.orElseSucceed(() => false),
+          );
+
 function releaseStatusFor(
   reason: ProviderSessionReleaseReason,
 ): OrchestrationV2ProviderSession["status"] {
@@ -431,6 +457,7 @@ export const layerWithOptions = (
       /** Unreadable settings must preserve explicit browser-access opt-outs. */
       const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
+      const agentRegistry = yield* Effect.serviceOption(AgentRegistry.AgentRegistry);
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
       const promptSuggestionStore = yield* SubscriptionRef.make<
@@ -570,9 +597,21 @@ export const layerWithOptions = (
                 >(["orchestration", "worktree", "pull-requests"]);
                 if (browserToolsAvailable) capabilities.add("preview");
                 if (deviceToolsAvailable) capabilities.add("device");
-                const subagent = yield* projectionStore.getThread(threadId).pipe(
-                  Effect.map((thread) => thread.lineage.relationshipToParent === "subagent"),
-                  Effect.orElseSucceed(() => false),
+                const thread = yield* projectionStore
+                  .getThread(threadId)
+                  .pipe(Effect.orElseSucceed(() => null));
+                const subagent = thread?.lineage.relationshipToParent === "subagent";
+                const agentId = thread?.agentId;
+                // Project definitions live at the project root, not in a thread's worktree.
+                const projectRoot = yield* Effect.gen(function* () {
+                  if (thread === null || Option.isNone(projectService)) return undefined;
+                  const project = yield* projectService.value.getById(thread.projectId);
+                  return Option.getOrUndefined(Option.map(project, (found) => found.workspaceRoot));
+                }).pipe(Effect.orElseSucceed(() => undefined));
+                const delegationAllowed = yield* delegationAllowedFor(
+                  agentRegistry,
+                  agentId,
+                  projectRoot,
                 );
                 const existing = yield* mcpSessions.read(threadId);
                 if (existing !== undefined) {
@@ -596,7 +635,10 @@ export const layerWithOptions = (
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable &&
                     // A credential issued while the lineage read failed is replaced once it works.
-                    (resolved.thread.subagent === true) === subagent
+                    (resolved.thread.subagent === true) === subagent &&
+                    // A thread that gained an agent, or whose delegation changed, must not reuse stale authority.
+                    resolved.thread.agentId === agentId &&
+                    resolved.thread.delegationAllowed === delegationAllowed
                   ) {
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
@@ -609,6 +651,8 @@ export const layerWithOptions = (
                   browserToolsAvailable,
                   capabilities,
                   subagent,
+                  ...(agentId === undefined ? {} : { agentId }),
+                  ...(delegationAllowed === undefined ? {} : { delegationAllowed }),
                 });
                 yield* mcpSessions.set({
                   ...credential.config,

@@ -128,6 +128,13 @@ const ProbeToolkit = Toolkit.make(
       interactionMode: Schema.optional(ProviderInteractionMode),
     }),
   }),
+  Tool.make("starts_agent_threads", {
+    ...probe,
+    parameters: Schema.Struct({
+      runtimeMode: Schema.optional(RuntimeMode),
+      interactionMode: Schema.optional(ProviderInteractionMode),
+    }),
+  }),
   Tool.make("writes_environment", probe),
 );
 const ran = Effect.succeed({ ran: "ran" });
@@ -143,6 +150,12 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   ),
   starts_threads: McpToolAccess.startsThreads(
     (input) => input,
+    (_, modes) => Effect.succeed({ ran: `${modes.runtimeMode}/${modes.interactionMode}` }),
+    "stamped",
+  ),
+  starts_agent_threads: McpToolAccess.startsAgentThreads(
+    (input) => input,
+    () => Effect.succeed({ runtimeMode: "approval-required", interactionMode: "plan" }),
     (_, modes) => Effect.succeed({ ran: `${modes.runtimeMode}/${modes.interactionMode}` }),
     "stamped",
   ),
@@ -185,6 +198,7 @@ export const refusedAtCompileTime = () => {
       writes_with_capability: unchecked,
       writes_threads: unchecked,
       starts_threads: unchecked,
+      starts_agent_threads: unchecked,
       writes_environment: unchecked,
     }),
   );
@@ -309,6 +323,23 @@ it.effect.each([
   ["starts_threads", supervisedClient, {}, "approval-required/default"],
   ["starts_threads", supervisedClient, { runtimeMode: "auto" }, "runtime_mode_escalation_denied"],
   ["starts_threads", fullAccessClient, { runtimeMode: "full-access" }, "full-access/default"],
+
+  // The agent's modes narrow the caller, and a request above them is refused.
+  ["starts_agent_threads", fullAccess, {}, "approval-required/plan"],
+  [
+    "starts_agent_threads",
+    fullAccess,
+    { runtimeMode: "full-access" },
+    "runtime_mode_escalation_denied",
+  ],
+  [
+    "starts_agent_threads",
+    fullAccess,
+    { interactionMode: "default" },
+    "interaction_mode_escalation_denied",
+  ],
+  ["starts_agent_threads", supervised, {}, "approval-required/plan"],
+  ["starts_agent_threads", ended, {}, "parent_not_active"],
 
   ["writes_environment", fullAccess, {}, "ran"],
   ["writes_environment", supervised, {}, "capability_denied"],
