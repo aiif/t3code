@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
   AgentId,
+  DEFAULT_AGENT_DELEGATION,
   EnvironmentId,
   NodeId,
   ProjectId,
@@ -136,6 +137,27 @@ const run = <A, E>(
     const service = yield* OrchestratorMcpService.OrchestratorMcpService;
     return yield* use(service);
   }).pipe(Effect.provide(serviceLayer(registry).pipe(Layer.provide(baseDependencies(threads)))));
+
+/** A caller whose persisted thread projection names the agent that owns its delegation limits. */
+const guardrailLayer = (input: {
+  readonly callerAgentId: AgentId;
+  readonly registry: Layer.Layer<AgentRegistry.AgentRegistry, never, never>;
+}) =>
+  serviceLayer(input.registry).pipe(
+    Layer.provide(
+      baseDependencies({
+        getThreadRecords: (id) =>
+          Effect.succeed(
+            (id === parentThreadId
+              ? {
+                  ...parentProjection,
+                  thread: { ...parentProjection.thread, agentId: input.callerAgentId },
+                }
+              : idleThreadProjection(liveThreadShell(id))) as never,
+          ),
+      }),
+    ),
+  );
 
 const record = (dispatched: Ref.Ref<ReadonlyArray<unknown>>) => (command: unknown) =>
   Ref.update(dispatched, (commands) => [...commands, command]).pipe(
@@ -283,4 +305,54 @@ describe("OrchestratorMcpService agents", () => {
       expect(result.thread.agentId).toBe("t3-coder");
     }),
   );
+
+  it.effect("delegate_task refuses a non-delegating caller agent", () =>
+    Effect.gen(function* () {
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      const error = yield* service
+        .delegateTask(threadScope(AgentId.make("t3-coder")), {
+          task: "Build it",
+          agent: AgentId.make("test-agent"),
+        })
+        .pipe(Effect.flip);
+      expect(error.code).toBe("agent_forbidden");
+    }).pipe(
+      Effect.provide(
+        guardrailLayer({
+          callerAgentId: AgentId.make("t3-coder"),
+          registry: staticAgentRegistryLayer(builtinResolvedAgents()),
+        }),
+      ),
+    ),
+  );
+
+  it.effect("delegate_task refuses a child outside the caller's allowedAgents", () => {
+    const strictLead = {
+      ...exampleAgentDefinition("strict-lead"),
+      delegation: {
+        ...DEFAULT_AGENT_DELEGATION,
+        enabled: true,
+        allowedAgents: [AgentId.make("t3-coder")],
+        maxDepth: 2,
+        maxParallel: 2,
+      },
+    };
+    return Effect.gen(function* () {
+      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      const error = yield* service
+        .delegateTask(threadScope(AgentId.make("strict-lead")), {
+          task: "Build it",
+          agent: AgentId.make("test-agent"),
+        })
+        .pipe(Effect.flip);
+      expect(error.code).toBe("agent_forbidden");
+    }).pipe(
+      Effect.provide(
+        guardrailLayer({
+          callerAgentId: AgentId.make("strict-lead"),
+          registry: staticAgentRegistryLayer([{ definition: strictLead, source: "builtin" }]),
+        }),
+      ),
+    );
+  });
 });

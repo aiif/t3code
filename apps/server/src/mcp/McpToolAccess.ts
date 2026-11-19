@@ -294,10 +294,11 @@ export const startsAgentThreads = <P, A, E, R, E2 extends OrchestratorMcpFailure
     readonly runtimeMode?: RuntimeMode | undefined;
     readonly interactionMode?: ProviderInteractionMode | undefined;
   },
-  agentModes: (
-    params: P,
-  ) => Effect.Effect<
-    | { readonly runtimeMode: RuntimeMode; readonly interactionMode: ProviderInteractionMode }
+  agentModes: (params: NoInfer<P>) => Effect.Effect<
+    | {
+        readonly runtimeMode?: RuntimeMode | undefined;
+        readonly interactionMode?: ProviderInteractionMode | undefined;
+      }
     | undefined,
     E2
   >,
@@ -307,16 +308,17 @@ export const startsAgentThreads = <P, A, E, R, E2 extends OrchestratorMcpFailure
   const started = Effect.fn("McpToolAccess.startedForAgent")(function* (caller: Caller, params: P) {
     const requested = modes(params);
     const ceiling = yield* agentModes(params);
+    const requestedRuntime = ceiling?.runtimeMode;
     const runtimeLimit =
-      ceiling !== undefined &&
-      runtimeModeRank(ceiling.runtimeMode) < runtimeModeRank(caller.limits.runtimeMode)
-        ? ceiling.runtimeMode
+      requestedRuntime !== undefined &&
+      runtimeModeRank(requestedRuntime) < runtimeModeRank(caller.limits.runtimeMode)
+        ? requestedRuntime
         : caller.limits.runtimeMode;
+    const requestedInteraction = ceiling?.interactionMode;
     const interactionLimit =
-      ceiling !== undefined &&
-      interactionModeRank(ceiling.interactionMode) <
-        interactionModeRank(caller.limits.interactionMode)
-        ? ceiling.interactionMode
+      requestedInteraction !== undefined &&
+      interactionModeRank(requestedInteraction) < interactionModeRank(caller.limits.interactionMode)
+        ? requestedInteraction
         : caller.limits.interactionMode;
     return {
       runtimeMode: yield* resolveRuntimeMode(runtimeLimit, requested.runtimeMode),

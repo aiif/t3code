@@ -59,6 +59,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as AgentTaskResolver from "./AgentTaskResolver.ts";
+import * as AgentRegistry from "../agents/AgentRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import { PreviewToolkit } from "./toolkits/preview/tools.ts";
@@ -334,6 +335,7 @@ const layerRecordingTools = (calls: Array<unknown>) => {
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
         Layer.mock(ProjectService.ProjectService)({}),
         AgentTaskResolver.layerUnavailable,
+        AgentRegistry.layerStatic([]),
         Layer.mock(PreviewManager.PreviewManager)({}),
         Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
         Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),

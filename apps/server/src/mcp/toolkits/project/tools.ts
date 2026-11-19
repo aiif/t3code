@@ -40,6 +40,7 @@ import * as SourceControlRepositoryService from "../../../sourceControl/SourceCo
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as AgentTaskResolver from "../../AgentTaskResolver.ts";
+import * as AgentRegistry from "../../../agents/AgentRegistry.ts";
 
 const shared = {
   success: Project,
@@ -183,6 +184,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     DocumentText.DocumentText,
     Digest.Digest,
     AgentTaskResolver.AgentTaskResolver,
+    AgentRegistry.AgentRegistry,
   ],
 })
   .annotate(Tool.Destructive, true)

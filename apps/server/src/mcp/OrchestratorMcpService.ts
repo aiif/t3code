@@ -1,5 +1,6 @@
 import {
   AgentSource,
+  type AgentId,
   CommandId,
   DEFAULT_AGENT_DELEGATION,
   type RunId,
@@ -12,6 +13,7 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2AppThreadLineage,
   type OrchestrationV2ThreadShell,
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type OrchestrationV2TurnItem,
@@ -120,6 +122,13 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as AgentRegistry from "../agents/AgentRegistry.ts";
 import * as AgentTaskResolver from "./AgentTaskResolver.ts";
+import {
+  assertAgentAllowed,
+  assertAgentDelegationAllowed,
+  delegatedChildDepth,
+  depthOfThread,
+  isActiveChildStatus,
+} from "./agentDelegationGuardrails.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
@@ -1519,6 +1528,69 @@ const make = Effect.gen(function* () {
 
   const loadProviders = providerRegistry.getProviders;
 
+  const callerAgentDefinition = Effect.fn("OrchestratorMcpService.callerAgentDefinition")(
+    function* (parent: Pick<OrchestrationV2ThreadProjection, "thread">) {
+      const agentId = parent.thread.agentId;
+      if (agentId === undefined) return undefined;
+      const project = yield* requireProject(parent.thread.projectId);
+      return yield* agentRegistry
+        .read({ agentId, projectRoot: project.workspaceRoot })
+        .pipe(Effect.map((resolved) => resolved.definition));
+    },
+  );
+
+  const delegationDepth = Effect.fn("OrchestratorMcpService.delegationDepth")(function* (
+    thread: OrchestrationV2ThreadProjection["thread"],
+  ) {
+    const ancestors = new Map<ThreadId, OrchestrationV2AppThreadLineage>();
+    let lineage = thread.lineage;
+    while (lineage.parentThreadId !== null) {
+      const parentId = lineage.parentThreadId;
+      const parent = yield* threadManagement
+        .getThreadShell(parentId)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (parent === null) break;
+      ancestors.set(parentId, parent.lineage);
+      lineage = parent.lineage;
+    }
+    return depthOfThread(thread.lineage, (threadId) => ancestors.get(threadId));
+  });
+
+  const activeChildTasks = Effect.fn("OrchestratorMcpService.activeChildTasks")(function* (
+    threadId: ThreadId,
+  ) {
+    const records = yield* threadManagement
+      .getThreadRecords(threadId, ["subagents"])
+      .pipe(Effect.mapError(threadManagementFailure));
+    return (records.subagents ?? []).filter((task) => isActiveChildStatus(task.status)).length;
+  });
+
+  /** Limits come from the persisted projection's agent id, never from message text. */
+  const assertCallerDelegation = Effect.fn("OrchestratorMcpService.assertCallerDelegation")(
+    function* (input: {
+      readonly parent: Pick<OrchestrationV2ThreadProjection, "thread">;
+      readonly requestedAgentId: AgentId | undefined;
+      readonly startingNow: number;
+    }) {
+      const caller = yield* callerAgentDefinition(input.parent).pipe(
+        Effect.orElseSucceed(() => undefined),
+      );
+      if (input.parent.thread.agentId !== undefined && caller === undefined) {
+        return yield* new OrchestratorMcpFailure({
+          code: "agent_forbidden",
+          message: `Agent ${input.parent.thread.agentId} has no readable definition here, so it may not delegate. Run t3_agent_list.`,
+        });
+      }
+      yield* assertAgentDelegationAllowed({
+        delegation: caller?.delegation,
+        depth: delegatedChildDepth(yield* delegationDepth(input.parent.thread)),
+        requestedAgentId: input.requestedAgentId,
+        activeChildren: yield* activeChildTasks(input.parent.thread.id),
+        startingNow: input.startingNow,
+      });
+    },
+  );
+
   const loadOrchestrationCapableInstanceIds = () =>
     providerAdapters.list().pipe(Effect.map((instanceIds) => new Set(instanceIds)));
 
@@ -2723,6 +2795,13 @@ const make = Effect.gen(function* () {
         operation: "delegate-task",
       });
       const isRetryOfAcceptedDelegation = yield* threadManagement.hasReceipt(commandId);
+      if (!isRetryOfAcceptedDelegation) {
+        yield* assertCallerDelegation({
+          parent,
+          requestedAgentId: input.agent,
+          startingNow: 1,
+        });
+      }
       // A named agent resolves in the caller's project before the target; its prompt,
       // provider/model, and modes are defaults that explicit inputs override.
       const agentTask =
@@ -3099,26 +3178,39 @@ const make = Effect.gen(function* () {
         const providers = yield* loadProviders;
         const key = yield* requestKey(input.clientRequestId);
         // A named caller agent caps how many threads start work at once; idle threads are not counted.
-        if (scope.thread.agentId !== undefined) {
-          const callerProject = yield* callerProjectRoot(parent);
-          const callerAgent = yield* agentRegistry
-            .read({
-              agentId: scope.thread.agentId,
-              ...(callerProject === undefined ? {} : { projectRoot: callerProject }),
-            })
-            .pipe(Effect.orElseSucceed(() => undefined));
-          const maxParallel =
-            callerAgent?.definition.delegation?.maxParallel ?? DEFAULT_AGENT_DELEGATION.maxParallel;
-          const startingImmediately = input.threads.filter(
-            (request) => request.prompt !== undefined,
-          ).length;
-          if (startingImmediately > maxParallel) {
-            return yield* failure(
-              "agent_parallel_limit_reached",
-              `This agent starts at most ${maxParallel} threads at once; ${startingImmediately} were requested. Omit prompt for idle threads.`,
-            );
-          }
+        const callerAgent = yield* callerAgentDefinition(parent).pipe(
+          Effect.orElseSucceed(() => undefined),
+        );
+        if (parent.thread.agentId !== undefined && callerAgent === undefined) {
+          return yield* failure(
+            "agent_forbidden",
+            `Agent ${parent.thread.agentId} has no readable definition here, so it may not create threads. Run t3_agent_list.`,
+          );
         }
+        const startingImmediately = (yield* Effect.forEach(
+          input.threads,
+          (request, index) => {
+            if (request.prompt === undefined) return Effect.succeed(0);
+            return threadManagement
+              .hasReceipt(
+                stableCommandId({
+                  scope,
+                  requestKey: key,
+                  operation: "create-thread",
+                  index,
+                }),
+              )
+              .pipe(Effect.map((accepted) => (accepted ? 0 : 1)));
+          },
+          { concurrency: 1 },
+        )).reduce((total, count) => total + count, 0);
+        yield* assertAgentDelegationAllowed({
+          delegation: callerAgent?.delegation,
+          depth: delegatedChildDepth(yield* delegationDepth(parent.thread)),
+          requestedAgentId: undefined,
+          activeChildren: yield* activeChildTasks(parent.thread.id),
+          startingNow: startingImmediately,
+        });
         const created = yield* Effect.forEach(
           input.threads,
           (request, index) =>
@@ -3140,6 +3232,16 @@ const make = Effect.gen(function* () {
                     .getThreadShell(threadId)
                     .pipe(Effect.mapError(threadManagementFailure))
                 : null;
+              if (
+                committedThread === null &&
+                request.agent !== undefined &&
+                callerAgent !== undefined
+              ) {
+                yield* assertAgentAllowed({
+                  delegation: callerAgent.delegation ?? DEFAULT_AGENT_DELEGATION,
+                  requestedAgentId: request.agent,
+                });
+              }
               // A named agent resolves in the caller's project; a committed retry keeps its model.
               const agentTask =
                 request.agent === undefined || committedThread !== null

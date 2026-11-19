@@ -6,11 +6,14 @@ import {
   DEFAULT_AGENT_DELEGATION,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 // @effect-diagnostics nodeBuiltinImport:off - user definitions live outside the Effect filesystem's service graph.
 import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as ServerConfig from "../config.ts";
@@ -157,8 +160,12 @@ const matchesSearch = (definition: AgentDefinition, term: string): boolean =>
   definition.description.toLowerCase().includes(term);
 
 const make = Effect.gen(function* () {
-  const config = yield* ServerConfig.ServerConfig;
-  const globalAgentsDir = NodePath.resolve(config.baseDir, "agents");
+  const config = yield* Effect.serviceOption(ServerConfig.ServerConfig);
+  const envHome = yield* Config.String("T3CODE_HOME").pipe(Config.option);
+  const baseDir = Option.isSome(config)
+    ? config.value.baseDir
+    : Option.getOrElse(envHome, () => NodePath.join(NodeOS.homedir(), ".t3"));
+  const globalAgentsDir = NodePath.resolve(baseDir, "agents");
   const cache = new Map<string, CachedDefinition>();
 
   const loadFile = async (

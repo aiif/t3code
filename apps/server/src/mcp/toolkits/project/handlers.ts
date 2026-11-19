@@ -1,5 +1,6 @@
 import {
   CommandId,
+  DEFAULT_AGENT_DELEGATION,
   MessageId,
   ThreadId,
   OrchestratorMcpFailure,
@@ -32,6 +33,8 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
 import * as AgentTaskResolver from "../../AgentTaskResolver.ts";
+import * as AgentRegistry from "../../../agents/AgentRegistry.ts";
+import { assertAgentAllowed } from "../../agentDelegationGuardrails.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 
@@ -108,6 +111,7 @@ const access = Effect.gen(function* () {
   yield* readCaller();
   return yield* Project.ProjectService;
 });
+
 export const layer = McpToolAccess.toLayer(ProjectToolkit, {
   t3_thread_launch: McpToolAccess.startsThreads(
     (input) => input,
@@ -183,6 +187,30 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             );
         if (project !== undefined && input.workspaceStrategy?.type === "existing_worktree")
           yield* assertProjectWorktree(project.workspaceRoot, input.workspaceStrategy.worktreePath);
+        const callerAgentId = scope.thread?.agentId;
+        if (
+          !replaying &&
+          callerAgentId !== undefined &&
+          input.agent !== undefined &&
+          project !== undefined
+        ) {
+          const callerAgent = yield* AgentRegistry.AgentRegistry.pipe(
+            Effect.flatMap((registry) =>
+              registry.read({ agentId: callerAgentId, projectRoot: project.workspaceRoot }),
+            ),
+            Effect.orElseSucceed(() => undefined),
+          );
+          if (callerAgent === undefined) {
+            return yield* new OrchestratorMcpFailure({
+              code: "agent_forbidden",
+              message: `Agent ${callerAgentId} has no readable definition here, so it may not launch work. Run t3_agent_list.`,
+            });
+          }
+          yield* assertAgentAllowed({
+            delegation: callerAgent.definition.delegation ?? DEFAULT_AGENT_DELEGATION,
+            requestedAgentId: input.agent,
+          });
+        }
         if (!replaying && input.modelSelection !== undefined) {
           const { instanceId, model } = input.modelSelection;
           const providers = yield* (yield* ProviderRegistry.ProviderRegistry).getProviders;

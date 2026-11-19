@@ -1263,14 +1263,12 @@ export const layerOrchestratorToolkit = toolkitRegistration(
 ).pipe(
   Layer.provide(OrchestratorMcpService.layer),
   Layer.provide(ThreadMetadataMcpService.layer),
-  // Replace both with the real layers when agents/registry and agents/runtime land.
-  Layer.provide(AgentRegistry.layerEmpty),
-  Layer.provide(AgentTaskResolver.layerUnavailable),
+  Layer.provide(AgentTaskResolver.layer),
+  Layer.provide(AgentRegistry.layer),
 );
 
 const layerAgentToolkit = toolkitRegistration(AgentToolkit, AgentHandlers.layer).pipe(
-  // Replace with the real registry layer when agents/registry lands.
-  Layer.provide(AgentRegistry.layerEmpty),
+  Layer.provide(AgentRegistry.layer),
 );
 
 export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer);
@@ -1299,10 +1297,7 @@ const layerThemeToolkit = toolkitRegistration(ThemeToolkit, ThemeHandlers.layer)
 export const layerProjectRegistration = toolkitRegistration(
   ProjectToolkit,
   ProjectHandlers.layer,
-).pipe(
-  // t3_thread_launch resolves a named agent; replace with the real resolver when agents/runtime lands.
-  Layer.provide(AgentTaskResolver.layerUnavailable),
-);
+).pipe(Layer.provide(AgentTaskResolver.layer), Layer.provide(AgentRegistry.layer));
 
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,

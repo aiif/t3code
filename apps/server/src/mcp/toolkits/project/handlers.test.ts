@@ -45,6 +45,8 @@ import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as AgentTaskResolver from "../../AgentTaskResolver.ts";
+import * as AgentRegistry from "../../../agents/AgentRegistry.ts";
+import { builtinResolvedAgents } from "../../../agents/AgentRegistry.testkit.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
 
@@ -79,6 +81,7 @@ const clientLaunchHarness = (input: {
       getProviders: Effect.succeed(input.providers ?? []),
     }),
     input.resolver ?? AgentTaskResolver.layerUnavailable,
+    AgentRegistry.layerStatic(builtinResolvedAgents()),
     ServerSettings.layerTest({
       fallbackModelSelection: input.fallbackModel ?? null,
       ...(input.defaultRuntimeMode === undefined
