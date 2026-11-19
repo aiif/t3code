@@ -138,6 +138,91 @@ it.effect(
     ),
 );
 
+it.effect("start passes --agent and keeps explicit --provider/--model as overrides", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-thread-agent-" });
+    const projectRoot = path.join(root, "project");
+    const baseDir = path.join(root, "state");
+    yield* fileSystem.makeDirectory(projectRoot, { recursive: true });
+    yield* persistServerRuntimeState({
+      path: path.join(baseDir, "userdata", "server-runtime.json"),
+      state: yield* makePersistedServerRuntimeState({
+        config: { host: "127.0.0.1", devUrl: undefined },
+        port: 3_773,
+      }),
+    });
+    const launchArgs: Array<Record<string, unknown>> = [];
+    using _session = vi.spyOn(McpBridge, "mcpToolSession").mockReturnValue(
+      Effect.succeed({
+        call: (tool, args) => {
+          switch (tool) {
+            case "t3_project_list":
+              return Effect.succeed({
+                structuredContent: {
+                  projects: [
+                    {
+                      id: ProjectId.make("project-1"),
+                      title: "Project",
+                      workspaceRoot: projectRoot,
+                    },
+                  ],
+                  nextCursor: null,
+                },
+              });
+            case "t3_thread_launch":
+              launchArgs.push(args);
+              return Effect.succeed({
+                structuredContent: { threadId, projectId: args.projectId, runId: null },
+              });
+            default:
+              return Effect.die(`unexpected ${tool} call`);
+          }
+        },
+      }),
+    );
+
+    yield* Command.runWith(threadCommand, { version: "0.0.0" })([
+      "start",
+      projectRoot,
+      "Implement it",
+      "--agent",
+      "t3-tech-lead",
+      "--provider",
+      "claude-code",
+      "--model",
+      "claude-sonnet-4-6",
+      "--json",
+      "--base-dir",
+      baseDir,
+    ]).pipe(
+      Effect.provideService(HostProcess.WorkingDirectory, projectRoot),
+      Effect.provideService(HostProcess.HomeDirectory, root),
+    );
+
+    assert.deepEqual(launchArgs, [
+      {
+        projectId: "project-1",
+        title: "Implement it",
+        message: "Implement it",
+        agent: "t3-tech-lead",
+        modelSelection: { instanceId: "claude-code", model: "claude-sonnet-4-6" },
+      },
+    ]);
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        NetService.layer,
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_PORT: "3773" } })),
+      ),
+    ),
+  ),
+);
+
 it.effect("does not sign in to whatever took over a dead server's port", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
