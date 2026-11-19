@@ -1,5 +1,7 @@
 import {
+  AgentSource,
   CommandId,
+  DEFAULT_AGENT_DELEGATION,
   type RunId,
   isProviderAvailable,
   MessageId,
@@ -67,6 +69,7 @@ import {
   SECRET_REQUEST_UNSAVED_NOTE,
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue, withLegacyUltracodeEffort } from "@t3tools/shared/model";
+import { composeAgentInstruction } from "@t3tools/shared/agentInstruction";
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
@@ -115,6 +118,8 @@ import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as AgentRegistry from "../agents/AgentRegistry.ts";
+import * as AgentTaskResolver from "./AgentTaskResolver.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
@@ -242,6 +247,24 @@ const isThreadManagementError = Schema.is(ThreadManagementService.ThreadManageme
 
 function failure(code: OrchestratorMcpFailure["code"], message: string): OrchestratorMcpFailure {
   return new OrchestratorMcpFailure({ code, message });
+}
+
+/** capabilities lists agents built-ins first, then project, then global. */
+const AGENT_SOURCE_RANK: Readonly<Record<AgentSource, number>> = {
+  builtin: 0,
+  project: 1,
+  global: 2,
+};
+
+function agentRegistryFailure(error: AgentRegistry.AgentRegistryError): OrchestratorMcpFailure {
+  return failure(
+    error.reason === "not_found"
+      ? "agent_not_found"
+      : error.reason === "invalid"
+        ? "agent_invalid"
+        : "orchestration_error",
+    error.message,
+  );
 }
 
 function threadManagementFailure(error: unknown): OrchestratorMcpFailure {
@@ -936,6 +959,7 @@ function listItemFromShell(
     projectId: shell.projectId,
     title: shell.title,
     link: threadLinkFor(scope, shell.id, shell.title),
+    ...(shell.agentId === undefined ? {} : { agentId: shell.agentId }),
     createdBy: shell.createdBy,
     creationSource: shell.creationSource,
     status: listedThreadStatus(shell),
@@ -973,6 +997,7 @@ function threadDetail(
     projectId: projection.thread.projectId,
     title: projection.thread.title,
     link: threadLinkFor(scope, projection.thread.id, projection.thread.title),
+    ...(projection.thread.agentId === undefined ? {} : { agentId: projection.thread.agentId }),
     createdBy: projection.thread.createdBy,
     creationSource: projection.thread.creationSource,
     status: threadStatus(active?.status, latest?.status ?? "idle", shell.pendingBackgroundTasks),
@@ -1254,6 +1279,8 @@ const make = Effect.gen(function* () {
   const gitDriver = yield* GitVcsDriver.GitVcsDriver;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const remoteDelegation = yield* RemoteDelegation.RemoteDelegation;
+  const agentRegistry = yield* AgentRegistry.AgentRegistry;
+  const agentTaskResolver = yield* AgentTaskResolver.AgentTaskResolver;
 
   const requireProject = (projectId: ProjectId) =>
     projects.getById(projectId).pipe(
@@ -1280,6 +1307,19 @@ const make = Effect.gen(function* () {
           ),
         )
       : Effect.succeed(project.defaultModelSelection);
+
+  /** The caller's project root, or undefined for a client outside a thread. */
+  const callerProjectRoot = (
+    parent: Pick<OrchestrationV2ThreadProjection, "thread"> | undefined,
+  ) =>
+    parent === undefined
+      ? Effect.succeed(undefined as string | undefined)
+      : projects.getById(parent.thread.projectId).pipe(
+          Effect.map(Option.getOrUndefined),
+          Effect.map((project) => project?.workspaceRoot),
+          Effect.orElseSucceed(() => undefined),
+        );
+
   const secretRequests = yield* SecretRequests.SecretRequests;
 
   const requireCapability = (scope: McpInvocationScope) =>
@@ -1806,6 +1846,7 @@ const make = Effect.gen(function* () {
       ),
       childRunId: childRun?.id ?? null,
       childNodeId: task.id,
+      ...(task.agentId === undefined ? {} : { agentId: task.agentId }),
       status,
       workState,
       hasPendingChildRuns: hasPendingChildRuns(childProjection, childRun),
@@ -2001,6 +2042,7 @@ const make = Effect.gen(function* () {
           }),
       childRunId: null,
       childNodeId: task.id,
+      ...(task.agentId === undefined ? {} : { agentId: task.agentId }),
       status,
       workState: terminal ? "result_available" : "working",
       hasPendingChildRuns: false,
@@ -2543,6 +2585,16 @@ const make = Effect.gen(function* () {
       );
       const inherited = parent?.thread.modelSelection;
       const searchTerms = input.search?.toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+      // Short list: built-ins first, then project, then global. Prompts live in t3_agent_read.
+      const projectRoot = yield* callerProjectRoot(parent);
+      const agentPage = yield* agentRegistry
+        .list({ ...(projectRoot === undefined ? {} : { projectRoot }), limit: 20 })
+        .pipe(Effect.mapError(agentRegistryFailure));
+      const agents = [...agentPage.agents].toSorted(
+        (left, right) => AGENT_SOURCE_RANK[left.source] - AGENT_SOURCE_RANK[right.source],
+      );
+      // The registry pages by cursor without a total count, so a next page is reported as a floor.
+      const omittedAgents = agentPage.nextCursor === undefined ? 0 : 1;
       return {
         parentThreadId: parent?.thread.id ?? null,
         inheritedProviderInstanceId: inherited?.instanceId ?? null,
@@ -2606,8 +2658,8 @@ const make = Effect.gen(function* () {
             constraints: [...constraints],
           };
         }),
-        // agents/registry fills this from AgentRegistry; keep the wire shape stable until then.
-        agents: [],
+        agents,
+        ...(omittedAgents === 0 ? {} : { omittedAgents }),
         features: {
           appOwnedSubagents: true,
           asyncPolling: true,
@@ -2617,8 +2669,8 @@ const make = Effect.gen(function* () {
           incrementalThreadRead: true,
           scheduledTasks: true,
           maxBatchThreads: 20,
-          agentDefinitions: false,
-          agentDelegation: false,
+          agentDefinitions: true,
+          agentDelegation: true,
           maxAgents: 20,
         },
       };
@@ -2671,23 +2723,49 @@ const make = Effect.gen(function* () {
         operation: "delegate-task",
       });
       const isRetryOfAcceptedDelegation = yield* threadManagement.hasReceipt(commandId);
-      const target = yield* resolveTargetRechecking({
-        parent,
-        target: input.target,
-        providers,
-        skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
-      });
-      const runtimeMode = yield* resolveRuntimeMode(
-        parent.thread.runtimeMode,
-        input.runtimeMode,
-        target,
-      );
-      const interactionMode = yield* resolveInteractionMode(
-        parent.thread.interactionMode,
-        input.interactionMode,
-      );
+      // A named agent resolves in the caller's project before the target; its prompt,
+      // provider/model, and modes are defaults that explicit inputs override.
+      const agentTask =
+        input.agent === undefined
+          ? undefined
+          : yield* agentTaskResolver.resolve({
+              projectRoot: (yield* requireProject(parent.thread.projectId)).workspaceRoot,
+              agentId: input.agent,
+              parent: {
+                modelSelection: parent.thread.modelSelection,
+                runtimeMode: parent.thread.runtimeMode,
+                interactionMode: parent.thread.interactionMode,
+              },
+              ...(input.target === undefined ? {} : { explicitTarget: input.target }),
+              ...(input.runtimeMode === undefined
+                ? {}
+                : { explicitRuntimeMode: input.runtimeMode }),
+              ...(input.interactionMode === undefined
+                ? {}
+                : { explicitInteractionMode: input.interactionMode }),
+              providers,
+            });
+      const target =
+        agentTask !== undefined
+          ? { modelSelection: agentTask.modelSelection, supportedRuntimeModes: undefined }
+          : yield* resolveTargetRechecking({
+              parent,
+              target: input.target,
+              providers,
+              skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
+            });
+      const runtimeMode =
+        agentTask !== undefined
+          ? agentTask.runtimeMode
+          : yield* resolveRuntimeMode(parent.thread.runtimeMode, input.runtimeMode, target);
+      const interactionMode =
+        agentTask !== undefined
+          ? agentTask.interactionMode
+          : yield* resolveInteractionMode(parent.thread.interactionMode, input.interactionMode);
+      const isolation = input.isolation ?? agentTask?.delegation.defaultIsolation ?? "shared";
+      const mode = input.mode ?? agentTask?.delegation.defaultMode ?? "async";
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
-      if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
+      if (isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = yield* requireProject(parent.thread.projectId);
         const base = yield* gitDriver
           .resolveCommit({
@@ -2728,7 +2806,10 @@ const make = Effect.gen(function* () {
           parentThreadId: scope.thread.threadId,
           parentRunId: parentRun.id,
           parentNodeId: parentRun.rootNodeId,
-          task: taskPrompt(input),
+          task: agentTask === undefined ? taskPrompt(input) : input.task,
+          ...(agentTask === undefined
+            ? {}
+            : { agentId: agentTask.agentId, agentInstruction: agentTask.instruction }),
           ...(input.title === undefined ? {} : { title: input.title }),
           modelSelection: target.modelSelection,
           runtimeMode,
@@ -2737,7 +2818,7 @@ const make = Effect.gen(function* () {
           // Async delegations wake the parent on every child terminal; wait
           // delegations deliver through the blocking tool call until `awaitTask`
           // gives up the wait (timeout, cancelled call) and upgrades the wake.
-          completionWake: input.mode === "wait" ? "settled_only" : "always",
+          completionWake: mode === "wait" ? "settled_only" : "always",
         })
         .pipe(
           Effect.mapError((error) =>
@@ -2776,7 +2857,7 @@ const make = Effect.gen(function* () {
         });
       }
 
-      return yield* input.mode === "wait"
+      return yield* mode === "wait"
         ? awaitTask(scope, taskId, key, input.timeoutMs)
         : readTask(scope, taskId, false, true);
     }),
@@ -3017,6 +3098,27 @@ const make = Effect.gen(function* () {
         const parentNodeId = parentRun.rootNodeId;
         const providers = yield* loadProviders;
         const key = yield* requestKey(input.clientRequestId);
+        // A named caller agent caps how many threads start work at once; idle threads are not counted.
+        if (scope.thread.agentId !== undefined) {
+          const callerProject = yield* callerProjectRoot(parent);
+          const callerAgent = yield* agentRegistry
+            .read({
+              agentId: scope.thread.agentId,
+              ...(callerProject === undefined ? {} : { projectRoot: callerProject }),
+            })
+            .pipe(Effect.orElseSucceed(() => undefined));
+          const maxParallel =
+            callerAgent?.definition.delegation?.maxParallel ?? DEFAULT_AGENT_DELEGATION.maxParallel;
+          const startingImmediately = input.threads.filter(
+            (request) => request.prompt !== undefined,
+          ).length;
+          if (startingImmediately > maxParallel) {
+            return yield* failure(
+              "agent_parallel_limit_reached",
+              `This agent starts at most ${maxParallel} threads at once; ${startingImmediately} were requested. Omit prompt for idle threads.`,
+            );
+          }
+        }
         const created = yield* Effect.forEach(
           input.threads,
           (request, index) =>
@@ -3038,27 +3140,57 @@ const make = Effect.gen(function* () {
                     .getThreadShell(threadId)
                     .pipe(Effect.mapError(threadManagementFailure))
                 : null;
-              const target = yield* resolveTargetRechecking({
-                parent,
-                target:
-                  committedThread === null
-                    ? request.target
-                    : {
-                        ...request.target,
-                        providerInstanceId: committedThread.modelSelection.instanceId,
+              // A named agent resolves in the caller's project; a committed retry keeps its model.
+              const agentTask =
+                request.agent === undefined || committedThread !== null
+                  ? undefined
+                  : yield* agentTaskResolver.resolve({
+                      projectRoot: (yield* requireProject(parent.thread.projectId)).workspaceRoot,
+                      agentId: request.agent,
+                      parent: {
+                        modelSelection: parent.thread.modelSelection,
+                        runtimeMode: parent.thread.runtimeMode,
+                        interactionMode: parent.thread.interactionMode,
                       },
-                providers,
-                skipProjectEnablementFilter: isRetryOfAcceptedCreation,
-              });
-              const runtimeMode = yield* resolveRuntimeMode(
-                parent.thread.runtimeMode,
-                request.runtimeMode,
-                target,
-              );
-              const interactionMode = yield* resolveInteractionMode(
-                parent.thread.interactionMode,
-                request.interactionMode,
-              );
+                      ...(request.target === undefined ? {} : { explicitTarget: request.target }),
+                      ...(request.runtimeMode === undefined
+                        ? {}
+                        : { explicitRuntimeMode: request.runtimeMode }),
+                      ...(request.interactionMode === undefined
+                        ? {}
+                        : { explicitInteractionMode: request.interactionMode }),
+                      providers,
+                    });
+              const target =
+                agentTask !== undefined
+                  ? { modelSelection: agentTask.modelSelection, supportedRuntimeModes: undefined }
+                  : yield* resolveTargetRechecking({
+                      parent,
+                      target:
+                        committedThread === null
+                          ? request.target
+                          : {
+                              ...request.target,
+                              providerInstanceId: committedThread.modelSelection.instanceId,
+                            },
+                      providers,
+                      skipProjectEnablementFilter: isRetryOfAcceptedCreation,
+                    });
+              const runtimeMode =
+                agentTask !== undefined
+                  ? agentTask.runtimeMode
+                  : yield* resolveRuntimeMode(
+                      parent.thread.runtimeMode,
+                      request.runtimeMode,
+                      target,
+                    );
+              const interactionMode =
+                agentTask !== undefined
+                  ? agentTask.interactionMode
+                  : yield* resolveInteractionMode(
+                      parent.thread.interactionMode,
+                      request.interactionMode,
+                    );
               yield* assertTargetEnabledForProject(parent, commandId, target);
               const title = threadTitle({
                 parentTitle: parent.thread.title,
@@ -3076,7 +3208,14 @@ const make = Effect.gen(function* () {
                         requestKey: key,
                         index,
                       }),
-                      text: request.prompt,
+                      text:
+                        agentTask === undefined
+                          ? request.prompt
+                          : composeAgentInstruction({
+                              agentId: agentTask.agentId,
+                              prompt: agentTask.instruction,
+                              text: request.prompt,
+                            }),
                       attachments: [],
                     };
               const created = yield* threadManagement
@@ -3093,6 +3232,7 @@ const make = Effect.gen(function* () {
                   interactionMode,
                   branch: parent.thread.branch,
                   worktreePath: parent.thread.worktreePath,
+                  ...(agentTask === undefined ? {} : { agentId: agentTask.agentId }),
                   ...(parent.thread.linkOrigin === undefined
                     ? {}
                     : { linkOrigin: parent.thread.linkOrigin }),
@@ -3176,6 +3316,7 @@ const make = Effect.gen(function* () {
                 runId: run?.id ?? null,
                 status: run?.status ?? "idle",
                 title: projection.thread.title,
+                ...(agentTask?.agentId === undefined ? {} : { agentId: agentTask.agentId }),
                 createdBy: projection.thread.createdBy,
                 creationSource: projection.thread.creationSource,
                 providerInstanceId: resolvedModelSelection.instanceId,
@@ -3596,4 +3737,6 @@ export const layer: Layer.Layer<
   | SecretRequests.SecretRequests
   | ServerSettings.ServerSettingsService
   | RemoteDelegation.RemoteDelegation
+  | AgentRegistry.AgentRegistry
+  | AgentTaskResolver.AgentTaskResolver
 > = Layer.effect(OrchestratorMcpService, make);

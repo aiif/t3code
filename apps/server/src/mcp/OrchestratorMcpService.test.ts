@@ -74,6 +74,8 @@ import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import { idleThreadProjection, liveThreadShell } from "./McpToolAccess.testkit.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as AgentRegistry from "../agents/AgentRegistry.ts";
+import * as AgentTaskResolver from "./AgentTaskResolver.ts";
 import { resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import type { ProjectionRecordFilter } from "../orchestration-v2/ProjectionStore.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -83,6 +85,8 @@ const decodeTarget = Schema.decodeUnknownEffect(OrchestratorMcpTarget);
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(AgentRegistry.layerEmpty),
+  Layer.provide(AgentTaskResolver.layerUnavailable),
 );
 
 describe("OrchestratorMcpService", () => {
@@ -3425,6 +3429,8 @@ describe("OrchestratorMcpService provider resolution", () => {
             resolveCommit: () => Effect.succeed({ commitSha: "abc123" }),
           }),
         ),
+        Layer.provide(AgentRegistry.layerEmpty),
+        Layer.provide(AgentTaskResolver.layerUnavailable),
         Layer.provide(
           Layer.mergeAll(
             NodeServices.layer,
@@ -3650,6 +3656,8 @@ describe("OrchestratorMcpService provider resolution", () => {
       OrchestratorMcpService.layer.pipe(
         Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
         Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)(git)),
+        Layer.provide(AgentRegistry.layerEmpty),
+        Layer.provide(AgentTaskResolver.layerUnavailable),
         Layer.provide(
           Layer.mergeAll(
             NodeServices.layer,

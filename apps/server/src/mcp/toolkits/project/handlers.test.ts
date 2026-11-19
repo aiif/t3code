@@ -44,6 +44,7 @@ import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
+import * as AgentTaskResolver from "../../AgentTaskResolver.ts";
 import * as ProjectHandlers from "./handlers.ts";
 import { ProjectToolkit } from "./tools.ts";
 
@@ -61,6 +62,8 @@ const clientLaunchHarness = (input: {
   readonly hostedAppUrl?: string;
   /** The orchestrator refuses the new thread's mode, as under a managed ceiling. */
   readonly refusedByCeiling?: true;
+  /** Overrides the agent resolver; defaults to the unavailable placeholder. */
+  readonly resolver?: Layer.Layer<AgentTaskResolver.AgentTaskResolver, never, never>;
 }) => {
   const projectId = ProjectId.make("project:client-target");
   const modelSelection = {
@@ -75,6 +78,7 @@ const clientLaunchHarness = (input: {
     Layer.mock(ProviderRegistry.ProviderRegistry)({
       getProviders: Effect.succeed(input.providers ?? []),
     }),
+    input.resolver ?? AgentTaskResolver.layerUnavailable,
     ServerSettings.layerTest({
       fallbackModelSelection: input.fallbackModel ?? null,
       ...(input.defaultRuntimeMode === undefined

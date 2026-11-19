@@ -59,6 +59,8 @@ import { ThemeToolkit } from "./toolkits/theme/tools.ts";
 import * as ThemeHandlers from "./toolkits/theme/handlers.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
+import { AgentToolkit } from "./toolkits/agent/tools.ts";
+import * as AgentHandlers from "./toolkits/agent/handlers.ts";
 import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
 import * as AttachmentHandlers from "./toolkits/attachment/handlers.ts";
 import { ThreadToolkit } from "./toolkits/thread/tools.ts";
@@ -1266,6 +1268,11 @@ export const layerOrchestratorToolkit = toolkitRegistration(
   Layer.provide(AgentTaskResolver.layerUnavailable),
 );
 
+const layerAgentToolkit = toolkitRegistration(AgentToolkit, AgentHandlers.layer).pipe(
+  // Replace with the real registry layer when agents/registry lands.
+  Layer.provide(AgentRegistry.layerEmpty),
+);
+
 export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer);
 
 const layerMessageToolkit = toolkitRegistration(MessageToolkit, MessageHandlers.layer);
@@ -1289,7 +1296,13 @@ const layerThemeToolkit = toolkitRegistration(ThemeToolkit, ThemeHandlers.layer)
   Layer.provide(ThreadCommandExecutor.layer),
 );
 
-export const layerProjectRegistration = toolkitRegistration(ProjectToolkit, ProjectHandlers.layer);
+export const layerProjectRegistration = toolkitRegistration(
+  ProjectToolkit,
+  ProjectHandlers.layer,
+).pipe(
+  // t3_thread_launch resolves a named agent; replace with the real resolver when agents/runtime lands.
+  Layer.provide(AgentTaskResolver.layerUnavailable),
+);
 
 export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentToolkit,
@@ -1350,6 +1363,7 @@ export const layerMcpTransport = <RA, RE, RR>(registrations: Layer.Layer<RA, RE,
 export const layerTools = Layer.mergeAll(
   layerPreviewToolkit,
   layerOrchestratorToolkit,
+  layerAgentToolkit,
   layerThreadToolkit,
   layerAttachmentToolkit,
   layerProjectRegistration,

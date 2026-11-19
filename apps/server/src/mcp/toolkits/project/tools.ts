@@ -2,6 +2,7 @@ import { McpAttachmentInput } from "../attachment/input.ts";
 import {
   clampedPositiveInt,
   NonNegativeInt,
+  AgentId,
   ModelSelection,
   TrimmedNonEmptyString,
   ThreadId,
@@ -38,6 +39,7 @@ import * as ThreadManagementService from "../../../orchestration-v2/ThreadManage
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as AgentTaskResolver from "../../AgentTaskResolver.ts";
 
 const shared = {
   success: Project,
@@ -129,7 +131,7 @@ const ProjectCloneTool = Tool.make("t3_project_clone", {
 const ThreadLaunchTool = Tool.make("t3_thread_launch", {
   ...shared,
   description:
-    "Create one new top-level thread, bound to its workspace before the agent starts. Task in `message`. Omit `projectId`, model and modes to inherit yours (outside a thread, pass `projectId` or `scratch`); modes cannot exceed yours. After an error or lost reply, retry with the same `clientRequestId`. Follow it with `t3_thread_read` or `t3_thread_wait`. Mention it with its `link`.",
+    "Create one new top-level thread, bound to its workspace before the agent starts. Task in `message`. Omit `projectId`, model and modes to inherit yours (outside a thread, pass `projectId` or `scratch`); modes cannot exceed yours. `agent` runs a named agent from `t3_agent_list`; its prompt, provider/model, and modes are defaults, overridden by explicit `modelSelection`/`runtimeMode`/`interactionMode`. After an error or lost reply, retry with the same `clientRequestId`. Follow it with `t3_thread_read` or `t3_thread_wait`. Mention it with its `link`.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: Schema.optional(ProjectId),
@@ -140,6 +142,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
       }),
     ),
     title: TrimmedNonEmptyString,
+    agent: Schema.optional(AgentId),
     modelSelection: Schema.optional(ModelSelection),
     runtimeMode: Schema.optional(RuntimeMode),
     interactionMode: Schema.optional(ProviderInteractionMode),
@@ -164,6 +167,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     link: Schema.optional(Schema.String),
     projectId: ProjectId,
     modelSelection: ModelSelection,
+    agentId: Schema.optional(AgentId),
     runId: Schema.NullOr(RunId),
     status: Schema.NullOr(OrchestrationV2RunStatus),
   }),
@@ -178,6 +182,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     ProviderRegistry.ProviderRegistry,
     DocumentText.DocumentText,
     Digest.Digest,
+    AgentTaskResolver.AgentTaskResolver,
   ],
 })
   .annotate(Tool.Destructive, true)
