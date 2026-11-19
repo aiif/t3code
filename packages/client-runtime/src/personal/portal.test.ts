@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   PERSONAL_ADMIN_KEY_STORAGE,
+  PERSONAL_ADMIN_RELAY_STORAGE,
   PERSONAL_HOSTS_STORAGE_KEY,
   forgetPersonalAdminConfig,
   getAdminHost,
@@ -47,7 +48,7 @@ const resolved = {
 };
 
 describe("admin storage", () => {
-  it("keeps the admin key under its own key and forgets it", () => {
+  it("keeps the admin key under its own key and forgets the whole console config", () => {
     const storage = memoryStorage();
     expect(readPersonalAdminConfig(storage)).toBeNull();
     savePersonalAdminConfig({ relayUrl: RELAY, adminKey: ADMIN_KEY }, storage);
@@ -55,6 +56,8 @@ describe("admin storage", () => {
     expect(readPersonalAdminConfig(storage)).toEqual({ relayUrl: RELAY, adminKey: ADMIN_KEY });
     forgetPersonalAdminConfig(storage);
     expect(readPersonalAdminConfig(storage)).toBeNull();
+    expect(storage.getItem(PERSONAL_ADMIN_KEY_STORAGE)).toBeNull();
+    expect(storage.getItem(PERSONAL_ADMIN_RELAY_STORAGE)).toBeNull();
   });
 });
 

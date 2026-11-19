@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("expo-secure-store", () => {
   const values = new Map<string, string>();
@@ -9,10 +9,17 @@ vi.mock("expo-secure-store", () => {
 });
 
 import {
+  upsertPersonalHost,
+  type PersonalHostRecord,
+} from "@t3tools/client-runtime/personal/portal";
+import {
   addPersonalNetworkHost,
+  currentPersonalNetworkRelayUrl,
+  personalNetworkComputers,
+  personalNetworkStorage,
   readPersonalNetworkHosts,
   refreshPersonalNetworkHosts,
-  removePersonalNetworkHost,
+  removePersonalNetworkComputer,
 } from "./personalNetwork";
 
 const RELAY = "https://t3.example.test";
@@ -47,7 +54,7 @@ it("adds, refreshes, and removes one host per key", async () => {
   const refreshed = await refreshPersonalNetworkHosts();
   expect(refreshed[0]).toMatchObject({ online: true, paused: false, lastError: null });
 
-  expect(removePersonalNetworkHost(host)).toEqual([]);
+  expect(removePersonalNetworkComputer(host.environmentId)).toEqual([]);
   vi.unstubAllGlobals();
 });
 
@@ -75,4 +82,81 @@ it("stops adding when the host refuses the key", async () => {
   ).rejects.toThrow("refused");
   expect(readPersonalNetworkHosts()).toEqual([]);
   vi.unstubAllGlobals();
+});
+
+describe("a computer that switched relays", () => {
+  const OLD_RELAY = "https://old.example.test";
+  const NEW_RELAY = "https://new.example.test";
+
+  const hostRecord = (input: {
+    readonly relayUrl: string;
+    readonly hostKey: string;
+    readonly environmentId?: string;
+    readonly online?: boolean;
+    readonly paused?: boolean;
+  }): PersonalHostRecord => ({
+    relayUrl: input.relayUrl,
+    hostKey: input.hostKey,
+    hostId: "abcdef123456",
+    environmentId: input.environmentId ?? "env-home",
+    label: "Home",
+    publicUrl: "https://abcdef123456.example.test",
+    online: input.online ?? true,
+    paused: input.paused ?? false,
+    lastError: null,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  // What refreshPersonalHosts leaves behind once the host no longer shares through the old relay.
+  const deadOld = {
+    ...hostRecord({ relayUrl: OLD_RELAY, hostKey: `${HOST_KEY}-old`, online: false }),
+    lastError: "Could not reach the relay. Check the URL and your connection.",
+  };
+  const liveNew = hostRecord({ relayUrl: NEW_RELAY, hostKey: `${HOST_KEY}-new` });
+
+  it("shows one row through the live route, not the dead old relay", () => {
+    const computers = personalNetworkComputers([deadOld, liveNew]);
+    expect(computers).toHaveLength(1);
+    expect(computers[0]).toMatchObject({ relayUrl: NEW_RELAY, online: true, lastError: null });
+    expect(currentPersonalNetworkRelayUrl([deadOld, liveNew])).toBe(NEW_RELAY);
+  });
+
+  it("keeps other computers in their own rows", () => {
+    const other = hostRecord({
+      relayUrl: NEW_RELAY,
+      hostKey: `${HOST_KEY}-work`,
+      environmentId: "env-work",
+    });
+    expect(
+      personalNetworkComputers([deadOld, liveNew, other]).map((host) => host.environmentId),
+    ).toEqual(["env-home", "env-work"]);
+  });
+
+  it("speaks through the newest route when every relay is dead", () => {
+    const deadNew = { ...liveNew, online: false, lastError: "Could not reach the relay." };
+    expect(personalNetworkComputers([deadOld, deadNew])).toMatchObject([
+      { relayUrl: NEW_RELAY, online: false },
+    ]);
+  });
+
+  it("prefers a paused route over a dead one", () => {
+    const pausedNew = { ...liveNew, online: false, paused: true };
+    expect(personalNetworkComputers([deadOld, pausedNew])).toMatchObject([
+      { relayUrl: NEW_RELAY, paused: true },
+    ]);
+  });
+
+  it("forgetting a computer drops all its relay routes", () => {
+    upsertPersonalHost(deadOld, personalNetworkStorage);
+    upsertPersonalHost(liveNew, personalNetworkStorage);
+    upsertPersonalHost(
+      hostRecord({ relayUrl: NEW_RELAY, hostKey: `${HOST_KEY}-work`, environmentId: "env-work" }),
+      personalNetworkStorage,
+    );
+
+    const remaining = removePersonalNetworkComputer("env-home");
+    expect(remaining.map((host) => host.environmentId)).toEqual(["env-work"]);
+    expect(readPersonalNetworkHosts().map((host) => host.environmentId)).toEqual(["env-work"]);
+    removePersonalNetworkComputer("env-work");
+  });
 });

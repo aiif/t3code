@@ -10,7 +10,7 @@ import * as Schema from "effect/Schema";
 
 /** Admin credentials live under their own keys; they are never guest credentials. */
 export const PERSONAL_ADMIN_KEY_STORAGE = "t3.admin.key";
-const PERSONAL_ADMIN_RELAY_STORAGE = "t3.admin.relay";
+export const PERSONAL_ADMIN_RELAY_STORAGE = "t3.admin.relay";
 
 /** Guest host records: one entry per host key this device holds. */
 export const PERSONAL_HOSTS_STORAGE_KEY = "t3.personal.hosts";
@@ -150,6 +150,7 @@ export function forgetPersonalAdminConfig(
   storage: PersonalStorage | null = defaultStorage(),
 ): void {
   storage?.removeItem(PERSONAL_ADMIN_KEY_STORAGE);
+  storage?.removeItem(PERSONAL_ADMIN_RELAY_STORAGE);
 }
 
 async function adminRequest(

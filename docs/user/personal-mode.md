@@ -70,7 +70,9 @@ without switching, and **Switch** moves this computer to another relay without
 asking guests to enter anything again: the relay keeps the host registered, so
 switching back reuses the same host id, host key, and address. The relay you
 switch away from goes offline but stays registered; **Stop sharing** unregisters
-the current relay and invalidates its key.
+the current relay and invalidates its key. **Forget relay** removes the selected
+saved relay and its stored enrollment key; the relay keeps this host's
+registration until you remove the host in its admin console.
 
 While the desktop app is running — window or tray — and sharing is on, the host
 stays registered, heartbeats, and keeps its connector running, so guests can
@@ -222,13 +224,20 @@ sync, so switching the host between saved relays needs no new key on any guest.
 The relay must be online when the guest pairs with it; a relay saved while the
 host is offline stays pending and is retried.
 
+One host can end up with two entries when it is saved through two relay URLs —
+a Cloudflare relay's workers.dev address and its custom domain, for example,
+which are the same relay. Each entry shows the relay it resolves through, and
+**Remove** drops just that route; the entry through the other URL keeps
+working.
+
 Each host is a separate environment. Several can be connected and used at the
 same time; there is no single active host. The existing Connections list shows
 their online state and lets you remove one.
 
 On Android, open **Add environment → Personal network**, enter the relay URL and
-the host key, then **Add computer**. The same list supports several hosts,
-refresh, and remove.
+the host key, then **Add computer**. That list keeps one row per computer,
+through the relay it currently answers on; it supports several hosts, refresh,
+and a remove that forgets every key for that computer.
 
 ## What a guest can do
 
@@ -270,6 +279,12 @@ Open the relay origin in a browser and enter the admin key. The console lists:
 The admin key is stored under `t3.admin.key`, separately from any guest key. It
 is rejected by every host's `/oauth/token` and cannot operate a project as a
 guest. To use a host, enter that host's key in a guest client.
+
+A Cloudflare relay answers on its workers.dev address and on its custom domain.
+The console's saved key belongs to the browser origin it was entered on, so the
+two addresses are separate consoles with their own saved key, each listing the
+same hosts. **Forget relay** clears the saved relay URL and key for the origin
+you are on; the relay and its hosts are untouched.
 
 ## Notifications
 

@@ -11,9 +11,11 @@ import { SettingsSection } from "../settings/components/SettingsSection";
 import { configuredPersonalRelayUrl } from "./mode";
 import {
   addPersonalNetworkHost,
+  currentPersonalNetworkRelayUrl,
+  personalNetworkComputers,
   readPersonalNetworkHosts,
   refreshPersonalNetworkHosts,
-  removePersonalNetworkHost,
+  removePersonalNetworkComputer,
 } from "./personalNetwork";
 
 type PersonalPairOutcome = {
@@ -40,7 +42,7 @@ export function PersonalNetworkSection(props: {
 }) {
   const [hosts, setHosts] = useState(readPersonalNetworkHosts);
   const [relayUrl, setRelayUrl] = useState(
-    () => hosts[0]?.relayUrl ?? configuredPersonalRelayUrl() ?? "",
+    () => currentPersonalNetworkRelayUrl(hosts) ?? configuredPersonalRelayUrl() ?? "",
   );
   const [hostKey, setHostKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,18 +86,20 @@ export function PersonalNetworkSection(props: {
   };
 
   const remove = (host: (typeof hosts)[number]) => {
-    Dialog.alert("Remove this computer?", "The host key is forgotten on this device.", [
+    Dialog.alert("Remove this computer?", "Its host keys are forgotten on this device.", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Remove",
         style: "destructive",
         onPress: () => {
-          setHosts(removePersonalNetworkHost(host));
+          setHosts(removePersonalNetworkComputer(host.environmentId));
           setMessage(null);
         },
       },
     ]);
   };
+
+  const computers = personalNetworkComputers(hosts);
 
   return (
     <SettingsSection
@@ -103,8 +107,8 @@ export function PersonalNetworkSection(props: {
       footer="Each host key reaches exactly one computer. Multiple keys are independent and can run at the same time."
     >
       <View collapsable={false} className="gap-3.5 bg-grouped-card p-4">
-        {hosts.map((host) => (
-          <View key={`${host.relayUrl}:${host.hostId}`} className="gap-1.5">
+        {computers.map((host) => (
+          <View key={host.environmentId} className="gap-1.5">
             <View className="flex-row items-center justify-between gap-2">
               <Text className="min-w-0 flex-1 text-sm font-t3-medium text-foreground">
                 {host.label ?? host.publicUrl}
@@ -114,6 +118,7 @@ export function PersonalNetworkSection(props: {
               </Text>
             </View>
             <Text className="text-xs leading-normal text-foreground-muted">{host.publicUrl}</Text>
+            <Text className="text-xs leading-normal text-foreground-muted">{host.relayUrl}</Text>
             {host.lastError ? (
               <Text className="text-xs leading-normal text-danger-foreground">
                 {host.lastError}
@@ -179,7 +184,7 @@ export function PersonalNetworkSection(props: {
               void add();
             }}
           />
-          {hosts.length > 0 ? (
+          {computers.length > 0 ? (
             <Button
               label="Refresh"
               size="compact"

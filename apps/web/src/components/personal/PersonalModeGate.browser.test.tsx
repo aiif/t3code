@@ -70,6 +70,7 @@ it("lists hosts and reveals their host keys without pairing as a guest", async (
   );
   await expect.element(page.getByText("Home PC")).toBeVisible();
   await expect.element(page.getByText("Online")).toBeVisible();
+  await expect.element(page.getByText("https://t3.example.test")).toBeVisible();
   expect(document.body.textContent).not.toContain("app content");
   expect(document.body.textContent).toContain("••••••••••••••••");
 });
@@ -95,4 +96,19 @@ it("lists removed hosts and restores them", async () => {
       hostId: "fedcba654321",
     }),
   );
+});
+
+it("forgets the saved relay and asks for credentials again", async () => {
+  localStorage.setItem("t3.admin.key", "admin-key-for-tests-0123456789abcdef");
+  localStorage.setItem("t3.admin.relay", "https://t3.example.test");
+  await using _screen = await render(
+    <PersonalModeGate hosted>
+      <div>app content</div>
+    </PersonalModeGate>,
+    { router: false },
+  );
+  await page.getByRole("button", { name: "Forget relay" }).click();
+  await expect.element(page.getByLabelText("Admin key")).toBeVisible();
+  expect(localStorage.getItem("t3.admin.key")).toBeNull();
+  expect(localStorage.getItem("t3.admin.relay")).toBeNull();
 });

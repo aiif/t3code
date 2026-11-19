@@ -80,13 +80,56 @@ export async function addPersonalNetworkHost(input: {
   return record;
 }
 
-export function removePersonalNetworkHost(
-  host: PersonalHostRecord,
+/** A live route outranks a paused one, which outranks a dead one; newer routes win ties. */
+function routeRank(host: PersonalHostRecord): number {
+  return host.online ? 2 : host.paused ? 1 : 0;
+}
+
+function betterRoute(
+  candidate: PersonalHostRecord,
+  current: PersonalHostRecord | null,
+): PersonalHostRecord {
+  return current === null || routeRank(candidate) >= routeRank(current) ? candidate : current;
+}
+
+/**
+ * One row per computer: its best live route speaks for it, so a host that
+ * switched relays never displays its dead route's relay or offline state.
+ */
+export function personalNetworkComputers(
+  hosts: ReadonlyArray<PersonalHostRecord>,
 ): ReadonlyArray<PersonalHostRecord> {
-  return removePersonalHost(
-    { hostId: host.hostId, relayUrl: host.relayUrl },
-    personalNetworkStorage,
-  );
+  const byEnvironment = new Map<string, PersonalHostRecord>();
+  for (const host of hosts) {
+    const current = byEnvironment.get(host.environmentId) ?? null;
+    byEnvironment.set(host.environmentId, betterRoute(host, current));
+  }
+  return [...byEnvironment.values()];
+}
+
+/** The relay an existing computer actually answers on, for the add-host form's default. */
+export function currentPersonalNetworkRelayUrl(
+  hosts: ReadonlyArray<PersonalHostRecord>,
+): string | null {
+  let best: PersonalHostRecord | null = null;
+  for (const host of hosts) {
+    best = betterRoute(host, best);
+  }
+  return best?.relayUrl ?? null;
+}
+
+/** Forgets every key that reaches one computer; a row removal must not resurrect a dead route. */
+export function removePersonalNetworkComputer(
+  environmentId: string,
+): ReadonlyArray<PersonalHostRecord> {
+  for (const record of readPersonalHosts(personalNetworkStorage)) {
+    if (record.environmentId !== environmentId) continue;
+    removePersonalHost(
+      { hostId: record.hostId, relayUrl: record.relayUrl },
+      personalNetworkStorage,
+    );
+  }
+  return readPersonalHosts(personalNetworkStorage);
 }
 
 export function refreshPersonalNetworkHosts(): Promise<ReadonlyArray<PersonalHostRecord>> {

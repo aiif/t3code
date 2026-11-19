@@ -598,7 +598,8 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                   <div className="min-w-0">
                     <p className="truncate font-medium">{guest.label ?? guest.publicUrl}</p>
                     <p className="truncate text-muted-foreground">
-                      {guest.paused ? "Paused" : guest.online ? "Online" : "Offline"}
+                      {guest.paused ? "Paused" : guest.online ? "Online" : "Offline"} ·{" "}
+                      {guest.relayUrl}
                       {guest.lastError ? ` · ${guest.lastError}` : ""}
                     </p>
                   </div>

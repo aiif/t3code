@@ -269,16 +269,19 @@ function AdminConsole({
   return (
     <StandalonePage>
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <StandalonePageHeader
-          title="Personal network admin"
-          description="Hosts registered with this relay, their host keys, and the guest clients they reported."
-        />
+        <div className="min-w-0">
+          <StandalonePageHeader
+            title="Personal network admin"
+            description="Hosts registered with this relay, their host keys, and the guest clients they reported."
+          />
+          <p className="mt-2 truncate text-xs text-muted-foreground">{config.relayUrl}</p>
+        </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => void refresh()}>
             Refresh
           </Button>
           <Button size="sm" variant="outline" onClick={onForget}>
-            Forget key
+            Forget relay
           </Button>
         </div>
       </div>
