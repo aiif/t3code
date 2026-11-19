@@ -23,7 +23,12 @@ import {
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import { assertNotLinked, assertSameLink, callerLinkOrigin } from "./linkOrigin.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
-import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
+import {
+  interactionModeRank,
+  resolveInteractionMode,
+  resolveRuntimeMode,
+  runtimeModeRank,
+} from "./delegatedTaskModes.ts";
 import {
   assertFullAccess,
   assertLiveCaller,
@@ -265,6 +270,57 @@ export const startsThreads = <P, A, E, R>(
         caller.limits.interactionMode,
         requested.interactionMode,
       ),
+      linkOrigin: callerLinkOrigin(caller),
+    } satisfies StartedModes;
+  });
+  return declare(
+    (params: P) =>
+      Effect.gen(function* () {
+        const caller = yield* writingCaller;
+        if (linked !== "stamped") yield* assertNotLinked(caller, linked.refused);
+        return yield* handle(params, yield* started(caller, params));
+      }),
+    (params: P) => Effect.flatMap(writingCaller, (caller) => started(caller, params)),
+  );
+};
+
+/**
+ * `startsThreads`, plus the named agent's mode ceiling. `agentModes` resolves
+ * the agent's concrete runtime/interaction modes before the handler receives
+ * `StartedModes`; an agent narrows, never broadens. `undefined` means no agent.
+ */
+export const startsAgentThreads = <P, A, E, R, E2 extends OrchestratorMcpFailure>(
+  modes: (params: P) => {
+    readonly runtimeMode?: RuntimeMode | undefined;
+    readonly interactionMode?: ProviderInteractionMode | undefined;
+  },
+  agentModes: (
+    params: P,
+  ) => Effect.Effect<
+    | { readonly runtimeMode: RuntimeMode; readonly interactionMode: ProviderInteractionMode }
+    | undefined,
+    E2
+  >,
+  handle: (params: P, modes: StartedModes) => Effect.Effect<A, E, R>,
+  linked: "stamped" | { readonly refused: string },
+) => {
+  const started = Effect.fn("McpToolAccess.startedForAgent")(function* (caller: Caller, params: P) {
+    const requested = modes(params);
+    const ceiling = yield* agentModes(params);
+    const runtimeLimit =
+      ceiling !== undefined &&
+      runtimeModeRank(ceiling.runtimeMode) < runtimeModeRank(caller.limits.runtimeMode)
+        ? ceiling.runtimeMode
+        : caller.limits.runtimeMode;
+    const interactionLimit =
+      ceiling !== undefined &&
+      interactionModeRank(ceiling.interactionMode) <
+        interactionModeRank(caller.limits.interactionMode)
+        ? ceiling.interactionMode
+        : caller.limits.interactionMode;
+    return {
+      runtimeMode: yield* resolveRuntimeMode(runtimeLimit, requested.runtimeMode),
+      interactionMode: yield* resolveInteractionMode(interactionLimit, requested.interactionMode),
       linkOrigin: callerLinkOrigin(caller),
     } satisfies StartedModes;
   });

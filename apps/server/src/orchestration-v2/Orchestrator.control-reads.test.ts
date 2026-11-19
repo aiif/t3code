@@ -2,6 +2,7 @@ import * as NodeSqlite from "node:sqlite";
 
 import { assert, it } from "@effect/vitest";
 import {
+  AgentId,
   CommandId,
   MessageId,
   EventId,
@@ -20,6 +21,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import { composeAgentInstruction, parseAgentInstruction } from "@t3tools/shared/agentInstruction";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -1297,6 +1299,107 @@ it.effect("keeps delegated child pull-request links independent of the parent", 
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("thread.create persists agentId to the app thread and shell", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make("thread:agent-create");
+    const agentId = AgentId.make("t3-tech-lead");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-agent-thread"),
+      threadId,
+      projectId: ProjectId.make("project:agent-create"),
+      title: "Agent thread",
+      agentId,
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const projection = yield* projections.getThreadProjection(threadId);
+    assert.equal(projection.thread.agentId, agentId);
+    const shell = yield* projections.getThreadShell(threadId);
+    assert.equal(shell?.agentId, agentId);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "delegated_task.request wraps the child's first message once and keeps task text clean",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const parentThreadId = ThreadId.make("thread:agent-compose-parent");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("create-agent-compose-parent"),
+        threadId: parentThreadId,
+        projectId: ProjectId.make("project:agent-compose"),
+        title: "Parent",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("start-agent-compose-parent"),
+        threadId: parentThreadId,
+        messageId: MessageId.make("message:agent-compose-parent"),
+        text: "Delegate the work",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      const parentRun = (yield* projections.getThreadProjection(parentThreadId)).runs[0]!;
+      const agentId = AgentId.make("t3-coder");
+      const instruction = "You are a coder. Do the task.";
+      yield* orchestrator.dispatch({
+        type: "delegated_task.request",
+        commandId: CommandId.make("delegate-agent-compose"),
+        parentThreadId,
+        parentRunId: parentRun.id,
+        parentNodeId: parentRun.rootNodeId!,
+        agentId,
+        agentInstruction: instruction,
+        task: "Implement the feature",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+      const parent = yield* projections.getThreadProjection(parentThreadId);
+      const task = parent.subagents[0]!;
+      // The subagent record and thread title stay the clean task text.
+      assert.equal(task.agentId, agentId);
+      assert.equal(task.prompt, "Implement the feature");
+      assert.isNull(task.title);
+      const childThreadId = task.childThreadId!;
+      const child = yield* projections.getThreadProjection(childThreadId);
+      assert.equal(child.thread.agentId, agentId);
+      assert.equal(child.thread.title, "Implement the feature");
+      // Only the child's first message carries the marker, and it wraps exactly once.
+      const childMessage = child.messages.find((message) => message.role === "user")!;
+      assert.equal(
+        childMessage.text,
+        composeAgentInstruction({ agentId, prompt: instruction, text: "Implement the feature" }),
+      );
+      const parsed = parseAgentInstruction(childMessage.text);
+      assert.equal(parsed.agentId, agentId);
+      assert.equal(parsed.prompt, instruction);
+      assert.equal(parsed.text, "Implement the feature");
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("wakes the parent once when its delegated task asks a question", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -2081,6 +2184,14 @@ it.effect("starts and finishes a delegated task without reading the parent's his
     const reads = statements.filter(
       ([query]) => /^\s*(SELECT|WITH)\b/.test(query) && !query.includes("COUNT(*)"),
     );
+    // node:sqlite exposes VM-step counters only on newer runtimes; older local Node
+    // still executes the same reads against the expanded copy, and CI checks the ratio.
+    if (typeof (copy.prepare("SELECT 1") as { stat?: unknown }).stat !== "function") {
+      for (const [query, params] of reads) {
+        copy.prepare(query).all(...(params as ReadonlyArray<NodeSqlite.SQLInputValue>));
+      }
+      return;
+    }
     const readSteps = () =>
       reads.reduce((steps, [query, params]) => {
         const statement = copy.prepare(query);

@@ -90,6 +90,7 @@ import {
   derivePendingBackgroundWork,
   pendingBackgroundTurnItems,
 } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+import { composeAgentInstruction } from "@t3tools/shared/agentInstruction";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -3792,6 +3793,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       activeProviderThreadId: null,
       pullRequests: [],
       ...(command.linkOrigin === undefined ? {} : { linkOrigin: command.linkOrigin }),
+      ...(command.agentId === undefined ? {} : { agentId: command.agentId }),
       // Only stamped work names a remote parent, so a client cannot claim one.
       ...(command.linkOrigin === undefined || command.delegatedFrom === undefined
         ? {}
@@ -9429,22 +9431,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.title === undefined ? {} : { title: command.title }),
         ordinal: (yield* subagentCount(command.parentThreadId)) + 1,
       });
+      const { agentId: _parentAgentId, ...childThreadBase } = makeSubagentChildThread({
+        parentThread: parentProjection.thread,
+        childThreadId,
+        parentNodeId: taskNodeId,
+        activeProviderThreadId: null,
+        providerInstanceId: command.modelSelection.instanceId,
+        modelSelection: command.modelSelection,
+        title: taskTitle,
+        now,
+        createdBy: command.createdBy,
+        creationSource: command.creationSource,
+      });
       const childThread: OrchestrationV2AppThread = {
-        ...makeSubagentChildThread({
-          parentThread: parentProjection.thread,
-          childThreadId,
-          parentNodeId: taskNodeId,
-          activeProviderThreadId: null,
-          providerInstanceId: command.modelSelection.instanceId,
-          modelSelection: command.modelSelection,
-          title: taskTitle,
-          now,
-          createdBy: command.createdBy,
-          creationSource: command.creationSource,
-        }),
+        ...childThreadBase,
         runtimeMode: command.runtimeMode,
         interactionMode: command.interactionMode,
         ...(command.workspaceStrategy === undefined ? {} : { branch: null, worktreePath: null }),
+        ...(command.agentId === undefined ? {} : { agentId: command.agentId }),
       };
       const task: OrchestrationV2Subagent = {
         id: taskNodeId,
@@ -9457,6 +9461,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerInstanceId: command.modelSelection.instanceId,
         providerThreadId: null,
         childThreadId,
+        ...(command.agentId === undefined ? {} : { agentId: command.agentId }),
         nativeTaskRef: null,
         prompt: command.task,
         title: command.title ?? null,
@@ -9560,7 +9565,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         threadId: childThreadId,
         senderThreadId: command.parentThreadId,
         messageId: childMessageId,
-        text: command.task,
+        text:
+          command.agentId === undefined || command.agentInstruction === undefined
+            ? command.task
+            : composeAgentInstruction({
+                agentId: command.agentId,
+                prompt: command.agentInstruction,
+                text: command.task,
+              }),
         attachments: [],
         modelSelection: command.modelSelection,
         dispatchMode:
@@ -9920,6 +9932,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerThreadId: null,
         childThreadId: null,
         remoteChild: command.remoteChild,
+        ...(command.agentId === undefined ? {} : { agentId: command.agentId }),
         nativeTaskRef: null,
         prompt: command.task,
         title: command.title ?? null,
