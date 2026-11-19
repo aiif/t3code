@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
 
 import * as AgentRegistryModule from "../agents/AgentRegistry.ts";
+import { validateAgentPaths as validateAgentPathsFromDefinition } from "../agents/AgentDefinition.ts";
 import { BUILTIN_AGENTS } from "../agents/builtin.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
@@ -118,7 +119,6 @@ const agentPathsArgument = Argument.String("path").pipe(
 type AgentRegistryLayer = Layer.Layer<AgentRegistryModule.AgentRegistry, never, never>;
 
 const registryModule = AgentRegistryModule as unknown as {
-  readonly validateAgentPaths?: ValidateAgentPaths;
   readonly layer?: Layer.Layer<AgentRegistryModule.AgentRegistry, never, ServerConfig.ServerConfig>;
 };
 
@@ -406,7 +406,7 @@ export interface AgentCommandOptions {
 }
 
 export const makeAgentCommand = (options: AgentCommandOptions = {}) => {
-  const validateAgentPaths = options.validateAgentPaths ?? registryModule.validateAgentPaths;
+  const validateAgentPaths = options.validateAgentPaths ?? validateAgentPathsFromDefinition;
   return Command.make("agent").pipe(
     Command.withDescription("Inspect and validate local agent definitions."),
     Command.withSubcommands([

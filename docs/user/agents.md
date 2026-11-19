@@ -133,7 +133,7 @@ reports whether the definition came from a project, the global directory, or the
 From the CLI:
 
 ```sh
-t3 agent list                 # ids, source, and delegation summary
+t3 agent list                 # id, source, provider/model, description
 t3 agent show t3-reviewer     # full definition, including the prompt
 t3 agent validate <path>      # check one YAML file
 t3 agent path                 # directories searched for this project
