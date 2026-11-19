@@ -8,12 +8,19 @@ import {
   type ProviderOptionDescriptor,
   type ServerProvider,
 } from "@t3tools/contracts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Layer from "effect/Layer";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import * as ServerConfig from "../config.ts";
 import { BUILTIN_AGENTS } from "./builtin.ts";
-import { type ResolvedAgentDefinition, layerStatic } from "./AgentRegistry.ts";
+import {
+  type ResolvedAgentDefinition,
+  layer as liveAgentRegistryLayer,
+  layerStatic,
+} from "./AgentRegistry.ts";
 
 export interface AgentFixture {
   readonly root: string;
@@ -72,6 +79,41 @@ export const exampleAgentDefinition = (id: string): AgentDefinition => ({
 export const staticAgentRegistryLayer = (
   entries: ReadonlyArray<ResolvedAgentDefinition> = builtinResolvedAgents(),
 ) => layerStatic(entries);
+
+/** The live loader reading the fixture's global directory and project root. */
+export const agentRegistryLayer = (fixture: AgentFixture) =>
+  liveAgentRegistryLayer.pipe(
+    Layer.provide(ServerConfig.layerTest(process.cwd(), fixture.home)),
+    Layer.provide(NodeServices.layer),
+  );
+
+const indent = (value: string, spaces = 2): string =>
+  value
+    .split("\n")
+    .map((line) => `${" ".repeat(spaces)}${line}`)
+    .join("\n");
+
+/** A valid definition with raw YAML fragments for the nested blocks. */
+export const agentYaml = (input: {
+  readonly id: string;
+  readonly name?: string;
+  readonly description?: string;
+  readonly prompt?: string;
+  readonly provider?: string;
+  readonly delegation?: string;
+  readonly extra?: string;
+}): string =>
+  [
+    "schemaVersion: 1",
+    `id: ${input.id}`,
+    `name: ${JSON.stringify(input.name ?? `Agent ${input.id}`)}`,
+    `description: ${JSON.stringify(input.description ?? `Test agent ${input.id}.`)}`,
+    `prompt: ${JSON.stringify(input.prompt ?? `You are ${input.id}. Do the task.`)}`,
+    ...(input.provider === undefined ? [] : ["provider:", indent(input.provider)]),
+    ...(input.delegation === undefined ? [] : ["delegation:", indent(input.delegation)]),
+    ...(input.extra === undefined ? [] : [input.extra]),
+    "",
+  ].join("\n");
 
 export function fakeProviderSnapshot(input: {
   readonly instanceId?: ProviderInstanceId;
