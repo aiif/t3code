@@ -1,5 +1,9 @@
 import * as NodeSqlite from "node:sqlite";
 
+// node:sqlite exposes VM-step counters only on newer runtimes; older local Node runs skip the ratio.
+const supportsVmStep = (db: NodeSqlite.DatabaseSync) =>
+  typeof (db.prepare("SELECT 1") as { stat?: unknown }).stat === "function";
+
 import { assert, it, vi } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -4363,18 +4367,20 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           );
         }
         const rowReads = pageStatements.filter((statement) => !countsPositions(statement));
-        const rowReadSteps = () =>
-          rowReads.reduce((steps, [query, params]) => {
-            const statement = copy.prepare(query);
-            statement.all(...(params as ReadonlyArray<NodeSqlite.SQLInputValue>));
-            return steps + statement.stat("vmStep");
-          }, 0);
-        const fullSteps = rowReadSteps();
-        assert.isAbove(fullSteps, 0);
-        copy.exec(
-          "DELETE FROM orchestration_v2_projection_turn_items WHERE ordinal BETWEEN 2 AND 400",
-        );
-        assert.isAtMost(fullSteps, rowReadSteps() * 1.1);
+        if (supportsVmStep(copy)) {
+          const rowReadSteps = () =>
+            rowReads.reduce((steps, [query, params]) => {
+              const statement = copy.prepare(query);
+              statement.all(...(params as ReadonlyArray<NodeSqlite.SQLInputValue>));
+              return steps + statement.stat("vmStep");
+            }, 0);
+          const fullSteps = rowReadSteps();
+          assert.isAbove(fullSteps, 0);
+          copy.exec(
+            "DELETE FROM orchestration_v2_projection_turn_items WHERE ordinal BETWEEN 2 AND 400",
+          );
+          assert.isAtMost(fullSteps, rowReadSteps() * 1.1);
+        }
       }
       // Rows that a rolled-back run hides below the page still shift every position above them.
       const setOldRunStatus = (status: "rolled_back" | "completed") => sql`
@@ -4849,18 +4855,20 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         using copy = new NodeSqlite.DatabaseSync(copyPath);
         yield* sql`VACUUM INTO ${copyPath}`;
         assert.isNotEmpty(windowStatements);
-        const windowSteps = () =>
-          windowStatements.reduce((steps, [query, params]) => {
-            const statement = copy.prepare(query);
-            statement.all(...(params as ReadonlyArray<NodeSqlite.SQLInputValue>));
-            return steps + statement.stat("vmStep");
-          }, 0);
-        const fullSteps = windowSteps();
-        assert.isAbove(fullSteps, 0);
-        copy.exec(
-          "DELETE FROM orchestration_v2_projection_turn_items WHERE ordinal BETWEEN 2 AND 498",
-        );
-        assert.isAtMost(fullSteps, windowSteps() * 1.1);
+        if (supportsVmStep(copy)) {
+          const windowSteps = () =>
+            windowStatements.reduce((steps, [query, params]) => {
+              const statement = copy.prepare(query);
+              statement.all(...(params as ReadonlyArray<NodeSqlite.SQLInputValue>));
+              return steps + statement.stat("vmStep");
+            }, 0);
+          const fullSteps = windowSteps();
+          assert.isAbove(fullSteps, 0);
+          copy.exec(
+            "DELETE FROM orchestration_v2_projection_turn_items WHERE ordinal BETWEEN 2 AND 498",
+          );
+          assert.isAtMost(fullSteps, windowSteps() * 1.1);
+        }
       }
       assert.deepEqual(
         runlessWindow.projection.turnItems.map((item) => item.ordinal),
@@ -4941,27 +4949,29 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         const livePath = "file:/thread-window-live-steps?vfs=memdb";
         using copy = new NodeSqlite.DatabaseSync(livePath);
         yield* sql`VACUUM INTO ${livePath}`;
-        const liveSteps = (statements = liveStatements) =>
-          statements.reduce((steps, [query, params]) => {
-            const statement = copy.prepare(query);
-            statement.all(...(params as ReadonlyArray<NodeSqlite.SQLInputValue>));
-            return steps + statement.stat("vmStep");
-          }, 0);
         const deleteOrdinals = (from: number, to: number) =>
           copy.exec(
             `DELETE FROM orchestration_v2_projection_turn_items WHERE ordinal BETWEEN ${from} AND ${to}`,
           );
-        // Nothing below the newest 502 rows is read to find the tail.
-        const fullSteps = liveSteps();
-        assert.isAbove(fullSteps, 0);
-        deleteOrdinals(2, 498);
-        assert.isAtMost(fullSteps, liveSteps() * 1.1);
-        // The rows themselves are read only from the newest page, not from all 502.
-        const rowStatements = liveStatements.filter(([query]) => query.includes("work_segments"));
-        assert.lengthOf(rowStatements, 1);
-        const pageSteps = liveSteps(rowStatements);
-        deleteOrdinals(499, 900);
-        assert.isAtMost(pageSteps, liveSteps(rowStatements) * 1.1);
+        if (supportsVmStep(copy)) {
+          const liveSteps = (statements = liveStatements) =>
+            statements.reduce((steps, [query, params]) => {
+              const statement = copy.prepare(query);
+              statement.all(...(params as ReadonlyArray<NodeSqlite.SQLInputValue>));
+              return steps + statement.stat("vmStep");
+            }, 0);
+          // Nothing below the newest 502 rows is read to find the tail.
+          const fullSteps = liveSteps();
+          assert.isAbove(fullSteps, 0);
+          deleteOrdinals(2, 498);
+          assert.isAtMost(fullSteps, liveSteps() * 1.1);
+          // The rows themselves are read only from the newest page, not from all 502.
+          const rowStatements = liveStatements.filter(([query]) => query.includes("work_segments"));
+          assert.lengthOf(rowStatements, 1);
+          const pageSteps = liveSteps(rowStatements);
+          deleteOrdinals(499, 900);
+          assert.isAtMost(pageSteps, liveSteps(rowStatements) * 1.1);
+        }
         // The tail search reads conversation rows from their own index, not past the work rows.
         const tailSearch = liveStatements.find(([query]) => query.includes("visible_tail"));
         assert.isDefined(tailSearch);

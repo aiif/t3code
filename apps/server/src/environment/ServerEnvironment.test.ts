@@ -77,6 +77,9 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmentLive", (it) => {
   it.effect("publishes proven install ownership only for manually updated servers", () =>
     Effect.gen(function* () {
+      // This fixture builds a Linux npm-global layout with a symlink; Windows without
+      // Developer Mode cannot create it. CI runs this test on Linux.
+      if (HostProcess.Platform.defaultValue() === "win32") return;
       const fs = yield* FileSystem.FileSystem;
       const baseDir = yield* fs.makeTempDirectoryScoped();
       const prefix = `${baseDir}/node`;

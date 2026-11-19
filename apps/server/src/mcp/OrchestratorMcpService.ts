@@ -1323,10 +1323,10 @@ const make = Effect.gen(function* () {
   ) =>
     parent === undefined
       ? Effect.succeed(undefined as string | undefined)
-      : projects.getById(parent.thread.projectId).pipe(
+      : Effect.suspend(() => projects.getById(parent.thread.projectId)).pipe(
           Effect.map(Option.getOrUndefined),
           Effect.map((project) => project?.workspaceRoot),
-          Effect.orElseSucceed(() => undefined),
+          Effect.catchCause(() => Effect.succeed(undefined)),
         );
 
   const secretRequests = yield* SecretRequests.SecretRequests;
@@ -1543,17 +1543,19 @@ const make = Effect.gen(function* () {
     thread: OrchestrationV2ThreadProjection["thread"],
   ) {
     const ancestors = new Map<ThreadId, OrchestrationV2AppThreadLineage>();
-    let lineage = thread.lineage;
+    const initial = thread.lineage;
+    if (initial === undefined) return 0;
+    let lineage: OrchestrationV2AppThreadLineage = initial;
     while (lineage.parentThreadId !== null) {
       const parentId = lineage.parentThreadId;
       const parent = yield* threadManagement
         .getThreadShell(parentId)
         .pipe(Effect.orElseSucceed(() => null));
-      if (parent === null) break;
+      if (parent === null || parent.lineage === undefined) break;
       ancestors.set(parentId, parent.lineage);
       lineage = parent.lineage;
     }
-    return depthOfThread(thread.lineage, (threadId) => ancestors.get(threadId));
+    return depthOfThread(initial, (threadId) => ancestors.get(threadId));
   });
 
   const activeChildTasks = Effect.fn("OrchestratorMcpService.activeChildTasks")(function* (
