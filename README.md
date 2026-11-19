@@ -90,6 +90,17 @@ T3 Code needs one agent that is installed and signed in. For example, install [C
 
 [Provider setup](./docs/user/install.md#providers) has the steps for each agent. [Install T3 Code](./docs/user/install.md) covers nightly builds, AppImage, WSL, and NixOS.
 
+## Agent definitions
+
+Agent definitions are reusable personas for threads: a prompt, optional provider and model defaults, permission modes, and delegation limits. T3 Code ships six built-ins, and you can add your own YAML files per project or machine.
+
+```sh
+t3 agent list
+t3 thread start . "Review the uncommitted diff" --agent t3-reviewer
+```
+
+[Agent definitions](./docs/user/agents.md) covers the file format, precedence, and delegation.
+
 ## "Wait, what are you selling me?"
 
 Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
