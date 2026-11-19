@@ -26,10 +26,12 @@ import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import * as DateTime from "effect/DateTime";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { composeAgentInstruction } from "@t3tools/shared/agentInstruction";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
+import * as AgentTaskResolver from "../../AgentTaskResolver.ts";
 import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 
@@ -227,23 +229,60 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         // project's effective defaults, as the composer does. Its mode stays
         // within the ceiling it was approved with.
         const projectDefaults = caller === undefined ? projectSettings : undefined;
-        const modelSelection =
-          input.modelSelection ??
-          launchedModel ??
-          caller?.modelSelection ??
-          (projectDefaults
-            ? resolveNewThreadModelSelection({
-                defaultSelection: projectDefaults.defaultModelSelection,
-                fallbackSelection: projectDefaults.fallbackModelSelection,
-                providers: yield* ProviderRegistry.ProviderRegistry.pipe(
-                  Effect.flatMap((registry) => registry.getProviders),
+        const providers = yield* (yield* ProviderRegistry.ProviderRegistry).getProviders;
+        const projectFallbackSelection = projectDefaults
+          ? resolveNewThreadModelSelection({
+              defaultSelection: projectDefaults.defaultModelSelection,
+              fallbackSelection: projectDefaults.fallbackModelSelection,
+              providers,
+              settings: projectDefaults,
+              projectId,
+              now: DateTime.toEpochMillis(yield* DateTime.now),
+            }).selection
+          : null;
+        const fallbackModelSelection =
+          launchedModel ?? caller?.modelSelection ?? projectFallbackSelection ?? undefined;
+        // A named agent resolves in the target project before model/mode resolution; its
+        // provider/model and modes are defaults overridden by explicit inputs.
+        const requestedAgent = input.agent;
+        const agentTask =
+          requestedAgent === undefined || replaying || project === undefined
+            ? undefined
+            : yield* AgentTaskResolver.AgentTaskResolver.pipe(
+                Effect.flatMap((resolver) =>
+                  resolver.resolve({
+                    projectRoot: project.workspaceRoot,
+                    agentId: requestedAgent,
+                    parent: {
+                      ...(fallbackModelSelection === undefined
+                        ? {}
+                        : { modelSelection: fallbackModelSelection }),
+                      runtimeMode: context.limits.runtimeMode,
+                      interactionMode: context.limits.interactionMode,
+                    },
+                    ...(input.modelSelection === undefined
+                      ? {}
+                      : {
+                          explicitTarget: {
+                            providerInstanceId: input.modelSelection.instanceId,
+                            model: input.modelSelection.model,
+                            ...(input.modelSelection.options === undefined
+                              ? {}
+                              : { options: input.modelSelection.options }),
+                          },
+                        }),
+                    ...(input.runtimeMode === undefined
+                      ? {}
+                      : { explicitRuntimeMode: input.runtimeMode }),
+                    ...(input.interactionMode === undefined
+                      ? {}
+                      : { explicitInteractionMode: input.interactionMode }),
+                    providers,
+                  }),
                 ),
-                settings: projectDefaults,
-                projectId,
-                now: DateTime.toEpochMillis(yield* DateTime.now),
-              }).selection
-            : null) ??
-          undefined;
+              );
+        const modelSelection =
+          input.modelSelection ?? agentTask?.modelSelection ?? fallbackModelSelection;
         if (modelSelection === undefined)
           return yield* new OrchestratorMcpFailure({
             code: "invalid_request",
@@ -251,13 +290,14 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
               "Pass modelSelection: the project has no default model. orchestrator_capabilities lists providers and models.",
           });
         let startedRuntimeMode =
-          projectDefaults !== undefined && input.runtimeMode === undefined
-            ? yield* resolveRuntimeMode(runtimeMode, projectDefaults.defaultRuntimeMode).pipe(
-                Effect.orElseSucceed(() => runtimeMode),
-              )
-            : runtimeMode;
-        if (!replaying) {
-          const providers = yield* (yield* ProviderRegistry.ProviderRegistry).getProviders;
+          agentTask !== undefined
+            ? agentTask.runtimeMode
+            : projectDefaults !== undefined && input.runtimeMode === undefined
+              ? yield* resolveRuntimeMode(runtimeMode, projectDefaults.defaultRuntimeMode).pipe(
+                  Effect.orElseSucceed(() => runtimeMode),
+                )
+              : runtimeMode;
+        if (agentTask === undefined && !replaying) {
           startedRuntimeMode = yield* resolveRuntimeMode(startedRuntimeMode, input.runtimeMode, {
             modelSelection,
             supportedRuntimeModes: providers.find(
@@ -265,6 +305,15 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             )?.supportedRuntimeModes,
           });
         }
+        const startedInteractionMode = agentTask?.interactionMode ?? interactionMode;
+        const messageText =
+          agentTask === undefined || input.message === undefined
+            ? input.message
+            : composeAgentInstruction({
+                agentId: agentTask.agentId,
+                prompt: agentTask.instruction,
+                text: input.message,
+              });
         const result = yield* ThreadMessageIntake.launchThread({
           commandId,
           threadId,
@@ -272,15 +321,15 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           title: input.title,
           modelSelection,
           runtimeMode: startedRuntimeMode,
-          interactionMode,
+          interactionMode: startedInteractionMode,
           workspaceStrategy: strategy ?? { type: "root" },
-          ...(input.message === undefined && attachments.length === 0
+          ...(messageText === undefined && attachments.length === 0
             ? {}
             : {
                 initialMessage: {
                   messageId,
                   ...(caller === undefined ? {} : { senderThreadId: caller.id }),
-                  text: input.message ?? "",
+                  text: messageText ?? "",
                   attachments,
                 },
               }),
@@ -320,6 +369,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           link: McpInvocationContext.threadLinkFor(scope, thread.id, thread.title),
           projectId: thread.projectId,
           modelSelection: thread.modelSelection,
+          ...(agentTask === undefined ? {} : { agentId: agentTask.agentId }),
           runId: run?.id ?? null,
           status: run?.status ?? null,
         };

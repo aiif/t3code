@@ -47,11 +47,15 @@ import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import type { McpInvocationScope } from "./McpInvocationContext.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
+import * as AgentRegistry from "../agents/AgentRegistry.ts";
+import * as AgentTaskResolver from "./AgentTaskResolver.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 
 const layerOrchestratorService = OrchestratorMcpService.layer.pipe(
   Layer.provide(Layer.mock(ThreadLaunchService.ThreadLaunchService)({})),
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+  Layer.provide(AgentRegistry.layerEmpty),
+  Layer.provide(AgentTaskResolver.layerUnavailable),
 );
 
 const driver = ProviderDriverKind.make("claudeAgent");
