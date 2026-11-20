@@ -87,8 +87,17 @@ function main() {
   console.log(`Releasing ${options.tag} from ${options.repo}.`);
   run("git", ["tag", options.tag], options);
   run("git", ["push", "origin", options.tag], options);
-  run("gh", ["workflow", "enable", "Fork release", "-R", options.repo], options);
-  run("gh", ["workflow", "enable", "Release desktop build", "-R", options.repo], options);
+  // Enabling is best effort: a workflow that is already enabled can still make
+  // `gh workflow enable` exit non-zero, and the dispatch below is what matters.
+  for (const workflow of ["Fork release", "Release desktop build"]) {
+    try {
+      run("gh", ["workflow", "enable", workflow, "-R", options.repo], options);
+    } catch (cause) {
+      console.warn(
+        `Could not enable ${workflow}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    }
+  }
   if (options.macos !== undefined) {
     run(
       "gh",
