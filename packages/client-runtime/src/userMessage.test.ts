@@ -200,6 +200,24 @@ describe("resolveUserMessagePresentation", () => {
     ).toEqual({ text: "Why?", attribution: "guest", scheduledTaskId: undefined, guestName: "Sam" });
   });
 
+  it("hides the first-message agent block and surfaces it as a chip payload", () => {
+    const text =
+      "<!-- t3:agent:t3-reviewer -->\nReview the diff read-only.\n<!-- /t3:agent -->\nCheck the change.";
+    expect(
+      resolveUserMessagePresentation({
+        role: "user",
+        createdBy: "agent",
+        creationSource: "mcp",
+        text,
+      }),
+    ).toEqual({
+      text: "Check the change.",
+      attribution: "agent",
+      scheduledTaskId: undefined,
+      agentInstruction: { agentId: "t3-reviewer", prompt: "Review the diff read-only." },
+    });
+  });
+
   it("attributes older server-sent restart continuations to T3 Code, not another agent", () => {
     const text = "Note: the T3 server restarted.";
     expect(

@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 
-import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderOptionSelection, ProviderOptionSelectionValue } from "./model.ts";
 import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
@@ -99,5 +99,28 @@ export const AgentSummary = Schema.Struct({
   allowedAgents: Schema.NullOr(Schema.Array(AgentId)),
   maxDepth: PositiveInt,
   maxParallel: PositiveInt,
+  /** The YAML file's base name for global/project definitions; never an absolute path. */
+  fileName: Schema.optional(Schema.String),
 });
 export type AgentSummary = typeof AgentSummary.Type;
+
+export const AgentsListInput = Schema.Struct({
+  /** Include this project's `.t3code/agents` scope. Omit for built-ins and the global scope. */
+  projectRoot: Schema.optional(TrimmedNonEmptyString),
+  search: Schema.optional(Schema.String),
+  limit: Schema.optional(PositiveInt),
+  cursor: Schema.optional(NonNegativeInt),
+});
+export type AgentsListInput = typeof AgentsListInput.Type;
+
+export const AgentsListResult = Schema.Struct({
+  agents: Schema.Array(AgentSummary),
+  warnings: Schema.optional(Schema.Array(Schema.String)),
+  nextCursor: Schema.optional(NonNegativeInt),
+});
+export type AgentsListResult = typeof AgentsListResult.Type;
+
+export class AgentsListError extends Schema.TaggedError<AgentsListError>()("AgentsListError", {
+  message: Schema.String,
+  cause: Schema.optional(Schema.Defect()),
+}) {}

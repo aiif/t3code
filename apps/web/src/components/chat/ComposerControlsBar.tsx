@@ -1,4 +1,5 @@
 import type { ChatComposerProps } from "./ChatComposer";
+import type { ReactNode } from "react";
 import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
@@ -40,6 +41,7 @@ import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
 const MODEL_TRIGGER_STATES = "data-popup-open:bg-accent data-popup-open:text-foreground";
 
 export function ComposerControlsBar(props: {
+  agentControl?: ReactNode | undefined;
   environmentId: EnvironmentId;
   workspaceCwd: string | null;
   routeKind: ChatComposerProps["routeKind"];
@@ -262,6 +264,7 @@ export function ComposerControlsBar(props: {
     </ComposerControl>
   ) : (
     <>
+      {props.agentControl}
       {composerModelPicker}
 
       <>

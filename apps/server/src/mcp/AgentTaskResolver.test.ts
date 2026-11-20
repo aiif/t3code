@@ -318,6 +318,25 @@ describe("AgentTaskResolver registry layer", () => {
       }),
   );
 
+  it.effect("inherits an unauthenticated provider that the caller already chose", () =>
+    Effect.gen(function* () {
+      const instanceId = instances[0]!;
+      const inherited = {
+        ...providerOf({ instanceId, model: "m" }),
+        auth: { status: "unauthenticated" as const },
+      };
+      const resolved = yield* resolve(
+        {
+          agentId: "inherits",
+          parentModelSelection: parentSelection(instanceId, "m"),
+          providers: [inherited],
+        },
+        [resolvedDefinition(exampleAgentDefinition("inherits"))],
+      );
+      expect(resolved.modelSelection).toEqual({ instanceId, model: "m" });
+    }),
+  );
+
   it.effect("fails model_unavailable for a model the provider does not advertise", () =>
     Effect.gen(function* () {
       const agent = agentWithProvider("bad-model", { instance: instances[0], model: "not-listed" });

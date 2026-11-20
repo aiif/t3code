@@ -24,6 +24,8 @@ import type {
   ResponseContextRecord,
   ChatAttachment as ContractChatAttachment,
   ChatFileAttachment,
+  AgentId,
+  AgentSummary,
   EnvironmentId,
   ModelSelection,
   ProjectId,
@@ -281,6 +283,7 @@ import {
   usePreparingComposerImages,
 } from "./preparingComposerImages";
 import { ComposerControlsBar } from "./ComposerControlsBar";
+import { ComposerAgentPicker } from "./ComposerAgentPicker";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 import { useFreshSessionArmed } from "./freshSessionArms";
@@ -428,6 +431,14 @@ export interface ChatComposerProps {
   onComposerOverlayHeightChange: (height: number) => void;
   /** The new-thread strip names the permissions, so the controls row hides its chip. */
   permissionsShownInStrip: boolean;
+
+  /** Whether this server and project advertise named agent definitions. */
+  agentDefinitionsAvailable: boolean;
+  /** The agent selected for this new thread, if any. */
+  draftAgentId: AgentId | null;
+  /** The project root whose `.t3code/agents` definitions apply. */
+  agentProjectRoot: string | null;
+  onDraftAgentSelect: (agent: AgentSummary | null) => void;
 
   promptRef: React.RefObject<string>;
   composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
@@ -2432,6 +2443,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       : expandedControlsIconOnlyBlockCount;
   const composerControls = (
     <ComposerControlsBar
+      agentControl={
+        routeKind === "draft" && props.agentDefinitionsAvailable && settings.agentPickerEnabled ? (
+          <ComposerAgentPicker
+            environmentId={environmentId}
+            projectRoot={props.agentProjectRoot}
+            enabled
+            selectedAgentId={props.draftAgentId}
+            size={composerControlsCollapsed ? "xs" : "sm"}
+            disabled={isSendBusy}
+            onSelect={props.onDraftAgentSelect}
+          />
+        ) : undefined
+      }
       environmentId={environmentId}
       workspaceCwd={gitCwd}
       routeKind={routeKind}

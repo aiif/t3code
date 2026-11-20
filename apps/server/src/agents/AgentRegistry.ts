@@ -101,6 +101,7 @@ export function toAgentSummary(resolved: ResolvedAgentDefinition): AgentSummary 
     allowedAgents: delegation.allowedAgents ?? null,
     maxDepth: delegation.maxDepth,
     maxParallel: delegation.maxParallel,
+    ...(resolved.path === undefined ? {} : { fileName: NodePath.basename(resolved.path) }),
   };
 }
 
@@ -164,8 +165,8 @@ const matchesSearch = (definition: AgentDefinition, term: string): boolean =>
   definition.name.toLowerCase().includes(term) ||
   definition.description.toLowerCase().includes(term);
 
-const make = Effect.gen(function* () {
-  const baseDir = yield* AgentHomeDir;
+/** Builds a registry for one T3 home. The returned value caches file reads by mtime. */
+export const makeAgentRegistry = (baseDir: string): AgentRegistryShape => {
   const globalAgentsDir = NodePath.resolve(baseDir, "agents");
   const cache = new Map<string, CachedDefinition>();
 
@@ -311,7 +312,7 @@ const make = Effect.gen(function* () {
   });
 
   return AgentRegistry.of({ list, read });
-});
+};
 
 /**
  * Placeholder for lanes that run before the file loader is wired in: no
@@ -362,4 +363,10 @@ export const layerStatic = (entries: ReadonlyArray<ResolvedAgentDefinition>) =>
   );
 
 /** The live registry: built-ins plus global and project YAML files. */
-export const layer = Layer.effect(AgentRegistry, make);
+export const layer = Layer.effect(
+  AgentRegistry,
+  Effect.gen(function* () {
+    const baseDir = yield* AgentHomeDir;
+    return makeAgentRegistry(baseDir);
+  }),
+);

@@ -27,6 +27,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/snap-shot"
   | "/settings/providers"
+  | "/settings/agents"
   | "/settings/threads"
   | "/settings/browser"
   | "/settings/devices"
@@ -102,6 +103,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": msg("Keybindings"),
   "/settings/snap-shot": msg("SnapShots"),
   "/settings/providers": msg("Providers"),
+  "/settings/agents": msg("Agents"),
   "/settings/threads": msg("Threads"),
   "/settings/browser": msg("Browser"),
   "/settings/devices": msg("Devices"),
@@ -140,6 +142,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
   {
     heading: msg("Agents"),
     paths: [
+      "/settings/agents",
       "/settings/providers",
       "/settings/threads",
       "/settings/browser",
@@ -502,6 +505,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "accessibility a11y screen reader nvda jaws voiceover orca narrator window title tab title alt tab taskbar thread status order working approval",
     ],
+  },
+  {
+    id: "agent-picker-beta",
+    title: "Agent picker",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["beta agent picker composer named definition persona preset"],
   },
   {
     id: "guest-links",
@@ -972,6 +982,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "snap-shot-enabled",
   },
   {
+    id: "agents",
+    title: "Agents",
+    to: "/settings/agents",
+    searchTerms: [
+      "agent definitions builtin global project yaml prompt provider model delegation researcher reviewer coder tech lead debate deep research",
+    ],
+  },
+  {
     id: "providers",
     title: "Providers",
     to: "/settings/providers",
@@ -1393,6 +1411,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/snap-shot": null,
   "/settings/keybindings": null,
   "/settings/providers": null,
+  "/settings/agents": "environment",
   "/settings/threads": null,
   "/settings/browser": null,
   "/settings/devices": null,

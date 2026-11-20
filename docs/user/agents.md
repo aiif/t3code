@@ -142,6 +142,12 @@ t3 thread start . "Review the uncommitted diff" --agent t3-reviewer
 
 Run these from the project directory so project definitions are in scope.
 
+From the app, **Settings → Agents** lists the built-ins plus the selected project's definitions, with
+each one's source, provider and model, delegation limits, and copyable id. To start a thread with an
+agent, choose one from the chip beside the model picker in a new thread. The picker is on by default;
+**Settings → Labs → Agent picker** hides it. Picking an agent also switches to its provider and model
+when the definition pins one.
+
 From a thread, the built-in MCP tools expose definitions:
 
 1. `t3_agent_list` lists ids with their source and delegation summary.
@@ -156,8 +162,9 @@ whether the child waits. An explicit `target`, `model`, `runtimeMode`, `interact
 A thread whose agent cannot delegate does not see the delegation tools, and the server rejects a
 direct call with `agent_forbidden`.
 
-When a thread starts with an agent, its prompt goes into a hidden block above your first message,
-and that message shows a chip with the agent's name. Follow-up turns do not reapply the prompt.
+When a thread starts with an agent, its prompt goes into a collapsed block above your first message,
+and that message shows a chip with the agent's name; open the chip to read the prompt. Follow-up
+turns do not reapply the prompt.
 Editing the YAML after a thread starts does not change that thread; it affects new threads and
 delegated tasks.
 

@@ -67,6 +67,7 @@ import {
   type OrchestrationV2ShellStreamItem,
   type OrchestrationV2ThreadStreamItem,
   type ApplicationStoredEvent,
+  type OrchestrationV2ThreadLaunchInput,
   type ProjectEntriesFailure,
   type ProjectFileFailure,
   type ProjectFileOperation,
@@ -102,6 +103,7 @@ import {
   PersonalNetworkError,
   WS_METHODS,
   WsRpcGroup,
+  AgentsListError,
 } from "@t3tools/contracts";
 import {
   HttpRouter,
@@ -114,6 +116,9 @@ import { RpcGroup, RpcSerialization, RpcServer } from "effect/rpc";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as NativeChildWorkQuery from "./orchestration-v2/NativeChildWorkQuery.ts";
 import * as ServerConfig from "./config.ts";
+import * as AgentRegistry from "./agents/AgentRegistry.ts";
+import * as AgentTaskResolver from "./mcp/AgentTaskResolver.ts";
+import { composeAgentInstruction } from "@t3tools/shared/agentInstruction";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -1430,6 +1435,9 @@ export const layerWsRpc = (
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const agentRegistry = AgentRegistry.makeAgentRegistry(serverConfig.baseDir);
+      const agentTaskResolver = AgentTaskResolver.makeAgentTaskResolver(agentRegistry);
       const threadManagement = yield* ThreadManagementService.ThreadManagementService;
       const intakeContext = yield* Effect.context<
         | ThreadManagementService.ThreadManagementService
@@ -1953,7 +1961,106 @@ export const layerWsRpc = (
         return yield* mutateProjectWithClone(projectService, projectCloneTracker, mutation);
       });
 
+      const resolveLaunchAgent = Effect.fn("ws.orchestrationV2.resolveLaunchAgent")(function* (
+        input: OrchestrationV2ThreadLaunchInput,
+      ) {
+        if (input.agentId === undefined) return null;
+        const project = yield* projectService.getById(input.projectId).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationV2ThreadLaunchError({
+                commandId: input.commandId,
+                projectId: input.projectId,
+                message: "Failed to read the project for this agent launch",
+                cause,
+              }),
+          ),
+        );
+        if (Option.isNone(project)) {
+          return yield* new OrchestrationV2ThreadLaunchError({
+            commandId: input.commandId,
+            projectId: input.projectId,
+            message: "This project no longer exists.",
+          });
+        }
+        const providers = yield* providerRegistry.getProviders;
+        const agentDefinition = yield* agentRegistry
+          .read({
+            agentId: input.agentId,
+            projectRoot: project.value.workspaceRoot,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationV2ThreadLaunchError({
+                  commandId: input.commandId,
+                  projectId: input.projectId,
+                  message: cause.message,
+                  cause,
+                }),
+            ),
+          );
+        // An agent that pins a provider or model owns its target; a plain persona
+        // inherits the composer's selection.
+        const providerDefaults = agentDefinition.definition.provider;
+        const agentPinsTarget =
+          providerDefaults?.instance !== undefined ||
+          providerDefaults?.driver !== undefined ||
+          providerDefaults?.model !== undefined;
+        const resolved = yield* agentTaskResolver
+          .resolve({
+            projectRoot: project.value.workspaceRoot,
+            agentId: input.agentId,
+            parent: {
+              modelSelection: input.modelSelection,
+              runtimeMode: input.runtimeMode,
+              interactionMode: input.interactionMode,
+            },
+            ...(agentPinsTarget
+              ? {}
+              : {
+                  explicitTarget: {
+                    providerInstanceId: input.modelSelection.instanceId,
+                    model: input.modelSelection.model,
+                    ...(input.modelSelection.options === undefined
+                      ? {}
+                      : { options: input.modelSelection.options }),
+                  },
+                }),
+            providers,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationV2ThreadLaunchError({
+                  commandId: input.commandId,
+                  projectId: input.projectId,
+                  message: cause.message,
+                  cause,
+                }),
+            ),
+          );
+        return resolved;
+      });
+
       const handlers = ServerWsRpcGroup.of({
+        [WS_METHODS.agentsList]: (input) =>
+          agentRegistry
+            .list({
+              ...(input.projectRoot === undefined ? {} : { projectRoot: input.projectRoot }),
+              ...(input.search === undefined ? {} : { search: input.search }),
+              ...(input.limit === undefined ? {} : { limit: input.limit }),
+              ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AgentsListError({
+                    message: cause.message,
+                    cause,
+                  }),
+              ),
+            ),
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -2140,135 +2247,154 @@ export const layerWsRpc = (
                 ),
             ),
           ),
-        [ORCHESTRATION_V2_WS_METHODS.launchThread]: (input) =>
-          Effect.annotateCurrentSpan({
-            "orchestration_v2.command_id": input.commandId,
-            "orchestration_v2.project_id": input.projectId,
-          }).pipe(
-            Effect.andThen(
-              startup
-                .enqueueCommand(
-                  threadLaunch
-                    .checkWorktreeBase({
-                      commandId: input.commandId,
-                      projectId: input.projectId,
-                      workspaceStrategy: input.workspaceStrategy,
-                    })
-                    .pipe(
-                      Effect.andThen(
-                        ThreadMessageIntake.launchThread({
-                          commandId: input.commandId,
-                          ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
-                          ...(input.reuseExistingThread === undefined
-                            ? {}
-                            : { reuseExistingThread: input.reuseExistingThread }),
-                          projectId: input.projectId,
-                          title: input.title,
-                          ...(input.generateTitle === undefined
-                            ? {}
-                            : { generateTitle: input.generateTitle }),
-                          modelSelection: input.modelSelection,
-                          runtimeMode: input.runtimeMode,
-                          interactionMode: input.interactionMode,
-                          workspaceStrategy: input.workspaceStrategy,
-                          ...(input.initialMessage === undefined
-                            ? {}
-                            : {
-                                initialMessage: {
-                                  ...(input.initialMessage.messageId === undefined
-                                    ? {}
-                                    : { messageId: input.initialMessage.messageId }),
-                                  text: input.initialMessage.text,
-                                  attachments: input.initialMessage.attachments,
-                                  ...(input.initialMessage.context === undefined
-                                    ? {}
-                                    : { context: input.initialMessage.context }),
-                                },
-                              }),
-                          createdBy: "user",
-                          creationSource: input.creationSource ?? "web",
-                        }),
+        [ORCHESTRATION_V2_WS_METHODS.launchThread]: Effect.fn("ws.orchestrationV2.launchThread")(
+          function* (input: OrchestrationV2ThreadLaunchInput) {
+            const agent = yield* resolveLaunchAgent(input);
+            const modelSelection = agent?.modelSelection ?? input.modelSelection;
+            const runtimeMode = agent?.runtimeMode ?? input.runtimeMode;
+            const interactionMode = agent?.interactionMode ?? input.interactionMode;
+            const initialMessage =
+              input.initialMessage === undefined || agent === null
+                ? input.initialMessage
+                : {
+                    ...input.initialMessage,
+                    text: composeAgentInstruction({
+                      agentId: agent.agentId,
+                      prompt: agent.instruction,
+                      text: input.initialMessage.text,
+                    }),
+                  };
+            return yield* Effect.annotateCurrentSpan({
+              "orchestration_v2.command_id": input.commandId,
+              "orchestration_v2.project_id": input.projectId,
+            }).pipe(
+              Effect.andThen(
+                startup
+                  .enqueueCommand(
+                    threadLaunch
+                      .checkWorktreeBase({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        workspaceStrategy: input.workspaceStrategy,
+                      })
+                      .pipe(
+                        Effect.andThen(
+                          ThreadMessageIntake.launchThread({
+                            commandId: input.commandId,
+                            ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
+                            ...(input.reuseExistingThread === undefined
+                              ? {}
+                              : { reuseExistingThread: input.reuseExistingThread }),
+                            projectId: input.projectId,
+                            title: input.title,
+                            ...(input.generateTitle === undefined
+                              ? {}
+                              : { generateTitle: input.generateTitle }),
+                            modelSelection,
+                            runtimeMode,
+                            interactionMode,
+                            workspaceStrategy: input.workspaceStrategy,
+                            ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
+                            ...(initialMessage === undefined
+                              ? {}
+                              : {
+                                  initialMessage: {
+                                    ...(initialMessage.messageId === undefined
+                                      ? {}
+                                      : { messageId: initialMessage.messageId }),
+                                    text: initialMessage.text,
+                                    attachments: initialMessage.attachments,
+                                    ...(initialMessage.context === undefined
+                                      ? {}
+                                      : { context: initialMessage.context }),
+                                  },
+                                }),
+                            createdBy: "user",
+                            creationSource: input.creationSource ?? "web",
+                          }),
+                        ),
+                        Effect.provide(intakeContext),
                       ),
-                      Effect.provide(intakeContext),
-                    ),
-                )
-                .pipe(
-                  // A resumed launch is a retry of one already counted.
-                  Effect.tap((result) =>
-                    result.resumed
-                      ? Effect.void
-                      : analytics
-                          .record("client.thread.started", {
-                            ...originProps,
-                            workspaceStrategy: input.workspaceStrategy.type,
-                          })
-                          .pipe(
-                            Effect.andThen(
-                              input.initialMessage === undefined
-                                ? Effect.void
-                                : analytics.record("client.turn.requested", originProps),
+                  )
+                  .pipe(
+                    // A resumed launch is a retry of one already counted.
+                    Effect.tap((result) =>
+                      result.resumed
+                        ? Effect.void
+                        : analytics
+                            .record("client.thread.started", {
+                              ...originProps,
+                              workspaceStrategy: input.workspaceStrategy.type,
+                            })
+                            .pipe(
+                              Effect.andThen(
+                                input.initialMessage === undefined
+                                  ? Effect.void
+                                  : analytics.record("client.turn.requested", originProps),
+                              ),
+                              Effect.ignore,
                             ),
-                            Effect.ignore,
-                          ),
+                    ),
+                    Effect.map((result) => ({
+                      ...result,
+                      projection: projectThreadProjectionForWire(result.projection),
+                    })),
+                    Effect.catchTags({
+                      AttachmentClaimError: (cause) =>
+                        new OrchestrationV2ThreadLaunchError({
+                          commandId: input.commandId,
+                          projectId: input.projectId,
+                          message: cause.message,
+                          cause,
+                        }),
+                      ThreadLaunchError: (cause) =>
+                        new OrchestrationV2ThreadLaunchError({
+                          commandId: input.commandId,
+                          projectId: input.projectId,
+                          message: "Failed to launch thread",
+                          cause,
+                        }),
+                      ServerRuntimeStartupError: (cause) =>
+                        new OrchestrationV2ThreadLaunchError({
+                          commandId: input.commandId,
+                          projectId: input.projectId,
+                          message: "Failed to launch thread",
+                          cause,
+                        }),
+                      ThreadManagementProviderInstanceDisabledError: (cause) =>
+                        new OrchestrationV2ThreadLaunchError({
+                          commandId: input.commandId,
+                          projectId: input.projectId,
+                          message: cause.message,
+                          cause,
+                        }),
+                      ThreadLaunchBaseRefError: (cause) =>
+                        new OrchestrationV2ThreadLaunchError({
+                          commandId: input.commandId,
+                          projectId: input.projectId,
+                          message: cause.message,
+                          cause,
+                        }),
+                      ThreadLaunchBranchConflictError: (cause) =>
+                        new OrchestrationV2ThreadLaunchError({
+                          commandId: input.commandId,
+                          projectId: input.projectId,
+                          message: cause.message,
+                          cause,
+                        }),
+                      ThreadLaunchNotRepositoryError: (cause) =>
+                        new OrchestrationV2ThreadLaunchError({
+                          commandId: input.commandId,
+                          projectId: input.projectId,
+                          message: cause.message,
+                          cause,
+                        }),
+                    }),
                   ),
-                  Effect.map((result) => ({
-                    ...result,
-                    projection: projectThreadProjectionForWire(result.projection),
-                  })),
-                  Effect.catchTags({
-                    AttachmentClaimError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: cause.message,
-                        cause,
-                      }),
-                    ThreadLaunchError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: "Failed to launch thread",
-                        cause,
-                      }),
-                    ServerRuntimeStartupError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: "Failed to launch thread",
-                        cause,
-                      }),
-                    ThreadManagementProviderInstanceDisabledError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: cause.message,
-                        cause,
-                      }),
-                    ThreadLaunchBaseRefError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: cause.message,
-                        cause,
-                      }),
-                    ThreadLaunchBranchConflictError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: cause.message,
-                        cause,
-                      }),
-                    ThreadLaunchNotRepositoryError: (cause) =>
-                      new OrchestrationV2ThreadLaunchError({
-                        commandId: input.commandId,
-                        projectId: input.projectId,
-                        message: cause.message,
-                        cause,
-                      }),
-                  }),
-                ),
-            ),
-          ),
+              ),
+            );
+          },
+        ),
         [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: (input) =>
           Stream.unwrap(subscribeOrchestrationV2Shell(input)),
         [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input) =>

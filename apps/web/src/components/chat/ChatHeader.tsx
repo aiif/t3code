@@ -1,5 +1,6 @@
 import {
   AuthOrchestrationOperateScope,
+  type AgentId,
   type EnvironmentId,
   type ScopedThreadRef,
   type ThreadId,
@@ -10,7 +11,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, BrainCircuitIcon } from "lucide-react";
 import {
   memo,
   useEffect,
@@ -43,12 +44,14 @@ import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
 import { GuestShareIndicator } from "./GuestShareControls";
+import { agentDisplayName, useAgentList } from "../../state/agents";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
   activeThreadTitle: string;
   activeThreadLinkOrigin?: string | null | undefined;
+  activeThreadAgentId?: AgentId | null | undefined;
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
   parentThreadLink: { threadId: ThreadId; title: string } | null;
@@ -74,6 +77,7 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   activeThreadTitle,
   activeThreadLinkOrigin,
+  activeThreadAgentId,
   isServerThread,
   activeProject,
   parentThreadLink,
@@ -94,6 +98,12 @@ export const ChatHeader = memo(function ChatHeader({
     AuthOrchestrationOperateScope,
   );
   const canShareWithGuest = useAtomValue(canShareWithGuestAtom(activeThreadEnvironmentId));
+  const threadAgents = useAgentList({
+    environmentId: activeThreadEnvironmentId,
+    projectRoot: activeProject?.workspaceRoot ?? null,
+    enabled: activeThreadAgentId != null,
+  });
+  const agentName = agentDisplayName(threadAgents.data?.agents ?? [], activeThreadAgentId ?? null);
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -316,6 +326,26 @@ export const ChatHeader = memo(function ChatHeader({
                   ) : null}
                 </TooltipTrigger>
                 <TooltipPopup side="top">{parentThreadLink.title}</TooltipPopup>
+              </Tooltip>
+            </WorkspaceBreadcrumbItem>
+            <WorkspaceBreadcrumbSeparator>
+              <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
+            </WorkspaceBreadcrumbSeparator>
+          </>
+        ) : null}
+        {agentName !== null ? (
+          <>
+            <WorkspaceBreadcrumbItem>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className="inline-flex max-w-40 cursor-default items-center gap-1 rounded-sm text-muted-foreground" />
+                  }
+                >
+                  <BrainCircuitIcon className="size-3.5 shrink-0" aria-hidden />
+                  <MiddleTruncate value={agentName} showTitle={false} variant="cap-aligned" />
+                </TooltipTrigger>
+                <TooltipPopup side="top">{`Agent: ${agentName}`}</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator>

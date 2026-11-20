@@ -84,6 +84,7 @@ import { markdownProseDirection } from "~/textDirection";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { WorkflowOpeningBlock } from "./WorkflowOpeningBlock";
+import { AgentInstructionChip } from "./AgentInstructionChip";
 import { useTallEnoughToFold } from "./useTallEnoughToFold";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
 import {
@@ -922,6 +923,14 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             )}
           >
             {!mediaAboveText && mediaBlock}
+            {userMessage.agentInstruction === undefined ? null : (
+              <AgentInstructionChip
+                environmentId={ctx.activeThreadEnvironmentId}
+                projectRoot={ctx.workspaceRoot ?? null}
+                agentId={userMessage.agentInstruction.agentId}
+                prompt={userMessage.agentInstruction.prompt}
+              />
+            )}
             {userAudio.length > 0 ? (
               <div className={cn("flex max-w-full flex-col gap-1", !audioOnly && "mb-2")}>
                 {userAudio.map((file) => (

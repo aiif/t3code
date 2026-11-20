@@ -143,7 +143,15 @@ const resolveModelSelection = (
       ),
     );
   }
-  if (provider.auth.status !== "authenticated") {
+  // A provider with no sign-in flow (a local replay or CLI agent) may report
+  // unauthenticated until a probe confirms it. An agent that pins it opts into
+  // the stricter check; an inherited provider surfaces the real failure at run time.
+  const pinnedByAgent =
+    definition.provider?.instance !== undefined || definition.provider?.driver !== undefined;
+  if (
+    provider.auth.status === "unauthenticated" &&
+    (pinnedByAgent || provider.setup?.canAuthenticate === true)
+  ) {
     return Effect.fail(
       providerUnavailable(
         agentId,
@@ -193,9 +201,10 @@ const resolveModelSelection = (
  * and finally the explicit runtime/interaction modes. Depends only on
  * `AgentRegistry` and the provider snapshots passed in.
  */
-const make = Effect.gen(function* () {
-  const registry = yield* AgentRegistry.AgentRegistry;
-  return AgentTaskResolver.of({
+export const makeAgentTaskResolver = (
+  registry: AgentRegistry.AgentRegistryShape,
+): AgentTaskResolverShape =>
+  AgentTaskResolver.of({
     resolve: Effect.fn("AgentTaskResolver.resolve")(function* (input) {
       const resolved = yield* registry
         .read({ agentId: input.agentId, projectRoot: input.projectRoot })
@@ -227,9 +236,14 @@ const make = Effect.gen(function* () {
       };
     }),
   });
-});
 
-export const layer = Layer.effect(AgentTaskResolver, make);
+export const layer = Layer.effect(
+  AgentTaskResolver,
+  Effect.gen(function* () {
+    const registry = yield* AgentRegistry.AgentRegistry;
+    return makeAgentTaskResolver(registry);
+  }),
+);
 
 /**
  * Placeholder until the registry-backed resolver lands: every lookup fails as

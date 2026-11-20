@@ -250,6 +250,7 @@ const RPC_AGGREGATES = {
   [PERSONAL_WS_METHODS.saveRelay]: "server",
   [PERSONAL_WS_METHODS.forgetRelay]: "server",
   [PERSONAL_WS_METHODS.guestRoutes]: "server",
+  [WS_METHODS.agentsList]: "agents",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
 const RPC_SPAN_PREFIX = "ws.rpc";

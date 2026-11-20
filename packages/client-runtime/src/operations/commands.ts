@@ -167,6 +167,8 @@ interface StartThreadBootstrap {
     readonly branch: string | null;
     readonly worktreePath: string | null;
     readonly createdAt: string;
+    /** A named agent definition the server applies to this thread's first turn. */
+    readonly agentId?: import("@t3tools/contracts").AgentId;
   };
   readonly prepareWorktree?: {
     readonly requireWorktree?: boolean;
@@ -795,6 +797,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       modelSelection: input.modelSelection ?? thread.modelSelection,
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
+      ...(bootstrap?.agentId === undefined ? {} : { agentId: bootstrap.agentId }),
       workspaceStrategy,
       initialMessage: {
         messageId: input.message.messageId,

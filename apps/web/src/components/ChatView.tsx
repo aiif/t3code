@@ -63,6 +63,8 @@ import {
   AuthPreviewOperateScope,
   AuthTerminalOperateScope,
   type AssistantCitation,
+  type AgentId,
+  type AgentSummary,
   type ResponseContextRecord,
   type ChatFileAttachment,
   isProviderNativeSubagentThread,
@@ -531,6 +533,17 @@ export default function ChatView(props: ChatViewProps) {
     composerRef,
   });
   const composerDraftTarget = queuedRunEdit.draftTarget;
+  const composerDraftTargetKey =
+    typeof composerDraftTarget === "string"
+      ? composerDraftTarget
+      : scopedThreadKey(composerDraftTarget);
+  // A draft's agent is remembered per draft id, so switching drafts never carries it over.
+  const [draftAgentSelection, setDraftAgentSelection] = useState<{
+    readonly key: string;
+    readonly agentId: AgentId | null;
+  } | null>(null);
+  const selectedDraftAgentId =
+    draftAgentSelection?.key === composerDraftTargetKey ? draftAgentSelection.agentId : null;
   const reportedModelSelection = serverProjection
     ? deriveReportedModelSelection(serverProjection)
     : null;
@@ -2901,6 +2914,12 @@ export default function ChatView(props: ChatViewProps) {
     setPendingServerThreadStartFromOriginByThreadId,
     scheduleComposerFocus: scheduleComposerFocusStable,
   });
+  const selectDraftAgent = useStableCallback((agent: AgentSummary | null) => {
+    setDraftAgentSelection({ key: composerDraftTargetKey, agentId: agent?.id ?? null });
+    if (agent?.providerInstanceId != null && agent.model != null) {
+      onProviderModelSelectStable(agent.providerInstanceId, agent.model);
+    }
+  });
   const { onResume, isResuming } = useComposerResume({
     environmentId,
     routeThreadKey,
@@ -2940,6 +2959,7 @@ export default function ChatView(props: ChatViewProps) {
     runtimeMode,
     sendEnvMode,
     startFromOrigin,
+    draftAgentId: selectedDraftAgentId,
     localCheckoutBranchMismatch,
     logicalProjectEnvironments,
     providerInstanceEntries,
@@ -3369,6 +3389,7 @@ export default function ChatView(props: ChatViewProps) {
               activeThreadId={activeThread.id}
               isServerThread={isServerThread}
               activeThreadTitle={activeThread.title}
+              activeThreadAgentId={activeThread.agentId ?? null}
               activeThreadLinkOrigin={activeThreadShell?.linkOrigin?.label ?? null}
               activeProject={activeProject ?? null}
               parentThreadLink={headerParentThreadLink}
@@ -3735,6 +3756,13 @@ export default function ChatView(props: ChatViewProps) {
                                 permissionsShownInStrip={
                                   showComposerContextStrip && !isServerThread
                                 }
+                                agentDefinitionsAvailable={
+                                  serverConfig?.environment.capabilities.threadAgentDefinitions ===
+                                  true
+                                }
+                                draftAgentId={selectedDraftAgentId}
+                                agentProjectRoot={activeProject?.workspaceRoot ?? null}
+                                onDraftAgentSelect={selectDraftAgent}
                                 promptRef={promptRef}
                                 composerImagesRef={composerImagesRef}
                                 composerFilesRef={composerFilesRef}

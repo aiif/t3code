@@ -19,6 +19,7 @@ import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
+  type AgentId,
   type EnvironmentId,
   type ModelSelection,
   type PreviewAnnotationPayload,
@@ -184,6 +185,8 @@ interface ComposerSendInput {
   readonly runtimeMode: RuntimeMode;
   readonly sendEnvMode: DraftThreadEnvMode;
   readonly startFromOrigin: boolean;
+  /** The named agent for a new thread's first turn, if the picker chose one. */
+  readonly draftAgentId: AgentId | null;
   readonly localCheckoutBranchMismatch: {
     readonly threadBranch: string;
     readonly currentBranch: string;
@@ -284,6 +287,7 @@ export function useComposerSend(input: ComposerSendInput) {
     runtimeMode,
     sendEnvMode,
     startFromOrigin,
+    draftAgentId,
     localCheckoutBranchMismatch,
     logicalProjectEnvironments,
     providerInstanceEntries,
@@ -1257,6 +1261,7 @@ export function useComposerSend(input: ComposerSendInput) {
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
+                      ...(draftAgentId === null ? {} : { agentId: draftAgentId }),
                     },
                   }
                 : {}),

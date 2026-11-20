@@ -13,6 +13,7 @@ import {
   isAttachmentOnlyBootstrapPrompt,
   replaceComposerContextReferences,
 } from "@t3tools/shared/composerContextReferences";
+import { parseAgentInstruction } from "@t3tools/shared/agentInstruction";
 import { filePreviewKind } from "@t3tools/shared/filePreview";
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
@@ -72,6 +73,8 @@ export function resolveUserMessagePresentation(message: {
   readonly scheduledTaskId: ScheduledTaskId | undefined;
   /** Set when `attribution` is "guest". */
   readonly guestName?: string;
+  /** The collapsed agent block from the first message, when one is present. */
+  readonly agentInstruction?: { readonly agentId: string; readonly prompt: string };
 } {
   if (message.role !== "user") {
     return { text: message.text, attribution: null, scheduledTaskId: undefined };
@@ -104,9 +107,10 @@ export function resolveUserMessagePresentation(message: {
       scheduledTaskId: legacyTaskId === undefined ? undefined : ScheduledTaskId.make(legacyTaskId),
     };
   }
+  const instruction = parseAgentInstruction(message.text);
   return {
     // The agent needs words to start a turn; people sent only the attachments.
-    text: isAttachmentOnlyBootstrapPrompt(message.text) ? "" : message.text,
+    text: isAttachmentOnlyBootstrapPrompt(instruction.text) ? "" : instruction.text,
     attribution:
       message.createdBy !== "agent"
         ? null
@@ -114,6 +118,14 @@ export function resolveUserMessagePresentation(message: {
           ? "t3code"
           : "agent",
     scheduledTaskId: undefined,
+    ...(instruction.agentId === null || instruction.prompt === null
+      ? {}
+      : {
+          agentInstruction: {
+            agentId: instruction.agentId,
+            prompt: instruction.prompt,
+          },
+        }),
   };
 }
 

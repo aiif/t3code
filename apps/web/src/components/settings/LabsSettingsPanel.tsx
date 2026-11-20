@@ -22,6 +22,7 @@ export function LabsSettingsPanel() {
         {/* Clerk is only mounted when this build has T3 Connect. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />
+        <AgentPickerRow />
         <PromptSuggestionsRow />
         <SimlockHostsRow />
         <FastWorktreeCheckoutRow />
@@ -161,6 +162,24 @@ function LinkedEnvironmentsRow() {
             updateSettings({ linkedEnvironmentsEnabled: Boolean(checked) })
           }
           aria-label="Linked environments"
+        />
+      }
+    />
+  );
+}
+
+function AgentPickerRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("agent-picker-beta")}
+      description="Choose a named agent definition when starting a new thread. On by default; turn it off to hide the picker. Historical agent chips stay visible."
+      control={
+        <Switch
+          checked={settings.agentPickerEnabled}
+          onCheckedChange={(checked) => updateSettings({ agentPickerEnabled: Boolean(checked) })}
+          aria-label="Agent picker"
         />
       }
     />
