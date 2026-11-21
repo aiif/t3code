@@ -411,25 +411,36 @@ function withAntigravityEditPatches(
   });
 }
 
+function extractTextFromContentBlock(item: unknown): string | undefined {
+  if (typeof item === "string" && item.trim()) return item.trim();
+  if (!Predicate.isObject(item)) return undefined;
+  if (typeof item.text === "string" && item.text.trim()) {
+    return item.text.trim();
+  }
+  if (item.type === "content" && Predicate.isObject(item.content)) {
+    return extractTextFromContentBlock(item.content);
+  }
+  for (const key of ["combinedOutput", "combined_output", "output", "text", "stdout", "stderr"]) {
+    const val = item[key];
+    if (typeof val === "string" && val.trim()) return val.trim();
+  }
+  return undefined;
+}
+
 function antigravityToolOutputText(toolCall: AcpToolCallState): string | undefined {
   const output = toolCall.data.rawOutput;
   if (typeof output === "string" && output.trim()) {
     return output.trim();
   }
   if (Predicate.isObject(output)) {
-    const direct =
-      (typeof output.combinedOutput === "string" && output.combinedOutput) ||
-      (typeof output.combined_output === "string" && output.combined_output) ||
-      (typeof output.output === "string" && output.output) ||
-      (typeof output.text === "string" && output.text);
-    if (direct) return direct.trim();
+    const direct = extractTextFromContentBlock(output);
+    if (direct) return direct;
   }
   if (Array.isArray(toolCall.data.content)) {
     const textBlocks: string[] = [];
     for (const item of toolCall.data.content) {
-      if (Predicate.isObject(item) && item.type === "text" && typeof item.text === "string") {
-        textBlocks.push(item.text);
-      }
+      const text = extractTextFromContentBlock(item);
+      if (text) textBlocks.push(text);
     }
     if (textBlocks.length > 0) return textBlocks.join("\n").trim();
   }
@@ -449,13 +460,6 @@ export function extractAntigravityBackgroundTaskId(toolCall: AcpToolCallState): 
   if (text) {
     const match = text.match(ANTIGRAVITY_BG_TASK_ID_RE);
     if (match?.[1]) return match[1].trim();
-  }
-  const rawInput = Predicate.isObject(toolCall.data.rawInput) ? toolCall.data.rawInput : undefined;
-  if (rawInput) {
-    const inputTaskId = rawInput.TaskId ?? rawInput.taskId;
-    if (typeof inputTaskId === "string" && inputTaskId.trim()) {
-      return inputTaskId.trim();
-    }
   }
   return undefined;
 }

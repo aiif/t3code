@@ -647,9 +647,30 @@ describe("Antigravity background tasks", () => {
     expect(extractAntigravityBackgroundTaskId(toolCall)).toBe(
       "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
     );
+
+    const toolCallWithContent = {
+      toolCallId: "call-content-1",
+      status: "completed" as const,
+      kind: "execute" as const,
+      data: {
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: output,
+            },
+          },
+        ],
+      },
+    };
+    expect(extractAntigravityBackgroundTaskId(toolCallWithContent)).toBe(
+      "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+    );
+    expect(normalizeAntigravityToolCall(toolCallWithContent).status).toBe("inProgress");
   });
 
-  it("extracts task ID from manage_task input", () => {
+  it("does not treat manage_task tool calls as background task creators", () => {
     const toolCall = {
       toolCallId: "call-2",
       status: "completed" as const,
@@ -661,7 +682,7 @@ describe("Antigravity background tasks", () => {
         },
       },
     };
-    expect(extractAntigravityBackgroundTaskId(toolCall)).toBe("task-260");
+    expect(extractAntigravityBackgroundTaskId(toolCall)).toBeUndefined();
   });
 
   it("identifies daemon commands vs normal background commands", () => {
