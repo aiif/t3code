@@ -11,7 +11,14 @@ import { cn } from "../../lib/utils";
 import { tickTextContent } from "../../lib/tickTextContent";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { formatContextWindowCompactionMessage } from "./compaction.logic";
-import { composerContextGaugeFill, composerContextGaugeValue } from "./ComposerContextGauge.logic";
+import {
+  CONTEXT_GAUGE_CIRCUMFERENCE,
+  CONTEXT_GAUGE_RADIUS,
+  composerContextGaugeFill,
+  composerContextGaugeValue,
+  deriveContextGaugeDashOffset,
+  deriveThresholdTickCoordinates,
+} from "./ComposerContextGauge.logic";
 import type { ComposerControlSize } from "./ComposerControl";
 
 export interface ComposerContextGaugeInput {
@@ -22,7 +29,7 @@ export interface ComposerContextGaugeInput {
   readonly size?: ComposerControlSize;
 }
 
-/** The composer's always-on context readout: window fill, and the output rate while streaming. */
+/** The composer's always-on context readout: circular progress ring, and output rate while streaming. */
 export function ComposerContextGauge(props: ComposerContextGaugeInput) {
   const value = composerContextGaugeValue(props.usage);
   if (value === null) return null;
@@ -40,52 +47,91 @@ export function ComposerContextGauge(props: ComposerContextGaugeInput) {
   const tone =
     fill !== null && fill >= 90 ? "error" : fill !== null && fill >= 80 ? "warning" : null;
   const size = props.size ?? "sm";
+  const strokeDashoffset = deriveContextGaugeDashOffset(fill);
+  const tickCoords = deriveThresholdTickCoordinates(tick);
+
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <div
+            role="status"
             aria-label={`Context: ${value} used`}
             className={cn(
-              "flex shrink-0 cursor-default items-center gap-1.5 whitespace-nowrap text-base outline-none sm:text-sm",
-              size === "xs"
-                ? "h-6 px-1.75 text-muted-foreground text-xs"
-                : "h-7 px-2 text-foreground/80",
-              tone === "error" && "text-error-foreground",
-              tone === "warning" && "text-warning-foreground",
+              "flex shrink-0 cursor-default items-center justify-center gap-1.5 whitespace-nowrap rounded-(--control-radius) border border-transparent outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              size === "xs" ? "h-6 min-w-6 px-1 text-xs" : "h-7 min-w-7 px-1.5 text-sm",
+              tone === "error" && "text-error",
+              tone === "warning" && "text-warning",
             )}
           >
-            {fill !== null ? (
-              <span className="relative h-[3px] w-8 shrink-0 rounded-full bg-muted-foreground/30 dark:bg-muted-foreground/20">
-                {fill > 0 ? (
-                  <span
-                    className={cn(
-                      "absolute inset-y-0 left-0 rounded-full",
-                      tone === "error"
-                        ? "bg-error"
-                        : tone === "warning"
-                          ? "bg-warning"
-                          : "bg-foreground/70",
-                    )}
-                    style={{ width: `max(${fill}%, 3px)` }}
-                  />
-                ) : null}
-                {tick !== null ? (
-                  <span
-                    aria-hidden
-                    className="absolute -top-[3px] h-[9px] w-px -translate-x-1/2 bg-foreground/60"
-                    style={{ left: `${tick}%` }}
-                  />
-                ) : null}
-              </span>
-            ) : null}
-            <span className="font-medium tabular-nums">{value}</span>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className={cn("shrink-0", size === "xs" ? "size-3.5" : "size-4")}
+            >
+              {/* Background track circle */}
+              <circle
+                cx="8"
+                cy="8"
+                r={CONTEXT_GAUGE_RADIUS}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                className="text-foreground/15 dark:text-foreground/20"
+              />
+              {/* Foreground progress arc */}
+              {fill !== null && fill > 0 ? (
+                <circle
+                  cx="8"
+                  cy="8"
+                  r={CONTEXT_GAUGE_RADIUS}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeDasharray={CONTEXT_GAUGE_CIRCUMFERENCE}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                  className={cn(
+                    "-rotate-90 origin-center transition-[stroke-dashoffset] duration-300 ease-out",
+                    tone === "error"
+                      ? "text-error"
+                      : tone === "warning"
+                        ? "text-warning"
+                        : "text-foreground/75 dark:text-foreground/70",
+                  )}
+                />
+              ) : fill === null ? (
+                <circle
+                  cx="8"
+                  cy="8"
+                  r={CONTEXT_GAUGE_RADIUS}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeDasharray="2 3"
+                  className="text-foreground/50"
+                />
+              ) : null}
+              {/* Auto-compact threshold tick */}
+              {tickCoords !== null ? (
+                <line
+                  x1={tickCoords.x1}
+                  y1={tickCoords.y1}
+                  x2={tickCoords.x2}
+                  y2={tickCoords.y2}
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  className="text-foreground/60 dark:text-foreground/50"
+                />
+              ) : null}
+            </svg>
             <span
               ref={tickTextContent((nowMs) => {
                 const rate = deriveOutputTokensPerSecond(props.rateWindow, nowMs);
                 return rate === null ? "" : formatTokensPerSecond(rate);
               }, props.running)}
-              className="text-muted-foreground tabular-nums"
+              className="text-xs text-muted-foreground tabular-nums empty:hidden font-medium"
             />
           </div>
         }

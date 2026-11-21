@@ -19,6 +19,7 @@ export function buildHomeListFilterMenuItems(props: {
   readonly selectedProjectKey: string | null;
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onProjectChange: (projectKey: string | null) => void;
+  readonly onEnterSelectionMode?: () => void;
 }): AppBarMenuItem[] {
   const items: AppBarMenuItem[] = [
     {
@@ -61,6 +62,14 @@ export function buildHomeListFilterMenuItems(props: {
           onPress: () => props.onProjectChange(project.key),
         })),
       ],
+    });
+  }
+
+  if (props.onEnterSelectionMode) {
+    items.push({
+      id: "select-threads",
+      title: "Select threads…",
+      onPress: props.onEnterSelectionMode,
     });
   }
 

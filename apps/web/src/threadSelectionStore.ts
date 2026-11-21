@@ -3,6 +3,7 @@ import { create } from "zustand";
 export interface ThreadSelectionState {
   selectedThreadKeys: ReadonlySet<string>;
   anchorThreadKey: string | null;
+  selectionMode: boolean;
 }
 
 interface ThreadSelectionStore extends ThreadSelectionState {
@@ -13,6 +14,8 @@ interface ThreadSelectionStore extends ThreadSelectionState {
   removeFromSelection: (threadKeys: readonly string[]) => void;
   setAnchor: (threadKey: string) => void;
   hasSelection: () => boolean;
+  setSelectionMode: (enabled: boolean) => void;
+  selectAll: (threadKeys: readonly string[]) => void;
 }
 
 const EMPTY_SET = new Set<string>();
@@ -28,6 +31,25 @@ export function getThreadKeysToDeselectAfterDelete(
 export const useThreadSelectionStore = create<ThreadSelectionStore>((set, get) => ({
   selectedThreadKeys: EMPTY_SET,
   anchorThreadKey: null,
+  selectionMode: false,
+
+  setSelectionMode: (selectionMode) => {
+    set((state) => {
+      if (state.selectionMode === selectionMode) return state;
+      if (!selectionMode) {
+        return { selectionMode: false, selectedThreadKeys: EMPTY_SET, anchorThreadKey: null };
+      }
+      return { selectionMode: true };
+    });
+  },
+
+  selectAll: (threadKeys) => {
+    set({
+      selectedThreadKeys: new Set(threadKeys),
+      selectionMode: true,
+      anchorThreadKey: threadKeys[0] ?? null,
+    });
+  },
 
   toggleThread: (threadKey) => {
     set((state) => {
@@ -40,6 +62,7 @@ export const useThreadSelectionStore = create<ThreadSelectionStore>((set, get) =
       return {
         selectedThreadKeys: next,
         anchorThreadKey: next.has(threadKey) ? threadKey : state.anchorThreadKey,
+        selectionMode: next.size > 0 || state.selectionMode,
       };
     });
   },
@@ -50,7 +73,7 @@ export const useThreadSelectionStore = create<ThreadSelectionStore>((set, get) =
       if (anchor === null) {
         const next = new Set(state.selectedThreadKeys);
         next.add(threadKey);
-        return { selectedThreadKeys: next, anchorThreadKey: threadKey };
+        return { selectedThreadKeys: next, anchorThreadKey: threadKey, selectionMode: true };
       }
 
       const anchorIndex = orderedThreadKeys.indexOf(anchor);
@@ -58,7 +81,7 @@ export const useThreadSelectionStore = create<ThreadSelectionStore>((set, get) =
       if (anchorIndex === -1 || targetIndex === -1) {
         const next = new Set(state.selectedThreadKeys);
         next.add(threadKey);
-        return { selectedThreadKeys: next, anchorThreadKey: threadKey };
+        return { selectedThreadKeys: next, anchorThreadKey: threadKey, selectionMode: true };
       }
 
       const start = Math.min(anchorIndex, targetIndex);
@@ -70,14 +93,19 @@ export const useThreadSelectionStore = create<ThreadSelectionStore>((set, get) =
           next.add(key);
         }
       }
-      return { selectedThreadKeys: next, anchorThreadKey: anchor };
+      return { selectedThreadKeys: next, anchorThreadKey: anchor, selectionMode: true };
     });
   },
 
   clearSelection: () => {
     const state = get();
-    if (state.selectedThreadKeys.size === 0 && state.anchorThreadKey === null) return;
-    set({ selectedThreadKeys: EMPTY_SET, anchorThreadKey: null });
+    if (
+      state.selectedThreadKeys.size === 0 &&
+      state.anchorThreadKey === null &&
+      !state.selectionMode
+    )
+      return;
+    set({ selectedThreadKeys: EMPTY_SET, anchorThreadKey: null, selectionMode: false });
   },
 
   setAnchor: (threadKey) => {

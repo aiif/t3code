@@ -94,7 +94,9 @@ export function HomeRouteScreen() {
   const {
     archiveThread,
     confirmDeleteThread,
+    confirmBatchDeleteThreads,
     settleThread,
+    batchSettleThreads,
     snoozeThread,
     unsnoozeThread,
     pinThread,
@@ -199,7 +201,9 @@ export function HomeRouteScreen() {
           onAddConnection={() => openSettings(navigation, "SettingsEnvironmentNew")}
           onArchiveThread={archiveThread}
           onDeleteThread={confirmDeleteThread}
+          onConfirmBatchDeleteThreads={confirmBatchDeleteThreads}
           onSettleThread={settleThread}
+          onBatchSettleThreads={batchSettleThreads}
           onSnoozeThread={snoozeThread}
           onUnsnoozeThread={unsnoozeThread}
           onUnsettleThread={unsettleThread}

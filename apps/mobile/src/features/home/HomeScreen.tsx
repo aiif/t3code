@@ -18,6 +18,7 @@ import { type EnvironmentId, type SidebarProjectGroupingMode } from "@t3tools/co
 import { useAtomValue } from "@effect/atom-react";
 import {
   use,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -26,6 +27,7 @@ import {
   type ComponentProps,
 } from "react";
 import {
+  BackHandler,
   Platform,
   ScrollView,
   useWindowDimensions,
@@ -100,6 +102,7 @@ import { useFabScroll } from "./FabScrollContext";
 import { holdLaunchSplashForHomeRows, settleLaunchSplashHomeRows } from "./home-launch-splash";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
+import { ThreadBatchActionBar } from "./ThreadBatchActionBar";
 import { deriveHomeEmptyState } from "./home-empty-state";
 
 interface HomeScreenProps {
@@ -128,6 +131,14 @@ interface HomeScreenProps {
   readonly onArchiveThread: (thread: EnvironmentThreadShell) => void;
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly onSettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  readonly onBatchSettleThreads?: (
+    threads: readonly EnvironmentThreadShell[],
+    onCompleted?: () => void,
+  ) => Promise<boolean>;
+  readonly onConfirmBatchDeleteThreads?: (
+    threads: readonly EnvironmentThreadShell[],
+    onCompleted?: () => void,
+  ) => void;
   readonly onSnoozeThread: (
     thread: EnvironmentThreadShell,
     snoozedUntil: string,
@@ -255,6 +266,91 @@ export function HomeScreen(props: HomeScreenProps) {
       openSwipeableRef.current = null;
     }
   };
+
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedThreadKeys, setSelectedThreadKeys] = useState<ReadonlySet<string>>(new Set());
+
+  const handleToggleSelect = useCallback((thread: EnvironmentThreadShell) => {
+    const key = scopedThreadKey(thread.environmentId, thread.id);
+    setSelectedThreadKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const handleEnterSelectionMode = useCallback((initialThread?: EnvironmentThreadShell) => {
+    openSwipeableRef.current?.close();
+    setSelectionMode(true);
+    if (initialThread) {
+      setSelectedThreadKeys(
+        new Set([scopedThreadKey(initialThread.environmentId, initialThread.id)]),
+      );
+    } else {
+      setSelectedThreadKeys(new Set());
+    }
+  }, []);
+
+  const handleExitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedThreadKeys(new Set());
+  }, []);
+
+  const selectableThreads = useMemo(() => {
+    return props.threads.filter((t) => t.archivedAt === null);
+  }, [props.threads]);
+
+  const handleSelectAll = useCallback(() => {
+    const allKeys = selectableThreads.map((t) => scopedThreadKey(t.environmentId, t.id));
+    setSelectedThreadKeys(new Set(allKeys));
+  }, [selectableThreads]);
+
+  const handleDeselectAll = useCallback(() => {
+    setSelectedThreadKeys(new Set());
+  }, []);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- handles Android hardware back press to exit selection mode
+  useEffect(() => {
+    if (!selectionMode || Platform.OS !== "android") return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      handleExitSelectionMode();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [selectionMode, handleExitSelectionMode]);
+
+  const selectedThreads = useMemo(() => {
+    if (selectedThreadKeys.size === 0) return [];
+    const threadMap = new Map<string, EnvironmentThreadShell>();
+    for (const thread of props.threads) {
+      threadMap.set(scopedThreadKey(thread.environmentId, thread.id), thread);
+    }
+    return Array.from(selectedThreadKeys).flatMap((key) => {
+      const thread = threadMap.get(key);
+      return thread ? [thread] : [];
+    });
+  }, [props.threads, selectedThreadKeys]);
+
+  const canSettleThreads = useMemo(() => {
+    return selectedThreads.filter(
+      (thread) => thread.settledOverride !== "settled" && thread.settledAt == null,
+    );
+  }, [selectedThreads]);
+
+  const handleBatchSettle = useCallback(async () => {
+    if (canSettleThreads.length === 0 || !props.onBatchSettleThreads) return;
+    await props.onBatchSettleThreads(canSettleThreads, () => {
+      handleExitSelectionMode();
+    });
+  }, [canSettleThreads, props, handleExitSelectionMode]);
+
+  const handleBatchDelete = useCallback(() => {
+    if (selectedThreads.length === 0 || !props.onConfirmBatchDeleteThreads) return;
+    props.onConfirmBatchDeleteThreads(selectedThreads, () => {
+      handleExitSelectionMode();
+    });
+  }, [selectedThreads, props, handleExitSelectionMode]);
 
   const handleScrollBeginDrag = () => {
     openSwipeableRef.current?.close();
@@ -523,6 +619,10 @@ export function HomeScreen(props: HomeScreenProps) {
       <ThreadListV2Row
         pane={sidebarSurface ? "sidebar" : "screen"}
         selected={scopedThreadKey(thread.environmentId, thread.id) === selectedThreadKey}
+        selectionMode={selectionMode}
+        isSelected={selectedThreadKeys.has(scopedThreadKey(thread.environmentId, thread.id))}
+        onToggleSelect={handleToggleSelect}
+        onEnterSelectionMode={handleEnterSelectionMode}
         fullSwipeWidth={fullSwipeWidth}
         onNewThreadOnBranch={props.onNewThreadOnBranch}
         thread={thread}
@@ -602,6 +702,8 @@ export function HomeScreen(props: HomeScreenProps) {
     selectedThreadKey,
     threadSearchMatchByKey,
     workingShelfEnabled,
+    selectionMode,
+    selectedThreadKeys,
   };
 
   const hasAnyThreads =
@@ -693,6 +795,7 @@ export function HomeScreen(props: HomeScreenProps) {
           selectedProjectKey={props.selectedProjectKey}
           onEnvironmentChange={props.onEnvironmentChange}
           onProjectChange={props.onProjectChange}
+          onEnterSelectionMode={() => handleEnterSelectionMode()}
         />
       ) : null}
     </>
@@ -748,7 +851,10 @@ export function HomeScreen(props: HomeScreenProps) {
     <View className={containerClassName}>
       <ScreenContent surface="screen">
         <View className={cn("flex-1", Platform.OS !== "android" && contentBackground)}>
-          <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
+          <SwipeableScrollGateProvider
+            enabled={swipeEnabled && !selectionMode}
+            activation={swipeRowActivation}
+          >
             <GestureDetector gesture={homeScrollGesture}>
               <AnimatedLegendList
                 itemLayoutAnimation={sidebarSurface ? THREAD_SIDEBAR_ROW_LAYOUT : undefined}
@@ -817,6 +923,21 @@ export function HomeScreen(props: HomeScreenProps) {
               />
             </GestureDetector>
           </SwipeableScrollGateProvider>
+          {selectionMode ? (
+            <ThreadBatchActionBar
+              bottomInset={Platform.OS === "ios" ? iosBottomClearance : insets.bottom}
+              selectedCount={selectedThreads.length}
+              canSettleCount={canSettleThreads.length}
+              allSelected={
+                selectableThreads.length > 0 && selectedThreads.length === selectableThreads.length
+              }
+              onSelectAll={handleSelectAll}
+              onDeselectAll={handleDeselectAll}
+              onSettle={() => void handleBatchSettle()}
+              onDelete={handleBatchDelete}
+              onExit={handleExitSelectionMode}
+            />
+          ) : null}
         </View>
       </ScreenContent>
     </View>

@@ -3,6 +3,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 
 export type ThreadActionMenuId =
   | "find"
+  | "select"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "turn-into-project"
@@ -101,6 +102,7 @@ export interface ThreadActionMenuState {
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
   return ![
     "find",
+    "select",
     "new-thread-on-branch",
     "project-settings",
     "mark-unread",
@@ -120,6 +122,7 @@ export function buildThreadActionMenuItems(
     ...(state.canFind
       ? [{ id: "find" as const, label: "Find in thread", icon: "text-search" }]
       : []),
+    { id: "select" as const, label: "Select threads…", icon: "circle-check" },
     ...(state.branch
       ? [
           {

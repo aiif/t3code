@@ -1,4 +1,4 @@
-import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { FolderPlusIcon, ListChecksIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -29,6 +29,8 @@ export interface SidebarThreadHeaderProps {
   searchResultCount: number;
   activeSearchResultIndex: number;
   onClearSearch: () => void;
+  onToggleSelectionMode?: () => void;
+  isSelectionMode?: boolean;
 }
 
 export function SidebarThreadHeader({
@@ -48,6 +50,8 @@ export function SidebarThreadHeader({
   searchResultCount,
   activeSearchResultIndex,
   onClearSearch,
+  onToggleSelectionMode,
+  isSelectionMode = false,
 }: SidebarThreadHeaderProps) {
   const resultsVisible = isSearching && searchResultCount > 0;
   // Shrinking results can remove the active option; never leave aria-activedescendant pointing at it.
@@ -125,6 +129,16 @@ export function SidebarThreadHeader({
         >
           <SquarePenIcon />
         </SidebarHeaderIconButton>
+        {onToggleSelectionMode ? (
+          <SidebarHeaderIconButton
+            aria-pressed={isSelectionMode}
+            isActive={isSelectionMode}
+            label={isSelectionMode ? "Exit selection" : "Select threads"}
+            onClick={onToggleSelectionMode}
+          >
+            <ListChecksIcon />
+          </SidebarHeaderIconButton>
+        ) : null}
       </div>
     </div>
   );
@@ -135,12 +149,14 @@ export function SidebarHeaderIconButton({
   tooltip = label,
   className,
   children,
+  isActive,
   ...rest
 }: {
   label: string;
   tooltip?: ReactNode;
   className?: string | undefined;
   children?: ReactNode;
+  isActive?: boolean | undefined;
 } & Omit<
   ComponentProps<typeof SidebarMenuButton>,
   "children" | "className" | "tooltip" | "isActive" | "aria-label"
@@ -153,6 +169,7 @@ export function SidebarHeaderIconButton({
             size="icon"
             type="button"
             aria-label={label}
+            {...(isActive !== undefined ? { isActive } : {})}
             {...rest}
             className={cn("relative size-7 shrink-0", className)}
           />

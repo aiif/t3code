@@ -1,23 +1,53 @@
 import type { PersonalAdminHost, PersonalGuestClient } from "@t3tools/contracts";
 import {
+  detectAndConnectPersonalKey,
   forgetPersonalAdminConfig,
   getAdminHost,
   isPersonalAdminError,
   listAdminHosts,
   readPersonalAdminConfig,
+  readPersonalHosts,
   removeAdminHost,
+  removePersonalHost,
   restoreAdminHost,
   revokeAdminClient,
   rotateAdminHostKey,
-  savePersonalAdminConfig,
+  type DetectedPersonalKeyOutcome,
+  type PairPersonalHost,
   type PersonalAdminConfig,
 } from "@t3tools/client-runtime/personal/portal";
+import { runAtomCommand, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { useEffect, useState } from "react";
 
+import { connectPairing } from "../../connection/onboarding";
+import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
+
+const PERSONAL_OPEN_ADMIN_EVENT = "t3:open-personal-admin";
+const PERSONAL_HOSTS_CHANGED_EVENT = "t3:personal-hosts-changed";
+
+export function openPersonalAdminConsole(): void {
+  window.dispatchEvent(new CustomEvent(PERSONAL_OPEN_ADMIN_EVENT));
+}
+
+export function notifyPersonalHostsChanged(): void {
+  window.dispatchEvent(new CustomEvent(PERSONAL_HOSTS_CHANGED_EVENT));
+}
+
+const pairHostWithRuntime: PairPersonalHost = async (input) => {
+  const paired = await runAtomCommand(appAtomRegistry, connectPairing, input, {
+    reportFailure: false,
+  });
+  if (paired._tag === "Success") return { ok: true };
+  const cause = squashAtomCommandFailure(paired);
+  return {
+    ok: false,
+    error: cause instanceof Error ? cause.message : "The host refused the key.",
+  };
+};
 
 export function PersonalModeGate({
   hosted,
@@ -27,16 +57,69 @@ export function PersonalModeGate({
   children: React.ReactNode;
 }) {
   const [config, setConfig] = useState(readPersonalAdminConfig);
+  const [hosts, setHosts] = useState(readPersonalHosts);
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens to global window events to switch between workspace and admin console or update host records
+  useEffect(() => {
+    const onOpenAdmin = () => setShowAdmin(true);
+    const onHostsChanged = () => setHosts(readPersonalHosts());
+    window.addEventListener(PERSONAL_OPEN_ADMIN_EVENT, onOpenAdmin);
+    window.addEventListener(PERSONAL_HOSTS_CHANGED_EVENT, onHostsChanged);
+    window.addEventListener("storage", onHostsChanged);
+    return () => {
+      window.removeEventListener(PERSONAL_OPEN_ADMIN_EVENT, onOpenAdmin);
+      window.removeEventListener(PERSONAL_HOSTS_CHANGED_EVENT, onHostsChanged);
+      window.removeEventListener("storage", onHostsChanged);
+    };
+  }, []);
+
   if (!hosted) return <>{children}</>;
-  if (config === null) {
-    return <AdminSetupSurface onSaved={setConfig} />;
+
+  if (showAdmin || (config !== null && hosts.length === 0)) {
+    if (config !== null) {
+      return (
+        <AdminConsole
+          canGoToWorkspace={hosts.length > 0}
+          config={config}
+          onForget={() => {
+            const currentRelay = config.relayUrl;
+            forgetPersonalAdminConfig();
+            for (const h of readPersonalHosts()) {
+              if (h.relayUrl === currentRelay) {
+                removePersonalHost({ hostId: h.hostId, relayUrl: h.relayUrl });
+              }
+            }
+            setConfig(null);
+            setHosts(readPersonalHosts());
+            setShowAdmin(false);
+          }}
+          onGoToWorkspace={() => setShowAdmin(false)}
+        />
+      );
+    }
   }
+
+  if (hosts.length > 0) {
+    return <>{children}</>;
+  }
+
   return (
-    <AdminConsole
-      config={config}
-      onForget={() => {
-        forgetPersonalAdminConfig();
-        setConfig(null);
+    <UnifiedPersonalKeySurface
+      onConnected={(outcome) => {
+        if (outcome.kind === "host") {
+          setHosts(readPersonalHosts());
+          setShowAdmin(false);
+        } else {
+          setConfig(outcome.config);
+          const currentHosts = readPersonalHosts();
+          setHosts(currentHosts);
+          if (currentHosts.length > 0) {
+            setShowAdmin(false);
+          } else {
+            setShowAdmin(true);
+          }
+        }
       }}
     />
   );
@@ -50,19 +133,27 @@ function errorMessage(cause: unknown): string {
       : "The relay request failed.";
 }
 
-function AdminSetupSurface({ onSaved }: { onSaved: (config: PersonalAdminConfig) => void }) {
+function UnifiedPersonalKeySurface({
+  onConnected,
+}: {
+  readonly onConnected: (outcome: DetectedPersonalKeyOutcome) => void;
+}) {
   const [relayUrl, setRelayUrl] = useState(() => window.location.origin);
-  const [adminKey, setAdminKey] = useState("");
+  const [key, setKey] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
+    if (key.trim().length === 0) return;
     setBusy(true);
     setError("");
     try {
-      const saved = savePersonalAdminConfig({ relayUrl, adminKey });
-      await listAdminHosts({ config: saved });
-      onSaved(saved);
+      const outcome = await detectAndConnectPersonalKey({
+        relayUrl: relayUrl.trim(),
+        key: key.trim(),
+        pairHost: pairHostWithRuntime,
+      });
+      onConnected(outcome);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -73,8 +164,8 @@ function AdminSetupSurface({ onSaved }: { onSaved: (config: PersonalAdminConfig)
   return (
     <StandalonePage>
       <StandalonePageHeader
-        title="Personal network admin"
-        description="This console manages hosts and guest access. It cannot open projects; use a host key in a client to do that."
+        description="Enter your relay and key to connect. A host key opens its computer; an admin key connects all computers registered on the relay."
+        title="Connect to personal network"
       />
       <form
         className="mt-6 space-y-4"
@@ -84,14 +175,14 @@ function AdminSetupSurface({ onSaved }: { onSaved: (config: PersonalAdminConfig)
         }}
       >
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="admin-relay">
+          <label className="text-sm font-medium" htmlFor="personal-relay">
             Relay
           </label>
           <Input
-            id="admin-relay"
             autoCapitalize="none"
             autoCorrect="off"
             disabled={busy}
+            id="personal-relay"
             nativeInput
             onChange={(event) => setRelayUrl(event.currentTarget.value)}
             placeholder="https://t3.example.com"
@@ -100,21 +191,21 @@ function AdminSetupSurface({ onSaved }: { onSaved: (config: PersonalAdminConfig)
           />
         </div>
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="admin-key">
-            Admin key
+          <label className="text-sm font-medium" htmlFor="personal-key">
+            Key
           </label>
           <Input
-            id="admin-key"
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect="off"
             disabled={busy}
+            id="personal-key"
             nativeInput
-            onChange={(event) => setAdminKey(event.currentTarget.value)}
-            placeholder="The relay's admin key"
+            onChange={(event) => setKey(event.currentTarget.value)}
+            placeholder="Paste your host or admin key"
             spellCheck={false}
             type="password"
-            value={adminKey}
+            value={key}
           />
         </div>
         {error ? (
@@ -122,13 +213,13 @@ function AdminSetupSurface({ onSaved }: { onSaved: (config: PersonalAdminConfig)
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-        <Button disabled={busy || adminKey.trim().length === 0} size="sm" type="submit">
-          {busy ? "Checking..." : "Open admin console"}
+        <Button disabled={busy || key.trim().length === 0} size="sm" type="submit">
+          {busy ? "Connecting..." : "Connect"}
         </Button>
       </form>
       <div className="mt-6 rounded-lg border border-border/70 bg-background/55 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-        The admin key stays in this browser under a separate storage key. It lists hosts and guest
-        sessions, and can rotate or remove host keys. It never authenticates as a guest.
+        The key stays in this browser. A host key connects directly to that computer; an admin key
+        manages the relay and unlocks every active host on it.
       </div>
     </StandalonePage>
   );
@@ -136,9 +227,13 @@ function AdminSetupSurface({ onSaved }: { onSaved: (config: PersonalAdminConfig)
 
 function AdminConsole({
   config,
+  canGoToWorkspace,
+  onGoToWorkspace,
   onForget,
 }: {
   readonly config: PersonalAdminConfig;
+  readonly canGoToWorkspace?: boolean;
+  readonly onGoToWorkspace?: () => void;
   readonly onForget: () => void;
 }) {
   const [hosts, setHosts] = useState<ReadonlyArray<PersonalAdminHost>>([]);
@@ -271,12 +366,17 @@ function AdminConsole({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <StandalonePageHeader
-            title="Personal network admin"
             description="Hosts registered with this relay, their host keys, and the guest clients they reported."
+            title="Personal network admin"
           />
           <p className="mt-2 truncate text-xs text-muted-foreground">{config.relayUrl}</p>
         </div>
         <div className="flex gap-2">
+          {canGoToWorkspace && onGoToWorkspace ? (
+            <Button size="sm" onClick={onGoToWorkspace}>
+              Go to workspace
+            </Button>
+          ) : null}
           <Button size="sm" variant="outline" onClick={() => void refresh()}>
             Refresh
           </Button>
@@ -350,25 +450,25 @@ function AdminConsole({
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button
+                      disabled={busy !== null}
                       size="xs"
                       variant="outline"
-                      disabled={busy !== null}
                       onClick={() => void toggleClients(host)}
                     >
                       {expanded === host.hostId ? "Hide guests" : "Guests"}
                     </Button>
                     <Button
+                      disabled={busy !== null}
                       size="xs"
                       variant="outline"
-                      disabled={busy !== null}
                       onClick={() => void rotate(host)}
                     >
                       Rotate key
                     </Button>
                     <Button
+                      disabled={busy !== null}
                       size="xs"
                       variant="destructive"
-                      disabled={busy !== null}
                       onClick={() => void remove(host)}
                     >
                       Remove
@@ -393,9 +493,9 @@ function AdminConsole({
                             </span>
                             {client.revokedAt ? null : (
                               <Button
+                                disabled={busy !== null}
                                 size="xs"
                                 variant="ghost-destructive"
-                                disabled={busy !== null}
                                 onClick={() => void revokeClient(host, client)}
                               >
                                 Revoke
@@ -439,9 +539,9 @@ function AdminConsole({
                     </a>
                   </div>
                   <Button
+                    disabled={busy !== null}
                     size="xs"
                     variant="outline"
-                    disabled={busy !== null}
                     onClick={() => void restore(host)}
                   >
                     Restore

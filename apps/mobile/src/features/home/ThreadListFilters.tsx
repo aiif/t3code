@@ -1,4 +1,4 @@
-import { Pressable, ScrollView } from "react-native";
+import { Pressable, ScrollView, Text } from "react-native";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -14,6 +14,7 @@ export function ThreadListFilters(props: {
   readonly selectedProjectKey: string | null;
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onProjectChange: (projectKey: string | null) => void;
+  readonly onEnterSelectionMode?: () => void;
   /** List padding the scroller bleeds through so pills start where row content does. */
   readonly gutter: number;
 }) {
@@ -96,6 +97,17 @@ export function ThreadListFilters(props: {
           }}
         >
           <SymbolView name="xmark.circle.fill" size={18} tintColorClassName="accent-icon-muted" />
+        </Pressable>
+      ) : null}
+      {props.onEnterSelectionMode ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Select threads"
+          className="h-8 flex-row items-center gap-1.5 rounded-full border border-border px-3 active:opacity-60"
+          onPress={props.onEnterSelectionMode}
+        >
+          <SymbolView name="checkmark.circle" size={14} tintColorClassName="accent-icon-muted" />
+          <Text className="text-xs font-t3-medium text-muted-foreground">Select</Text>
         </Pressable>
       ) : null}
     </ScrollView>

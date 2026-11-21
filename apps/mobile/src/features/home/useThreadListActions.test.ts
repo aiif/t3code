@@ -662,3 +662,40 @@ describe("thread archive guard", () => {
     expect(state.requests).toEqual([]);
   });
 });
+
+describe("batch thread operations", () => {
+  it("batch settles multiple active threads and reports success", async () => {
+    const thread1 = makeThread({ id: ThreadId.make("thread-1") });
+    const thread2 = makeThread({ id: ThreadId.make("thread-2") });
+    state.shells = [thread1, thread2];
+
+    const onCompleted = vi.fn();
+    const result = await useThreadListActions().batchSettleThreads([thread1, thread2], onCompleted);
+
+    expect(result).toBe(true);
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+    expect(state.requests.filter((r) => r.action === "settle")).toHaveLength(2);
+  });
+
+  it("confirms and executes batch deletion for multiple threads", async () => {
+    const thread1 = makeThread({ id: ThreadId.make("thread-1") });
+    const thread2 = makeThread({ id: ThreadId.make("thread-2") });
+    state.shells = [thread1, thread2];
+
+    let resolveCompleted!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      resolveCompleted = resolve;
+    });
+    const onCompleted = vi.fn(() => resolveCompleted());
+    useThreadListActions().confirmBatchDeleteThreads([thread1, thread2], onCompleted);
+
+    const dialog = state.dialogs.at(-1);
+    expect(dialog).toBeDefined();
+
+    dialog?.onConfirm();
+    await completed;
+
+    expect(state.requests.filter((r) => r.action === "delete")).toHaveLength(2);
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+  });
+});

@@ -250,6 +250,7 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarBatchActionBar } from "./sidebar/SidebarBatchActionBar";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import {
@@ -985,6 +986,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((s) => s.rangeSelectTo);
+  const isSelectionMode = useThreadSelectionStore((s) => s.selectionMode);
+  const setSelectionMode = useThreadSelectionStore((s) => s.setSelectionMode);
+  const selectAllThreads = useThreadSelectionStore((s) => s.selectAll);
+  const selectedThreadKeys = useThreadSelectionStore((s) => s.selectedThreadKeys);
   const acknowledgeWoke = useAcknowledgeThreadWoke();
   // A Settings or Usage modal keeps the thread behind it current.
   const routeTarget = useShownThreadRouteTarget().shownTarget;
@@ -1566,6 +1571,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const isMac = isMacPlatform(navigator.platform);
     const isModClick = isMac ? event.metaKey : event.ctrlKey;
     const threadKey = scopedThreadKey(threadRef);
+    if (useThreadSelectionStore.getState().selectionMode) {
+      event.preventDefault();
+      if (event.shiftKey) {
+        rangeSelectTo(threadKey, orderedThreadKeysRef.current);
+      } else {
+        toggleThreadSelection(threadKey);
+      }
+      return;
+    }
     if (isModClick) {
       event.preventDefault();
       toggleThreadSelection(threadKey);
@@ -2536,6 +2550,106 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   );
 
+  const currentSelectableKeys = isSearchingThreads ? threadSearchResultKeys : orderedThreadKeys;
+
+  const allSelectableSelected =
+    currentSelectableKeys.length > 0 &&
+    currentSelectableKeys.every((key) => selectedThreadKeys.has(key));
+
+  let batchCanSettleCount = 0;
+  for (const key of selectedThreadKeys) {
+    const thread = threadByKey.get(key);
+    if (thread && thread.settledOverride !== "settled" && thread.settledAt == null) {
+      batchCanSettleCount++;
+    }
+  }
+
+  const handleBatchSelectAll = useStableCallback(() => {
+    selectAllThreads(currentSelectableKeys);
+  });
+
+  const handleBatchDeselectAll = useStableCallback(() => {
+    useThreadSelectionStore.setState({
+      selectedThreadKeys: new Set(),
+      anchorThreadKey: null,
+      selectionMode: true,
+    });
+  });
+
+  const handleBatchSettle = useStableCallback(() => {
+    const selectedKeys = [...useThreadSelectionStore.getState().selectedThreadKeys];
+    const targets = selectedKeys.filter((key) => {
+      const thread = threadByKeyRef.current.get(key);
+      return thread && thread.settledOverride !== "settled" && thread.settledAt == null;
+    });
+    if (targets.length === 0) return;
+    const operableThreads = targets.flatMap((key) => {
+      const thread = threadByKeyRef.current.get(key);
+      return thread ? [thread] : [];
+    });
+    if (!checkThreadOperations(operableThreads)) return;
+    settleThreads(targets);
+    clearSelection();
+  });
+
+  const handleBatchDelete = useStableCallback(async () => {
+    const api = readLocalApi();
+    if (!api) return;
+    const threadKeys = [...useThreadSelectionStore.getState().selectedThreadKeys].filter(
+      (threadKey) => threadByKeyRef.current.has(threadKey),
+    );
+    if (threadKeys.length === 0) return;
+    const count = threadKeys.length;
+    if (confirmThreadDelete) {
+      const confirmed = await settlePromise(() =>
+        api.dialogs.confirm(
+          [
+            `Delete ${count} thread${count === 1 ? "" : "s"}?`,
+            "This permanently clears conversation history for these threads.",
+          ].join("\n"),
+          { variant: "destructive" },
+        ),
+      );
+      if (confirmed._tag === "Failure" || !confirmed.value) return;
+    }
+    const operableThreads = threadKeys.flatMap((threadKey) => {
+      const thread = threadByKeyRef.current.get(threadKey);
+      return thread ? [thread] : [];
+    });
+    if (!checkThreadOperations(operableThreads)) return;
+    const { deletedThreadKeys, firstFailure } = await deleteSelectedThreadEntries({
+      entries: threadKeys.map((threadKey) => ({ threadKey })),
+      delete: async ({ threadKey }, deletedKeys) => {
+        const thread = threadByKeyRef.current.get(threadKey);
+        if (!thread) return null;
+        return deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
+          deletedThreadKeys: deletedKeys,
+        });
+      },
+    });
+    if (firstFailure !== null) {
+      const firstError = squashAtomCommandFailure(firstFailure);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to delete threads",
+          description: firstError instanceof Error ? firstError.message : "An error occurred.",
+        }),
+      );
+    }
+    removeFromSelection(
+      getThreadKeysToDeselectAfterDelete(threadKeys, deletedThreadKeys, (threadKey) => {
+        const threadRef = parseScopedThreadKey(threadKey);
+        return threadRef !== null && readThreadShell(threadRef) !== null;
+      }),
+    );
+    clearSelection();
+  });
+
+  const handleToggleSelectionMode = useStableCallback(() => {
+    setSelectionMode(!isSelectionMode);
+  });
+
   const handleDraftContextMenu = useStableCallback(
     (draftId: DraftId, position: { x: number; y: number }) => {
       void (async () => {
@@ -2680,6 +2794,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           return;
         }
         switch (clicked.value) {
+          case "select": {
+            const store = useThreadSelectionStore.getState();
+            store.setSelectionMode(true);
+            store.setAnchor(threadKey);
+            if (!store.selectedThreadKeys.has(threadKey)) {
+              store.toggleThread(threadKey);
+            }
+            return;
+          }
           case "filter-by-project":
             if (threadProjectGroup) {
               setProjectScopeKeys(
@@ -2883,6 +3006,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat || isCommandPaletteOpen() || isModelPickerOpen()) {
         return;
+      }
+      if (event.key === "Escape") {
+        const store = useThreadSelectionStore.getState();
+        if (store.selectionMode || store.selectedThreadKeys.size > 0) {
+          event.preventDefault();
+          store.clearSelection();
+          return;
+        }
       }
       const command = resolveShortcutCommand(event, keybindings, {
         platform: navigator.platform,
@@ -3178,6 +3309,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   projectGroups.length,
                 )
               }
+              isSelectionMode={isSelectionMode}
+              onToggleSelectionMode={handleToggleSelectionMode}
               searchInputRef={threadSearchInputRef}
               searchQuery={threadSearchQuery}
               onSearchQueryChange={(value) => {
@@ -3656,6 +3789,18 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ) : null}
         </SidebarGroup>
       </SidebarContent>
+      {isSelectionMode || selectedThreadKeys.size > 0 ? (
+        <SidebarBatchActionBar
+          selectedCount={selectedThreadKeys.size}
+          canSettleCount={batchCanSettleCount}
+          allSelected={allSelectableSelected}
+          onSelectAll={handleBatchSelectAll}
+          onDeselectAll={handleBatchDeselectAll}
+          onSettle={handleBatchSettle}
+          onDelete={handleBatchDelete}
+          onExit={clearSelection}
+        />
+      ) : null}
       <SidebarChromeFooter />
     </SidebarFolderDrop>
   );

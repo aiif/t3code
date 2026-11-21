@@ -667,6 +667,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly pane?: "screen" | "sidebar";
   readonly showTrailingDivider?: boolean;
   readonly selected?: boolean;
+  readonly selectionMode?: boolean;
+  readonly isSelected?: boolean;
+  readonly onToggleSelect?: (thread: EnvironmentThreadShell) => void;
+  readonly onEnterSelectionMode?: (thread: EnvironmentThreadShell) => void;
   readonly fullSwipeWidth?: number;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
   readonly onOpenThreadPullRequests: (
@@ -734,6 +738,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     onUnpinThread,
     onSetThreadAutoSettle,
     onMoveThread,
+    onEnterSelectionMode,
   } = props;
   const snoozedRow = props.snoozed === true;
   const pinnedRow = props.pinned === true;
@@ -972,6 +977,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : []),
       { id: "copy-thread", title: "Copy thread", image: "text.bubble" },
       { id: "copy-thread-id", title: "Copy thread ID", image: "doc.on.doc" },
+      ...(onEnterSelectionMode
+        ? [{ id: "select", title: "Select threads…", image: "checkmark.circle" }]
+        : []),
     ];
     if (snoozedRow) {
       return layoutThreadListV2RowMenuActions({
@@ -1041,6 +1049,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     swipeActions.secondary,
     thread.branch,
     titleMenuItems,
+    onEnterSelectionMode,
   ]);
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
@@ -1071,6 +1080,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "copy-thread-id") {
         copyTextWithHaptic(thread.id, { target: "thread-id" });
       }
+      if (nativeEvent.event === "select") onEnterSelectionMode?.(thread);
       if (nativeEvent.event === "delete") handleDelete();
       if (nativeEvent.event === "snooze:custom") {
         setCustomSnoozeOpen(true);
@@ -1110,6 +1120,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       setCustomSnoozeOpen,
       snoozePresets,
       props.snoozePresets,
+      onEnterSelectionMode,
     ],
   );
   const primaryAction = useMemo(() => {
@@ -1173,10 +1184,21 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
-  const titleTextInset = props.project ? projectIconSize + 8 : 0;
+  const selectionIndicatorWidth = props.selectionMode ? 26 : 0;
+  const titleTextInset = (props.project ? projectIconSize + 8 : 0) + selectionIndicatorWidth;
   const cardContent = (
     <>
       <View className="flex-row items-start gap-2">
+        {props.selectionMode ? (
+          <View className="justify-center mr-0.5" style={{ height: titleLineHeight }}>
+            <SymbolView
+              name={props.isSelected ? "checkmark.circle.fill" : "circle"}
+              size={18}
+              tintColorClassName={props.isSelected ? "accent-primary" : "accent-icon-muted"}
+              type="monochrome"
+            />
+          </View>
+        ) : null}
         {props.project ? (
           <View className="justify-center" style={{ height: titleLineHeight }}>
             <ProjectFavicon
@@ -1459,7 +1481,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         }}
         onPress={() => {
           close();
-          selectThread();
+          if (props.selectionMode) {
+            props.onToggleSelect?.(thread);
+          } else {
+            selectThread();
+          }
         }}
         style={rowAppearance.cardStyle}
       >
@@ -1486,7 +1512,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         className={rowAppearance.className}
         onPress={() => {
           close();
-          selectThread();
+          if (props.selectionMode) {
+            props.onToggleSelect?.(thread);
+          } else {
+            selectThread();
+          }
         }}
         style={rowAppearance.style}
       >
@@ -1497,6 +1527,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             sidebarPane && "px-3",
           )}
         >
+          {props.selectionMode ? (
+            <View className="mr-0.5 justify-center">
+              <SymbolView
+                name={props.isSelected ? "checkmark.circle.fill" : "circle"}
+                size={18}
+                tintColorClassName={props.isSelected ? "accent-primary" : "accent-icon-muted"}
+                type="monochrome"
+              />
+            </View>
+          ) : null}
           {props.project ? (
             <View className="opacity-40">
               <ProjectFavicon
@@ -1574,7 +1614,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         <CustomSnoozeSheet onClose={() => setCustomSnoozeOpen(false)} onSnooze={handleSnooze} />
       )}
       <ThreadSwipeable
-        dormant={dormant}
+        dormant={dormant || props.selectionMode}
         threadKey={`${thread.environmentId}:${thread.id}`}
         backgroundColor={rowAppearance.swipeBackgroundColor}
         compactActions={variant === "slim"}
@@ -1596,7 +1636,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             accessibilityLabel={rowAccessibilityLabel}
             actions={menuActions}
             onPressAction={handleMenuAction}
-            shouldOpenOnLongPress
+            shouldOpenOnLongPress={!props.selectionMode}
           >
             {rowContent(close)}
           </Menu>

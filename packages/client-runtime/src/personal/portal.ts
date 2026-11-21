@@ -5,6 +5,7 @@ import {
   PersonalHostKeyResult,
   PersonalResolvedHost,
   type EnvironmentId,
+  type PersonalAdminHost,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
@@ -611,4 +612,126 @@ function writePersonalSyncedRelayKeys(
   keys: ReadonlyArray<string>,
 ): void {
   storage?.setItem(PERSONAL_SYNCED_RELAYS_STORAGE_KEY, JSON.stringify(keys));
+}
+
+export type PairPersonalHost = (input: {
+  readonly host: string;
+  readonly pairingCode: string;
+  readonly expectedEnvironmentId: EnvironmentId;
+}) => Promise<{ readonly ok: boolean; readonly error?: string | null }>;
+
+export type DetectedPersonalKeyOutcome =
+  | {
+      readonly kind: "host";
+      readonly host: PersonalResolvedHost;
+      readonly record: PersonalHostRecord;
+    }
+  | {
+      readonly kind: "admin";
+      readonly config: PersonalAdminConfig;
+      readonly hosts: ReadonlyArray<PersonalAdminHost>;
+      readonly records: ReadonlyArray<PersonalHostRecord>;
+    };
+
+/**
+ * Tries the key as a host key first; if rejected, tries it as an admin key second.
+ * Admin key authentication automatically learns all registered hosts on the relay
+ * and pairs them as personal hosts.
+ */
+export async function detectAndConnectPersonalKey(input: {
+  readonly relayUrl: string;
+  readonly key: string;
+  readonly pairHost?: PairPersonalHost;
+  readonly storage?: PersonalStorage | null;
+  readonly fetchImpl?: PersonalFetch;
+}): Promise<DetectedPersonalKeyOutcome> {
+  const relayUrl = normalizeRelayUrl(input.relayUrl);
+  const key = input.key.trim();
+  if (relayUrl === "" || key === "") {
+    throw new PersonalHostError({ detail: "Both a relay URL and a key are required." });
+  }
+
+  const storage = input.storage === undefined ? defaultStorage() : input.storage;
+
+  // 1. Try matching as a Host Key first
+  let hostOutcome: PersonalResolvedHost | null = null;
+  try {
+    hostOutcome = await resolvePersonalHost({
+      relayUrl,
+      hostKey: key,
+      ...(input.fetchImpl !== undefined ? { fetchImpl: input.fetchImpl } : {}),
+    });
+  } catch (cause) {
+    if (cause instanceof Error && cause.message.includes("Could not reach the relay")) {
+      throw cause;
+    }
+  }
+
+  if (hostOutcome !== null) {
+    const record = personalHostRecord({
+      relayUrl,
+      hostKey: key,
+      resolved: hostOutcome,
+    });
+    upsertPersonalHost(record, storage);
+
+    if (input.pairHost && hostOutcome.online && !hostOutcome.paused) {
+      const paired = await input.pairHost({
+        host: hostOutcome.publicUrl,
+        pairingCode: key,
+        expectedEnvironmentId: hostOutcome.environmentId as EnvironmentId,
+      });
+      if (!paired.ok) {
+        throw new PersonalHostError({ detail: paired.error ?? "The host refused the key." });
+      }
+    }
+
+    return { kind: "host", host: hostOutcome, record };
+  }
+
+  // 2. Try matching as an Admin Key second
+  try {
+    const adminConfig = { relayUrl, adminKey: key };
+    const adminHosts = await listAdminHosts({
+      config: adminConfig,
+      ...(input.fetchImpl !== undefined ? { fetchImpl: input.fetchImpl } : {}),
+    });
+    savePersonalAdminConfig(adminConfig, storage);
+
+    const activeHosts = adminHosts.filter((host) => host.revokedAt == null);
+    const records: Array<PersonalHostRecord> = [];
+
+    for (const host of activeHosts) {
+      const record = personalHostRecord({
+        relayUrl,
+        hostKey: host.hostKey,
+        resolved: {
+          hostId: host.hostId,
+          environmentId: host.environmentId as EnvironmentId,
+          label: host.label,
+          publicUrl: host.publicUrl,
+          online: host.online,
+          paused: host.paused,
+        },
+      });
+      upsertPersonalHost(record, storage);
+      records.push(record);
+
+      if (input.pairHost && host.online && !host.paused) {
+        await input
+          .pairHost({
+            host: host.publicUrl,
+            pairingCode: host.hostKey,
+            expectedEnvironmentId: host.environmentId as EnvironmentId,
+          })
+          .catch(() => undefined);
+      }
+    }
+
+    return { kind: "admin", config: adminConfig, hosts: adminHosts, records };
+  } catch {
+    throw new PersonalHostError({
+      detail: "Invalid key: rejected as both a host key and an admin key on this relay.",
+    });
+  }
 }

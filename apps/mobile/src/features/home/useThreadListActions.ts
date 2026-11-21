@@ -216,10 +216,46 @@ function confirmThreadDeletion(
   });
 }
 
+function confirmBatchThreadDeletion(
+  executeAction: (action: ThreadListAction, thread: EnvironmentThreadShell) => Promise<boolean>,
+  threads: readonly EnvironmentThreadShell[],
+  onCompleted?: () => void,
+) {
+  const operableThreads = threads.filter((thread) =>
+    checkThreadOperationPermission(thread, actionFailureTitle("delete")),
+  );
+  if (operableThreads.length === 0) return;
+  const count = operableThreads.length;
+  const title = `Delete ${count} thread${count === 1 ? "" : "s"}?`;
+  const message = `This permanently clears conversation history for ${count === 1 ? "this thread" : "these threads"}.`;
+  Dialog.confirm({
+    title,
+    message,
+    confirmText: `Delete (${count})`,
+    destructive: true,
+    onConfirm: () => {
+      void (async () => {
+        for (const thread of operableThreads) {
+          await executeAction("delete", thread);
+        }
+        onCompleted?.();
+      })();
+    },
+  });
+}
+
 export function useThreadListActions(): {
   readonly archiveThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly confirmDeleteThread: (thread: EnvironmentThreadShell) => void;
+  readonly confirmBatchDeleteThreads: (
+    threads: readonly EnvironmentThreadShell[],
+    onCompleted?: () => void,
+  ) => void;
   readonly settleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  readonly batchSettleThreads: (
+    threads: readonly EnvironmentThreadShell[],
+    onCompleted?: () => void,
+  ) => Promise<boolean>;
   readonly snoozeThread: (thread: EnvironmentThreadShell, snoozedUntil: string) => Promise<boolean>;
   readonly unsnoozeThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly unsettleThread: (thread: EnvironmentThreadShell) => Promise<boolean>;
@@ -756,11 +792,37 @@ export function useThreadListActions(): {
   const confirmDeleteThread = (thread: EnvironmentThreadShell) =>
     confirmThreadDeletion(executeAction, thread);
 
+  const confirmBatchDeleteThreads = (
+    threads: readonly EnvironmentThreadShell[],
+    onCompleted?: () => void,
+  ) => confirmBatchThreadDeletion(executeAction, threads, onCompleted);
+
+  const batchSettleThreads = async (
+    threads: readonly EnvironmentThreadShell[],
+    onCompleted?: () => void,
+  ): Promise<boolean> => {
+    const targets = threads.filter(
+      (thread) => thread.settledOverride !== "settled" && thread.settledAt == null,
+    );
+    if (targets.length === 0) return false;
+    let allSucceeded = true;
+    for (const thread of targets) {
+      const ok = await settleThread(thread);
+      if (!ok) allSucceeded = false;
+    }
+    onCompleted?.();
+    return allSucceeded;
+  };
+
   // `moveThread` looks up its own row, and refuses while a list holds older rows.
   return {
     archiveThread: (thread) => archiveThread(liveThread(thread)),
     confirmDeleteThread: (thread) => confirmDeleteThread(liveThread(thread)),
+    confirmBatchDeleteThreads: (threads, onCompleted) =>
+      confirmBatchDeleteThreads(threads.map(liveThread), onCompleted),
     settleThread: (thread) => settleThread(liveThread(thread)),
+    batchSettleThreads: (threads, onCompleted) =>
+      batchSettleThreads(threads.map(liveThread), onCompleted),
     snoozeThread: (thread, snoozedUntil) => snoozeThread(liveThread(thread), snoozedUntil),
     unsnoozeThread: (thread) => unsnoozeThread(liveThread(thread)),
     unsettleThread: (thread) => unsettleThread(liveThread(thread)),

@@ -6,10 +6,14 @@ import type {
   PersonalResolvedHost,
 } from "@t3tools/contracts";
 import {
+  detectAndConnectPersonalKey,
   personalHostRecord,
+  readPersonalAdminConfig,
   readPersonalHosts,
   removePersonalHost,
   upsertPersonalHost,
+  type PairPersonalHost,
+  type PersonalAdminConfig,
   type PersonalHostRecord,
 } from "@t3tools/client-runtime/personal/portal";
 import * as Cause from "effect/Cause";
@@ -32,6 +36,7 @@ import {
   personalStopSharing,
 } from "../../state/personal";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { notifyPersonalHostsChanged, openPersonalAdminConsole } from "../personal/PersonalModeGate";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -65,8 +70,167 @@ function normalizeRelayUrl(value: string): string {
 export function PersonalNetworkSettings() {
   const primary = usePrimaryEnvironment();
   const environmentId = primary?.environmentId ?? null;
-  if (environmentId === null) return null;
+  if (environmentId === null) {
+    return <PersonalNetworkGuestSettings />;
+  }
   return <PersonalNetworkSettingsForHost environmentId={environmentId} />;
+}
+
+function PersonalNetworkGuestSettings() {
+  const connectPairing = useAtomCommand(connectPairingCommand, { reportFailure: false });
+  const [guests, setGuests] = useState<ReadonlyArray<PersonalHostRecord>>(readPersonalHosts);
+  const [adminConfig, setAdminConfig] = useState<PersonalAdminConfig | null>(
+    readPersonalAdminConfig,
+  );
+  const [relayUrl, setRelayUrl] = useState(
+    () =>
+      guests[0]?.relayUrl ??
+      adminConfig?.relayUrl ??
+      (DEFAULT_RELAY_URL.length > 0 ? DEFAULT_RELAY_URL : window.location.origin),
+  );
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const pairHost: PairPersonalHost = async (input) => {
+    const paired = (await connectPairing(input)) as CommandResult<unknown>;
+    if (paired._tag === "Success") return { ok: true };
+    const failure = failureMessage(paired);
+    return {
+      ok: false,
+      error: failure ?? "The host refused the key.",
+    };
+  };
+
+  const addKey = async () => {
+    const trimmedKey = key.trim();
+    if (trimmedKey === "") return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const outcome = await detectAndConnectPersonalKey({
+        relayUrl: relayUrl.trim(),
+        key: trimmedKey,
+        pairHost,
+      });
+      setKey("");
+      setGuests(readPersonalHosts());
+      setAdminConfig(readPersonalAdminConfig());
+      notifyPersonalHostsChanged();
+      if (outcome.kind === "host") {
+        setMessage(`Connected to ${outcome.host.label ?? outcome.host.publicUrl}.`);
+      } else {
+        setMessage(
+          `Connected to relay as admin (${outcome.records.length} computer${outcome.records.length === 1 ? "" : "s"} connected).`,
+        );
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Connection failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeGuest = (guest: PersonalHostRecord) => {
+    setGuests(removePersonalHost({ hostId: guest.hostId, relayUrl: guest.relayUrl }));
+    notifyPersonalHostsChanged();
+  };
+
+  return (
+    <SettingsSection
+      {...searchableSetting("personal-network")}
+      id="personal-network"
+      title="Personal network"
+    >
+      {adminConfig !== null ? (
+        <SettingsRow
+          description={`Relay: ${adminConfig.relayUrl}. Open the console to manage registered hosts and guest sessions.`}
+          title="Admin console"
+        >
+          <Button size="sm" variant="outline" onClick={openPersonalAdminConsole}>
+            Open admin console
+          </Button>
+        </SettingsRow>
+      ) : null}
+
+      <SettingsRow
+        description="Computers available in this browser. Add a host key to open a computer, or an admin key to connect all computers on the relay."
+        title="Saved computers"
+      >
+        <div className="flex w-full max-w-md flex-col gap-2">
+          {guests.length > 0 ? (
+            <div className="space-y-2">
+              {guests.map((guest) => (
+                <div
+                  key={`${guest.relayUrl}:${guest.hostId}`}
+                  className="flex items-center justify-between gap-2 rounded border border-border/60 px-2 py-1.5 text-xs"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{guest.label ?? guest.publicUrl}</p>
+                    <p className="truncate text-muted-foreground">
+                      {guest.paused ? "Paused" : guest.online ? "Online" : "Offline"} ·{" "}
+                      {guest.relayUrl}
+                      {guest.lastError ? ` · ${guest.lastError}` : ""}
+                    </p>
+                  </div>
+                  <Button size="xs" variant="ghost-destructive" onClick={() => removeGuest(guest)}>
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No computers connected yet.</p>
+          )}
+        </div>
+      </SettingsRow>
+
+      <SettingsRow
+        description="Enter a relay URL and key. A host key adds one computer; an admin key adds all computers registered on that relay."
+        title="Add a computer"
+      >
+        <div className="flex w-full max-w-md flex-col gap-2">
+          <Input
+            aria-label="Relay URL"
+            disabled={busy}
+            onChange={(event) => setRelayUrl(event.currentTarget.value)}
+            placeholder="https://relay.example.com"
+            value={relayUrl}
+          />
+          <div className="flex gap-2">
+            <Input
+              aria-label="Key"
+              autoComplete="off"
+              disabled={busy}
+              onChange={(event) => setKey(event.currentTarget.value)}
+              placeholder="Paste a host or admin key"
+              type="password"
+              value={key}
+            />
+            <Button
+              disabled={busy || key.trim().length === 0}
+              size="sm"
+              onClick={() => void addKey()}
+            >
+              {busy ? "Connecting..." : "Add"}
+            </Button>
+          </div>
+        </div>
+      </SettingsRow>
+
+      {error ? (
+        <div className="px-4 pb-3">
+          <Alert variant="error">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        </div>
+      ) : message ? (
+        <p className="px-4 pb-3 text-xs text-muted-foreground">{message}</p>
+      ) : null}
+    </SettingsSection>
+  );
 }
 
 function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: EnvironmentId }) {
@@ -295,6 +459,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
     }
     const record = personalHostRecord({ relayUrl: guestRelay, hostKey: key, resolved: host });
     setGuests(upsertPersonalHost(record));
+    notifyPersonalHostsChanged();
     setGuestKey("");
     setMessage(`Added ${host.label ?? host.publicUrl}.`);
   };
@@ -337,6 +502,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
 
   const removeGuest = (guest: PersonalHostRecord) => {
     setGuests(removePersonalHost({ hostId: guest.hostId, relayUrl: guest.relayUrl }));
+    notifyPersonalHostsChanged();
   };
 
   const normalizedRelayUrl = normalizeRelayUrl(relayUrl);

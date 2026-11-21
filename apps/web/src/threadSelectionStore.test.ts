@@ -111,4 +111,41 @@ describe("threadSelectionStore", () => {
       expect(state.selectedThreadKeys.size).toBe(4);
     });
   });
+
+  describe("selectionMode and selectAll", () => {
+    it("can enter and exit selection mode", () => {
+      const store = useThreadSelectionStore.getState();
+      expect(store.selectionMode).toBe(false);
+
+      store.setSelectionMode(true);
+      expect(useThreadSelectionStore.getState().selectionMode).toBe(true);
+
+      store.setSelectionMode(false);
+      expect(useThreadSelectionStore.getState().selectionMode).toBe(false);
+      expect(useThreadSelectionStore.getState().selectedThreadKeys.size).toBe(0);
+    });
+
+    it("selectAll selects all provided thread keys and enters selection mode", () => {
+      const store = useThreadSelectionStore.getState();
+      store.selectAll(ORDERED);
+
+      const state = useThreadSelectionStore.getState();
+      expect(state.selectionMode).toBe(true);
+      expect(state.selectedThreadKeys.size).toBe(ORDERED.length);
+      for (const key of ORDERED) {
+        expect(state.selectedThreadKeys.has(key)).toBe(true);
+      }
+    });
+
+    it("clearSelection resets selectionMode", () => {
+      const store = useThreadSelectionStore.getState();
+      store.setSelectionMode(true);
+      store.toggleThread(THREAD_A);
+      expect(useThreadSelectionStore.getState().selectionMode).toBe(true);
+
+      store.clearSelection();
+      expect(useThreadSelectionStore.getState().selectionMode).toBe(false);
+      expect(useThreadSelectionStore.getState().selectedThreadKeys.size).toBe(0);
+    });
+  });
 });
