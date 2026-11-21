@@ -59,6 +59,7 @@ export function HomeRouteScreen() {
   const navigation = useNavigation();
   const selectTab = useSelectWorkspaceTab();
   const workspace = useWorkspaceTabs();
+  const [selectionMode, setSelectionMode] = useState(false);
   const [localSearchQuery, setLocalSearchQuery] = useState("");
   const searchQuery =
     Platform.OS === "android"
@@ -171,7 +172,7 @@ export function HomeRouteScreen() {
   }
 
   return (
-    <AndroidHomeFabLayout onStartNewTask={startNewTask}>
+    <AndroidHomeFabLayout disabled={selectionMode} onStartNewTask={startNewTask}>
       <>
         <WorkspaceListHeader
           accessibilityLabel="T3 Code, Threads"
@@ -191,11 +192,14 @@ export function HomeRouteScreen() {
               selectedProjectKey,
               onEnvironmentChange: setSelectedEnvironmentId,
               onProjectChange: setSelectedProjectKey,
+              onEnterSelectionMode: selectionMode ? undefined : () => setSelectionMode(true),
             }),
           }}
         />
 
         <HomeScreen
+          selectionMode={selectionMode}
+          onSelectionModeChange={setSelectionMode}
           catalogState={catalogState}
           environments={environments}
           onAddConnection={() => openSettings(navigation, "SettingsEnvironmentNew")}

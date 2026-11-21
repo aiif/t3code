@@ -161,6 +161,8 @@ interface HomeScreenProps {
   readonly onDeletePendingTask: (pendingTask: PendingNewTask) => void;
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
+  readonly selectionMode?: boolean;
+  readonly onSelectionModeChange?: (active: boolean) => void;
 }
 
 const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 72;
@@ -267,7 +269,15 @@ export function HomeScreen(props: HomeScreenProps) {
     }
   };
 
-  const [selectionMode, setSelectionMode] = useState(false);
+  const [internalSelectionMode, setInternalSelectionMode] = useState(false);
+  const selectionMode = props.selectionMode ?? internalSelectionMode;
+  const setSelectionMode = useCallback(
+    (active: boolean) => {
+      setInternalSelectionMode(active);
+      props.onSelectionModeChange?.(active);
+    },
+    [props],
+  );
   const [selectedThreadKeys, setSelectedThreadKeys] = useState<ReadonlySet<string>>(new Set());
 
   const handleToggleSelect = useCallback((thread: EnvironmentThreadShell) => {
@@ -280,22 +290,30 @@ export function HomeScreen(props: HomeScreenProps) {
     });
   }, []);
 
-  const handleEnterSelectionMode = useCallback((initialThread?: EnvironmentThreadShell) => {
-    openSwipeableRef.current?.close();
-    setSelectionMode(true);
-    if (initialThread) {
-      setSelectedThreadKeys(
-        new Set([scopedThreadKey(initialThread.environmentId, initialThread.id)]),
-      );
-    } else {
-      setSelectedThreadKeys(new Set());
-    }
-  }, []);
+  const handleEnterSelectionMode = useCallback(
+    (initialThread?: EnvironmentThreadShell) => {
+      openSwipeableRef.current?.close();
+      setSelectionMode(true);
+      if (initialThread) {
+        setSelectedThreadKeys((prev) => {
+          if (selectionMode) {
+            const next = new Set(prev);
+            next.add(scopedThreadKey(initialThread.environmentId, initialThread.id));
+            return next;
+          }
+          return new Set([scopedThreadKey(initialThread.environmentId, initialThread.id)]);
+        });
+      } else if (!selectionMode) {
+        setSelectedThreadKeys(new Set());
+      }
+    },
+    [selectionMode, setSelectionMode],
+  );
 
   const handleExitSelectionMode = useCallback(() => {
     setSelectionMode(false);
     setSelectedThreadKeys(new Set());
-  }, []);
+  }, [setSelectionMode]);
 
   const selectableThreads = useMemo(() => {
     return props.threads.filter((t) => t.archivedAt === null);
@@ -795,7 +813,7 @@ export function HomeScreen(props: HomeScreenProps) {
           selectedProjectKey={props.selectedProjectKey}
           onEnvironmentChange={props.onEnvironmentChange}
           onProjectChange={props.onProjectChange}
-          onEnterSelectionMode={() => handleEnterSelectionMode()}
+          onEnterSelectionMode={selectionMode ? undefined : () => handleEnterSelectionMode()}
         />
       ) : null}
     </>

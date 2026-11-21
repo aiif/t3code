@@ -1473,7 +1473,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
-        accessibilityState={{ selected }}
+        accessibilityState={{
+          selected: props.selectionMode ? (props.isSelected ?? false) : selected,
+        }}
         accessibilityActions={rowAccessibilityActions}
         onAccessibilityAction={(event) => {
           if (event.nativeEvent.actionName === "openPullRequests") handleOpenPullRequests();
@@ -1487,6 +1489,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             selectThread();
           }
         }}
+        onLongPress={
+          props.selectionMode
+            ? () => {
+                props.onToggleSelect?.(thread);
+              }
+            : undefined
+        }
         style={rowAppearance.cardStyle}
       >
         {sidebarPane ? (
@@ -1508,7 +1517,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         accessibilityHint={swipeAccessibilityHint}
         accessibilityLabel={rowAccessibilityLabel}
         accessibilityRole="button"
-        accessibilityState={{ selected }}
+        accessibilityState={{
+          selected: props.selectionMode ? (props.isSelected ?? false) : selected,
+        }}
         className={rowAppearance.className}
         onPress={() => {
           close();
@@ -1518,6 +1529,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             selectThread();
           }
         }}
+        onLongPress={
+          props.selectionMode
+            ? () => {
+                props.onToggleSelect?.(thread);
+              }
+            : undefined
+        }
         style={rowAppearance.style}
       >
         <View
@@ -1631,16 +1649,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         simultaneousWith={props.simultaneousSwipeGesture}
         threadTitle={thread.title}
       >
-        {(close) => (
-          <Menu
-            accessibilityLabel={rowAccessibilityLabel}
-            actions={menuActions}
-            onPressAction={handleMenuAction}
-            shouldOpenOnLongPress={!props.selectionMode}
-          >
-            {rowContent(close)}
-          </Menu>
-        )}
+        {(close) =>
+          props.selectionMode ? (
+            rowContent(close)
+          ) : (
+            <Menu
+              accessibilityLabel={rowAccessibilityLabel}
+              actions={menuActions}
+              onPressAction={handleMenuAction}
+              shouldOpenOnLongPress
+            >
+              {rowContent(close)}
+            </Menu>
+          )
+        }
       </ThreadSwipeable>
     </View>
   );
