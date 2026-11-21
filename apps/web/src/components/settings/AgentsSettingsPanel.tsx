@@ -1,8 +1,10 @@
 import type { AgentSummary } from "@t3tools/contracts";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { BrainCircuitIcon, CopyIcon, FolderTreeIcon, RefreshCwIcon } from "lucide-react";
 
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { namedClipboardTarget, useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
+import type { MessageResolver } from "../../i18n/messages";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useAgentList } from "../../state/agents";
@@ -32,7 +34,7 @@ function projectRootForScope(
   );
 }
 
-function providerLabel(agent: AgentSummary): string {
+function providerLabel(agent: AgentSummary, resolve: MessageResolver): string {
   if (agent.providerInstanceId !== null) {
     return agent.model === null
       ? agent.providerInstanceId
@@ -41,22 +43,29 @@ function providerLabel(agent: AgentSummary): string {
   if (agent.driverKind !== null) {
     return agent.model === null ? agent.driverKind : `${agent.driverKind} · ${agent.model}`;
   }
-  return agent.model ?? "Inherits the thread's provider and model";
+  return agent.model ?? resolve(msg("Inherits the thread's provider and model"));
 }
 
-function delegationLabel(agent: AgentSummary): string {
-  if (!agent.delegationEnabled) return "Does not delegate";
+function delegationLabel(agent: AgentSummary, resolve: MessageResolver): string {
+  if (!agent.delegationEnabled) return resolve(msg("Does not delegate"));
   const targets =
     agent.allowedAgents === null
-      ? "any agent"
+      ? resolve(msg("any agent"))
       : agent.allowedAgents.length === 0
-        ? "no agents"
+        ? resolve(msg("no agents"))
         : agent.allowedAgents.join(", ");
-  return `Delegates to ${targets} · depth ${agent.maxDepth} · ${agent.maxParallel} at once`;
+  return resolve(
+    msg("Delegates to {targets} · depth {depth} · {parallel} at once", {
+      targets,
+      depth: agent.maxDepth,
+      parallel: agent.maxParallel,
+    }),
+  );
 }
 
 function AgentCard({ agent }: { readonly agent: AgentSummary }) {
-  const { copyToClipboard } = useCopyToClipboard({ target: "agent id" });
+  const resolve = useMessages();
+  const { copyToClipboard } = useCopyToClipboard({ target: namedClipboardTarget("agent id") });
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border/60 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -76,21 +85,22 @@ function AgentCard({ agent }: { readonly agent: AgentSummary }) {
           size="xs"
           variant="ghost"
           onClick={() => copyToClipboard(agent.id, undefined)}
-          aria-label={`Copy agent id ${agent.id}`}
+          aria-label={resolve(msg("Copy agent id {agentId}", { agentId: agent.id }))}
         >
           <CopyIcon className="size-3.5" />
           <span className="font-mono text-xs">{agent.id}</span>
         </Button>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>{providerLabel(agent)}</span>
-        <span>{delegationLabel(agent)}</span>
+        <span>{providerLabel(agent, resolve)}</span>
+        <span>{delegationLabel(agent, resolve)}</span>
       </div>
     </div>
   );
 }
 
 export function AgentsSettingsPanel() {
+  const gt = useGT();
   const { environment, scope } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
   const projectRoot = projectRootForScope(scope, environmentId);
@@ -107,7 +117,7 @@ export function AgentsSettingsPanel() {
     return (
       <SettingsPageContainer>
         <p className="text-sm text-muted-foreground">
-          Connect an environment to see its agent definitions.
+          <T>Connect an environment to see its agent definitions.</T>
         </p>
       </SettingsPageContainer>
     );
@@ -116,7 +126,7 @@ export function AgentsSettingsPanel() {
     return (
       <SettingsPageContainer>
         <p className="text-sm text-muted-foreground">
-          Update this environment to a T3 Code build with agent definitions to use this page.
+          <T>Update this environment to a T3 Code build with agent definitions to use this page.</T>
         </p>
       </SettingsPageContainer>
     );
@@ -126,36 +136,40 @@ export function AgentsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection
         id="agents"
-        title="Agents"
+        title={gt("Agents")}
         titleAction={
           <Button
             size="xs"
             variant="ghost"
             onClick={agents.refresh}
-            aria-label="Refresh agent definitions"
+            aria-label={gt("Refresh agent definitions")}
           >
             <RefreshCwIcon className={cn("size-3.5", agents.isPending && "animate-spin")} />
-            Refresh
+            <T>Refresh</T>
           </Button>
         }
       >
         <div className="flex flex-col gap-3 p-3">
           <p className="text-sm text-muted-foreground">
-            Named definitions a thread can launch with. Built-ins ship with T3 Code; global and
-            project YAML files shadow them by id. Use one from the composer,{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">t3 thread start --agent</code>,
-            or <code className="rounded bg-muted px-1 py-0.5 text-xs">delegate_task</code>.
+            <T>
+              Named definitions a thread can launch with. Built-ins ship with T3 Code; global and
+              project YAML files shadow them by id. Use one from the composer,{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">t3 thread start --agent</code>,
+              or <code className="rounded bg-muted px-1 py-0.5 text-xs">delegate_task</code>.
+            </T>
           </p>
           {agents.error === null ? null : (
             <p className="text-sm text-destructive">
-              Could not read agent definitions: {agents.error}
+              {gt("Could not read agent definitions: {error}", { error: agents.error })}
             </p>
           )}
           {agents.isPending && agents.data === null ? (
-            <p className="text-sm text-muted-foreground">Loading agent definitions…</p>
+            <p className="text-sm text-muted-foreground">
+              <T>Loading agent definitions…</T>
+            </p>
           ) : sorted.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No agent definitions were found. The built-ins should always be available.
+              <T>No agent definitions were found. The built-ins should always be available.</T>
             </p>
           ) : (
             <div className="flex flex-col gap-2">
@@ -168,7 +182,7 @@ export function AgentsSettingsPanel() {
             <div className="rounded-lg border border-warning/40 bg-warning/8 p-3">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <BrainCircuitIcon className="size-4" />
-                Definitions that could not be loaded
+                <T>Definitions that could not be loaded</T>
               </div>
               <ul className="mt-1 list-disc space-y-1 ps-5 text-xs text-muted-foreground">
                 {agents.data.warnings.map((warning) => (
@@ -179,30 +193,36 @@ export function AgentsSettingsPanel() {
           )}
         </div>
       </SettingsSection>
-      <SettingsSection id="agent-scopes" title="Where definitions live">
+      <SettingsSection id="agent-scopes" title={gt("Where definitions live")}>
         <div className="flex flex-col gap-2 p-3 text-sm text-muted-foreground">
           <div className="flex items-start gap-2">
             <FolderTreeIcon className="mt-0.5 size-4 shrink-0" />
             <div>
               <p>
-                Global:{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                  $T3CODE_HOME/agents/*.yaml
-                </code>
+                <T>
+                  Global:{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                    $T3CODE_HOME/agents/*.yaml
+                  </code>
+                </T>
               </p>
               <p>
-                Project:{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                  &lt;project&gt;/.t3code/agents/*.yaml
-                </code>
+                <T>
+                  Project:{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                    &lt;project&gt;/.t3code/agents/*.yaml
+                  </code>
+                </T>
               </p>
             </div>
           </div>
           <p>
-            A project definition shadows a global definition with the same id, which shadows a
-            built-in. Validate a file with{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">t3 agent validate</code> before
-            using it.
+            <T>
+              A project definition shadows a global definition with the same id, which shadows a
+              built-in. Validate a file with{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">t3 agent validate</code> before
+              using it.
+            </T>
           </p>
         </div>
       </SettingsSection>

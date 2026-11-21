@@ -1,5 +1,7 @@
+import { T, useGT } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
+import * as Application from "expo-application";
 import Constants from "expo-constants";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { useEffect, useRef, useState } from "react";
@@ -24,10 +26,11 @@ import { SettingsSection } from "./components/SettingsSection";
 import { SettingsScreen } from "./components/SettingsScreen";
 
 export function SettingsAboutRouteScreen() {
+  const gt = useGT();
   const insets = useSafeAreaInsets();
 
   return (
-    <SettingsScreen title="About">
+    <SettingsScreen title={gt("About")}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -42,6 +45,7 @@ export function SettingsAboutRouteScreen() {
 }
 
 function AppSettingsSection() {
+  const gt = useGT();
   const [checkState, setCheckState] = useState<{
     readonly state: AppUpdateCheckState;
     // "Up to date" is a confirmation that fades back to idle.
@@ -67,7 +71,10 @@ function AppSettingsSection() {
   // Match app.config.ts's production fallback to avoid mislabeling builds as development.
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";
   const variantLabel = variant === "production" ? "" : capitalize(variant);
-  const versionLabel = variantLabel ? `${version} · ${variantLabel}` : version;
+  // EAS assigns build numbers remotely; only the installed binary knows its own.
+  const build = Application.nativeBuildVersion;
+  const versionWithBuild = build ? `${version} (${build})` : version;
+  const versionLabel = variantLabel ? `${versionWithBuild} · ${variantLabel}` : versionWithBuild;
   const updateCheckAvailable = isAppUpdateCheckAvailable();
   const busy =
     updateState === "checking" || updateState === "downloading" || updateState === "restarting";
@@ -87,7 +94,7 @@ function AppSettingsSection() {
     await settlePromise(() =>
       runAppUpdateCheck({
         applyMode: "immediate",
-        onFailure: (message) => Dialog.alert("Update failed", message),
+        onFailure: (message) => Dialog.alert(gt("Update failed"), message),
         onProgress: (progress) => setDownloadProgress(progress),
         onStateChange: (state) => {
           setCheckState({
@@ -107,11 +114,11 @@ function AppSettingsSection() {
     if (!updateCheckAvailable || updateInFlight.current) return;
     if (updateState === "downloading") {
       Dialog.confirm({
-        title: "Cancel download?",
-        message: "Do you want to cancel the active update download?",
-        confirmText: "Cancel download",
+        title: gt("Cancel download?"),
+        message: gt("Do you want to cancel the active update download?"),
+        confirmText: gt("Cancel download"),
         destructive: true,
-        cancelText: "Continue",
+        cancelText: gt("Continue"),
         onConfirm: handleCancelDownload,
       });
       return;
@@ -121,17 +128,17 @@ function AppSettingsSection() {
 
   const statusLabel =
     updateState === "checking"
-      ? "Checking…"
+      ? gt("Checking…")
       : updateState === "downloading"
         ? downloadProgress && downloadProgress.percent > 0
-          ? `Downloading… ${downloadProgress.percent}%`
-          : "Downloading…"
+          ? `${gt("Downloading…")} ${downloadProgress.percent}%`
+          : gt("Downloading…")
         : updateState === "ready"
-          ? "Update ready"
+          ? gt("Update ready")
           : updateState === "restarting"
-            ? "Restarting…"
+            ? gt("Restarting…")
             : updateState === "current"
-              ? "Up to date"
+              ? gt("Up to date")
               : null;
 
   const versionRow = (
@@ -143,7 +150,9 @@ function AppSettingsSection() {
         type="monochrome"
         weight="regular"
       />
-      <Text className="flex-1 text-lg text-foreground">Version</Text>
+      <Text className="flex-1 text-lg text-foreground">
+        <T>Version</T>
+      </Text>
       <View className="items-end">
         <Text className="text-lg text-foreground-muted">{versionLabel}</Text>
         {statusLabel ? (
@@ -154,29 +163,35 @@ function AppSettingsSection() {
   );
 
   return (
-    <SettingsSection title="App">
-      <SettingsRow icon="internaldrive" label="Client Storage" target="SettingsClientStorage" />
-      <SettingsRow icon="stethoscope" label="Diagnostics" target="SettingsDiagnostics" />
+    <SettingsSection title={gt("App", { $context: "settings section about this mobile app" })}>
+      <SettingsRow
+        icon="internaldrive"
+        label={gt("Client Storage")}
+        target="SettingsClientStorage"
+      />
+      <SettingsRow icon="stethoscope" label={gt("Diagnostics")} target="SettingsDiagnostics" />
       <SettingsRow
         icon="doc.on.doc"
-        label="Open source licenses"
+        label={gt("Open source licenses")}
         target="SettingsOpenSourceLicenses"
       />
-      <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
+      <SettingsRow icon="doc.text" label={gt("Legal")} fullScreenTarget="SettingsLegal" />
       {updateCheckAvailable ? (
         <SettingsRow
           icon="arrow.clockwise"
-          label={updateState === "downloading" ? "Downloading update…" : "Check for updates"}
+          label={
+            updateState === "downloading" ? gt("Downloading update…") : gt("Check for updates")
+          }
           value={statusLabel ?? undefined}
           disabled={updateState === "checking" || updateState === "restarting"}
           onPress={() => {
             if (updateState === "downloading") {
               Dialog.confirm({
-                title: "Cancel download?",
-                message: "Do you want to cancel the active update download?",
-                confirmText: "Cancel download",
+                title: gt("Cancel download?"),
+                message: gt("Do you want to cancel the active update download?"),
+                confirmText: gt("Cancel download"),
                 destructive: true,
-                cancelText: "Continue",
+                cancelText: gt("Continue"),
                 onConfirm: handleCancelDownload,
               });
             } else {
@@ -189,20 +204,22 @@ function AppSettingsSection() {
         <View className="rounded-2xl border border-border bg-card p-4 gap-3 mx-1">
           <View className="flex-row items-center justify-between">
             <View className="flex-1 pr-3">
-              <Text className="text-base font-semibold text-foreground">Downloading update…</Text>
+              <Text className="text-base font-semibold text-foreground">
+                {gt("Downloading update…")}
+              </Text>
               <Text className="text-sm text-foreground-muted mt-0.5">
                 {downloadProgress && downloadProgress.totalBytes > 0
                   ? `${downloadProgress.percent}% · ${formatBytes(downloadProgress.bytesWritten)} / ${formatBytes(downloadProgress.totalBytes)}`
-                  : "Connecting…"}
+                  : gt("Connecting…")}
               </Text>
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Cancel update download"
+              accessibilityLabel={gt("Cancel update download")}
               className="rounded-full bg-surface-muted px-4 py-1.5 active:opacity-70"
               onPress={handleCancelDownload}
             >
-              <Text className="text-sm font-medium text-destructive">Cancel</Text>
+              <Text className="text-sm font-medium text-destructive">{gt("Cancel")}</Text>
             </Pressable>
           </View>
           <View className="h-2 w-full overflow-hidden rounded-full bg-surface-muted">
@@ -215,7 +232,7 @@ function AppSettingsSection() {
       ) : null}
       {updateCheckAvailable ? (
         <Pressable
-          accessibilityLabel={`Version ${versionLabel}`}
+          accessibilityLabel={gt("Version {version}", { version: versionLabel })}
           accessibilityRole="text"
           disabled={busy}
           onPress={handleVersionPress}

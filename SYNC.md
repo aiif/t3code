@@ -111,8 +111,11 @@ recur; the rule is the same every time:
 Append-only. Never edit old entries. Pending items live above the entries and
 move into the ledger once performed.
 
-Pending: the first sync after 2026-11-19 renumbers `095_AuthPersonalKeyState`
-past upstream's `099` (upstream's `095_TurnItemInlineWorkOutput` takes the old
-slot).
+Pending: none.
 
-- _none recorded yet_
+- 2026-11-21: `095_AuthPersonalKeyState` → `106_AuthPersonalKeyState` (upstream's
+  `095_TurnItemInlineWorkOutput` took the old slot; upstream's new maximum was
+  `105`). A database that ran the old id keeps its row, so that row must go
+  before the merged build starts or the fork migration never re-runs under its
+  new id:
+  `DELETE FROM effect_sql_migrations WHERE migration_id = 95 AND name = 'AuthPersonalKeyState';`

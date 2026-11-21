@@ -1,6 +1,8 @@
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import * as Updates from "expo-updates";
 // Metro namespace imports evaluate unrelated React Native getters, including unavailable native modules.
 import { AppState, Platform } from "react-native";
+import { msg } from "gt-react-native";
 
 import {
   type AtomCommandResult,
@@ -9,6 +11,8 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+
+import { m } from "../../i18n/messages";
 
 export type AppUpdateCheckState =
   | "idle"
@@ -229,7 +233,7 @@ async function performGitHubMobileAppUpdateCheck(options: AppUpdateCheckOptions)
     const updateInfo = await checkMobileAppUpdate();
     if (!updateInfo) {
       setState("idle");
-      onFailure?.("Could not check for updates.");
+      onFailure?.(m(msg("Could not check for updates.")));
       return;
     }
 
@@ -290,18 +294,25 @@ async function performGitHubMobileAppUpdateCheck(options: AppUpdateCheckOptions)
 
     if (options.applyMode === "immediate") {
       const message = [
-        `Version ${updateInfo.latestVersion} is available${sizeStr}.`,
-        updateInfo.releaseNotes ? `Release notes:\n${updateInfo.releaseNotes}` : null,
-        "Would you like to download and install it now?",
+        m(
+          msg("Version {version} is available{size}.", {
+            version: updateInfo.latestVersion,
+            size: sizeStr,
+          }),
+        ),
+        updateInfo.releaseNotes
+          ? m(msg("Release notes:\n{notes}", { notes: updateInfo.releaseNotes }))
+          : null,
+        m(msg("Would you like to download and install it now?")),
       ]
         .filter(Boolean)
         .join("\n\n");
 
       Dialog.confirm({
-        title: "Update Available",
+        title: m(msg("Update Available")),
         message,
-        confirmText: "Download & Install",
-        cancelText: "Later",
+        confirmText: m(msg("Download & Install")),
+        cancelText: m(msg("Later")),
         onConfirm: startDownload,
         onCancel: () => {
           setState("ready");
@@ -314,22 +325,31 @@ async function performGitHubMobileAppUpdateCheck(options: AppUpdateCheckOptions)
       lastPromptedGitHubVersion = updateInfo.latestVersion;
 
       Dialog.confirm({
-        title: "Update Available",
-        message: `T3 Code ${updateInfo.latestVersion} is available${sizeStr}. Update now?`,
-        confirmText: "Update",
-        cancelText: "Later",
+        title: m(msg("Update Available")),
+        message: m(
+          msg("T3 Code {version} is available{size}. Update now?", {
+            version: updateInfo.latestVersion,
+            size: sizeStr,
+          }),
+        ),
+        confirmText: m(msg("Update")),
+        cancelText: m(msg("Later")),
         onConfirm: startDownload,
       });
     }
   } catch (error) {
     setState("idle");
-    onFailure?.(error instanceof Error ? error.message : "Could not check for updates.");
+    onFailure?.(error instanceof Error ? error.message : m(msg("Could not check for updates.")));
   }
 }
 
 function formatDownloadErrorMessage(error: string): string {
   if (error.includes("Destination already exists")) {
-    return "Existing temporary download file conflicted. It has been cleaned up; please try downloading again.";
+    return m(
+      msg(
+        "Existing temporary download file conflicted. It has been cleaned up; please try downloading again.",
+      ),
+    );
   }
   if (
     error.includes("Network") ||
@@ -337,7 +357,11 @@ function formatDownloadErrorMessage(error: string): string {
     error.includes("timeout") ||
     error.includes("UnableToDownload")
   ) {
-    return "Network connection interrupted while downloading update. Please check your network and try again.";
+    return m(
+      msg(
+        "Network connection interrupted while downloading update. Please check your network and try again.",
+      ),
+    );
   }
   return error.replace(
     /^Call to function '[^']+' has been rejected\.\s*->\s*(?:Caused by:\s*)?/i,
@@ -401,7 +425,7 @@ async function performAppUpdateCheck(
   setState("checking");
   const check = await settlePromise(() => client.checkForUpdateAsync());
   if (check._tag === "Failure") {
-    reportUpdateFailure(check, "Could not check for updates.", options.onFailure);
+    reportUpdateFailure(check, m(msg("Could not check for updates.")), options.onFailure);
     setState("idle");
     return;
   }
@@ -414,7 +438,7 @@ async function performAppUpdateCheck(
   setState("downloading");
   const fetched = await settlePromise(() => client.fetchUpdateAsync());
   if (fetched._tag === "Failure") {
-    reportUpdateFailure(fetched, "Could not download the update.", options.onFailure);
+    reportUpdateFailure(fetched, m(msg("Could not download the update.")), options.onFailure);
     setState("idle");
     return;
   }
@@ -459,7 +483,7 @@ async function installAppUpdate(
   setState("restarting");
   const flushed = await settlePromise(() => environment.flushPendingWrites());
   if (flushed._tag === "Failure") {
-    reportUpdateFailure(flushed, "Could not save pending state.", undefined);
+    reportUpdateFailure(flushed, m(msg("Could not save pending state.")), undefined);
     if (!userRequested) {
       deferral.installInProgress = false;
       return "flush-failed";
@@ -467,7 +491,11 @@ async function installAppUpdate(
   }
   const reloaded = await settlePromise(() => client.reloadAsync());
   if (reloaded._tag === "Failure") {
-    reportUpdateFailure(reloaded, "Downloaded, but could not restart the app.", options.onFailure);
+    reportUpdateFailure(
+      reloaded,
+      m(msg("Downloaded, but could not restart the app.")),
+      options.onFailure,
+    );
     setState("idle");
     deferral.installInProgress = false;
     return "restart-failed";
@@ -535,7 +563,7 @@ async function applyDeferredAppUpdateInstall(
   const safe = await settlePromise(() => environment.isSafeToRestartInBackground());
   if (flushed._tag === "Failure" || safe._tag !== "Success" || !safe.value) {
     if (flushed._tag === "Failure") {
-      reportUpdateFailure(flushed, "Could not save pending state.", undefined);
+      reportUpdateFailure(flushed, m(msg("Could not save pending state.")), undefined);
     }
     deferral.installInProgress = false;
     // Wait for a fresh background transition after failure to avoid same-session retry loops.
@@ -544,7 +572,7 @@ async function applyDeferredAppUpdateInstall(
   }
   const reloaded = await settlePromise(() => client.reloadAsync());
   if (reloaded._tag === "Failure") {
-    reportUpdateFailure(reloaded, "Downloaded, but could not restart the app.", undefined);
+    reportUpdateFailure(reloaded, m(msg("Downloaded, but could not restart the app.")), undefined);
     deferral.installInProgress = false;
     deferral.pendingInstall = false;
   }
@@ -554,11 +582,15 @@ async function defaultConfirmInstallNow(): Promise<boolean> {
   const Dialog = await import("../../components/ui/Dialog");
   return new Promise<boolean>((resolve) => {
     Dialog.alert(
-      "Update ready",
-      "A new version has been downloaded and installs automatically the next time you leave the app. Install it now instead?",
+      m(msg("Update ready")),
+      m(
+        msg(
+          "A new version has been downloaded and installs automatically the next time you leave the app. Install it now instead?",
+        ),
+      ),
       [
-        { onPress: () => resolve(false), style: "cancel", text: "Later" },
-        { onPress: () => resolve(true), text: "Install Now" },
+        { onPress: () => resolve(false), style: "cancel", text: m(msg("Later")) },
+        { onPress: () => resolve(true), text: m(msg("Install Now")) },
       ],
       { cancelable: true, onDismiss: () => resolve(false) },
     );
@@ -635,7 +667,7 @@ function reportUpdateFailure(
   if (isAppUpdateUnavailableError(error)) return;
 
   reportAtomCommandResult(result, { label: "app update check" });
-  onFailure?.(error instanceof Error ? error.message : fallback);
+  onFailure?.(error instanceof Error ? (errorDisplayMessage(error, m) ?? error.message) : fallback);
 }
 
 function isAppUpdateUnavailableError(error: unknown): boolean {

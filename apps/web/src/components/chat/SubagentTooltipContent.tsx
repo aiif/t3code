@@ -11,11 +11,12 @@ import {
   resolveSubagentMetadata,
   subagentDetailPreview,
 } from "@t3tools/client-runtime/state/subagent-display";
-import { REASONING_EFFORT_OPTION_IDS } from "@t3tools/client-runtime/state/thread-execution";
-import { getModelSelectionStringOptionValue, resolveSelectableModel } from "@t3tools/shared/model";
+import { readSelectedEffortValue } from "@t3tools/client-runtime/state/thread-execution";
+import { resolveSelectableModel } from "@t3tools/shared/model";
 import { getTraitsSpeedDisplay, TraitsSpeedIcon } from "./TraitsSpeed";
 import type { SubagentContextUsage } from "@t3tools/client-runtime/state/subagentRuntime";
 import { formatContextWindowTokens } from "../../lib/contextWindow";
+import { useGT, useMessages } from "gt-react";
 import type { ReactNode } from "react";
 import {
   ActivityIcon,
@@ -58,6 +59,8 @@ export function SubagentTooltipContent(props: {
   /** Total tokens a workflow coordinator's agents consumed, when the workflow reports them. */
   usageTotalTokens?: number | undefined;
 }) {
+  const gt = useGT();
+  const messages = useMessages();
   const childSelection =
     props.modelSelection ??
     (props.origin === "app_owned" ? props.childThread?.modelSelection : undefined);
@@ -65,7 +68,11 @@ export function SubagentTooltipContent(props: {
     modelLabel,
     modelSlug,
     workspace: metadata,
-  } = resolveSubagentMetadata({ ...props, modelSelection: childSelection });
+  } = resolveSubagentMetadata({ ...props, modelSelection: childSelection }, messages);
+  const hasProjectRow =
+    props.parentThread !== undefined &&
+    props.childProject !== undefined &&
+    props.childProject.id !== props.parentThread.projectId;
   const preview = subagentDetailPreview(props);
   const providerModel = props.provider?.models.find((candidate) => candidate.slug === modelSlug);
   const childModel = props.provider
@@ -80,9 +87,10 @@ export function SubagentTooltipContent(props: {
     childModel === modelSlug && childSelection?.instanceId === props.providerInstanceId
       ? childSelection
       : undefined;
-  const effort = REASONING_EFFORT_OPTION_IDS.map((id) =>
-    getModelSelectionStringOptionValue(matchingSelection, id),
-  ).find(Boolean);
+  const effort = readSelectedEffortValue(
+    matchingSelection,
+    providerModel?.capabilities?.optionDescriptors,
+  );
   const speed = provider
     ? providerModel?.capabilities?.optionDescriptors
         ?.map((descriptor) => {
@@ -92,10 +100,13 @@ export function SubagentTooltipContent(props: {
             descriptor.type === "boolean" &&
             typeof saved?.value === "boolean"
           ) {
-            return getTraitsSpeedDisplay({
-              ...descriptor,
-              currentValue: saved.value,
-            });
+            return getTraitsSpeedDisplay(
+              {
+                ...descriptor,
+                currentValue: saved.value,
+              },
+              messages,
+            );
           }
           if (
             descriptor.id === "serviceTier" &&
@@ -103,10 +114,13 @@ export function SubagentTooltipContent(props: {
             typeof saved?.value === "string" &&
             descriptor.options.some((option) => option.id === saved.value)
           ) {
-            return getTraitsSpeedDisplay({
-              ...descriptor,
-              currentValue: saved.value,
-            });
+            return getTraitsSpeedDisplay(
+              {
+                ...descriptor,
+                currentValue: saved.value,
+              },
+              messages,
+            );
           }
           return null;
         })
@@ -137,7 +151,7 @@ export function SubagentTooltipContent(props: {
             showBadge={showInstanceBadge && entry?.accentColor !== undefined}
             badgeContent="none"
             badgeClassName="h-2 min-w-2 px-0"
-            iconClassName="size-3 shrink-0 grayscale opacity-60"
+            iconClassName="size-3 shrink-0 opacity-60"
           />
         ) : (
           <BotIcon className="size-3 shrink-0" />
@@ -171,7 +185,23 @@ export function SubagentTooltipContent(props: {
           )}
         >
           <StatusIcon aria-hidden className="size-3 shrink-0" />
-          {props.status.replaceAll("_", " ")}
+          {props.status === "idle"
+            ? gt("idle", { $context: "subagent status" })
+            : props.status === "pending"
+              ? gt("pending", { $context: "subagent status" })
+              : props.status === "running"
+                ? gt("running", { $context: "subagent status" })
+                : props.status === "waiting"
+                  ? gt("waiting", { $context: "subagent status" })
+                  : props.status === "completed"
+                    ? gt("completed", { $context: "subagent status" })
+                    : props.status === "failed"
+                      ? gt("failed", { $context: "subagent status" })
+                      : props.status === "cancelled"
+                        ? gt("cancelled", { $context: "subagent status" })
+                        : props.status === "interrupted"
+                          ? gt("interrupted", { $context: "subagent status" })
+                          : (props.status as string).replaceAll("_", " ")}
         </span>
         {props.elapsed}
       </div>
@@ -179,7 +209,7 @@ export function SubagentTooltipContent(props: {
         <div className="flex min-w-0 items-center justify-between gap-4">
           <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
             <GaugeIcon aria-hidden className="size-3 shrink-0" />
-            Context
+            {gt("Context")}
           </span>
           <span className="inline-flex items-center gap-1 text-foreground/75 tabular-nums">
             {props.contextUsage.usedPercentage !== null
@@ -196,15 +226,16 @@ export function SubagentTooltipContent(props: {
         <div className="flex min-w-0 items-center justify-between gap-4">
           <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
             <ActivityIcon aria-hidden className="size-3 shrink-0" />
-            Tokens
+            {gt("Tokens")}
           </span>
           <span className="text-foreground/75 tabular-nums">
             {formatContextWindowTokens(props.usageTotalTokens)}
           </span>
         </div>
       ) : null}
-      {metadata.map(({ label, value }) => {
-        const Icon = label === "Branch" ? GitBranchIcon : FolderIcon;
+      {metadata.map(({ label, value }, index) => {
+        const Icon =
+          props.childThread?.branch && !(hasProjectRow && index === 0) ? GitBranchIcon : FolderIcon;
         return (
           <div key={label} className="flex min-w-0 items-center gap-2">
             <Icon aria-hidden className="size-3 shrink-0" />

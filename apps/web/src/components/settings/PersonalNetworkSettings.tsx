@@ -17,9 +17,11 @@ import {
   type PersonalHostRecord,
 } from "@t3tools/client-runtime/personal/portal";
 import * as Cause from "effect/Cause";
+import { msg, T, useGT } from "gt-react";
 import { useEffect, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
+import { m } from "~/i18n/messages";
 import { connectPairing as connectPairingCommand } from "../../connection/onboarding";
 import { usePrimaryEnvironment } from "../../state/environments";
 import {
@@ -42,7 +44,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const DEFAULT_RELAY_URL = import.meta.env.VITE_HOSTED_APP_URL?.trim() || "";
 const NEW_RELAY_VALUE = "__new";
@@ -60,7 +62,7 @@ function failureMessage(result: CommandResult<unknown>): string | null {
   const error = Cause.squash(result.cause);
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
-    : "The host did not answer.";
+    : m(msg("The host did not answer."));
 }
 
 function normalizeRelayUrl(value: string): string {
@@ -77,6 +79,8 @@ export function PersonalNetworkSettings() {
 }
 
 function PersonalNetworkGuestSettings() {
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
   const connectPairing = useAtomCommand(connectPairingCommand, { reportFailure: false });
   const [guests, setGuests] = useState<ReadonlyArray<PersonalHostRecord>>(readPersonalHosts);
   const [adminConfig, setAdminConfig] = useState<PersonalAdminConfig | null>(
@@ -99,7 +103,7 @@ function PersonalNetworkGuestSettings() {
     const failure = failureMessage(paired);
     return {
       ok: false,
-      error: failure ?? "The host refused the key.",
+      error: failure ?? m(msg("The host refused the key.")),
     };
   };
 
@@ -120,14 +124,24 @@ function PersonalNetworkGuestSettings() {
       setAdminConfig(readPersonalAdminConfig());
       notifyPersonalHostsChanged();
       if (outcome.kind === "host") {
-        setMessage(`Connected to ${outcome.host.label ?? outcome.host.publicUrl}.`);
+        setMessage(
+          m(
+            msg("Connected to {host}.", {
+              host: outcome.host.label ?? outcome.host.publicUrl,
+            }),
+          ),
+        );
       } else {
         setMessage(
-          `Connected to relay as admin (${outcome.records.length} computer${outcome.records.length === 1 ? "" : "s"} connected).`,
+          m(
+            msg("Connected to relay as admin ({count} computers connected).", {
+              count: outcome.records.length,
+            }),
+          ),
         );
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Connection failed.");
+      setError(cause instanceof Error ? cause.message : m(msg("Connection failed.")));
     } finally {
       setBusy(false);
     }
@@ -142,22 +156,27 @@ function PersonalNetworkGuestSettings() {
     <SettingsSection
       {...searchableSetting("personal-network")}
       id="personal-network"
-      title="Personal network"
+      title={gt("Personal network")}
     >
       {adminConfig !== null ? (
         <SettingsRow
-          description={`Relay: ${adminConfig.relayUrl}. Open the console to manage registered hosts and guest sessions.`}
-          title="Admin console"
+          description={gt(
+            "Relay: {relayUrl}. Open the console to manage registered hosts and guest sessions.",
+            { relayUrl: adminConfig.relayUrl },
+          )}
+          title={gt("Admin console")}
         >
           <Button size="sm" variant="outline" onClick={openPersonalAdminConsole}>
-            Open admin console
+            <T>Open admin console</T>
           </Button>
         </SettingsRow>
       ) : null}
 
       <SettingsRow
-        description="Computers available in this browser. Add a host key to open a computer, or an admin key to connect all computers on the relay."
-        title="Saved computers"
+        description={gt(
+          "Computers available in this browser. Add a host key to open a computer, or an admin key to connect all computers on the relay.",
+        )}
+        title={gt("Saved computers")}
       >
         <div className="flex w-full max-w-md flex-col gap-2">
           {guests.length > 0 ? (
@@ -170,30 +189,34 @@ function PersonalNetworkGuestSettings() {
                   <div className="min-w-0">
                     <p className="truncate font-medium">{guest.label ?? guest.publicUrl}</p>
                     <p className="truncate text-muted-foreground">
-                      {guest.paused ? "Paused" : guest.online ? "Online" : "Offline"} ·{" "}
+                      {guest.paused ? gt("Paused") : guest.online ? gt("Online") : gt("Offline")} ·{" "}
                       {guest.relayUrl}
                       {guest.lastError ? ` · ${guest.lastError}` : ""}
                     </p>
                   </div>
                   <Button size="xs" variant="ghost-destructive" onClick={() => removeGuest(guest)}>
-                    Remove
+                    <T>Remove</T>
                   </Button>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">No computers connected yet.</p>
+            <p className="text-xs text-muted-foreground">
+              <T>No computers connected yet.</T>
+            </p>
           )}
         </div>
       </SettingsRow>
 
       <SettingsRow
-        description="Enter a relay URL and key. A host key adds one computer; an admin key adds all computers registered on that relay."
-        title="Add a computer"
+        description={gt(
+          "Enter a relay URL and key. A host key adds one computer; an admin key adds all computers registered on that relay.",
+        )}
+        title={gt("Add a computer")}
       >
         <div className="flex w-full max-w-md flex-col gap-2">
           <Input
-            aria-label="Relay URL"
+            aria-label={gt("Relay URL")}
             disabled={busy}
             onChange={(event) => setRelayUrl(event.currentTarget.value)}
             placeholder="https://relay.example.com"
@@ -201,11 +224,11 @@ function PersonalNetworkGuestSettings() {
           />
           <div className="flex gap-2">
             <Input
-              aria-label="Key"
+              aria-label={gt("Key")}
               autoComplete="off"
               disabled={busy}
               onChange={(event) => setKey(event.currentTarget.value)}
-              placeholder="Paste a host or admin key"
+              placeholder={gt("Paste a host or admin key")}
               type="password"
               value={key}
             />
@@ -214,7 +237,7 @@ function PersonalNetworkGuestSettings() {
               size="sm"
               onClick={() => void addKey()}
             >
-              {busy ? "Connecting..." : "Add"}
+              {busy ? <T>Connecting…</T> : <T>Add</T>}
             </Button>
           </div>
         </div>
@@ -234,6 +257,8 @@ function PersonalNetworkGuestSettings() {
 }
 
 function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: EnvironmentId }) {
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
   const statusCommand = useAtomCommand(personalRelayStatus, { reportFailure: false });
   const listRelays = useAtomCommand(personalListRelays, { reportFailure: false });
   const saveRelay = useAtomCommand(personalSaveRelay, { reportFailure: false });
@@ -339,18 +364,30 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
         await refreshRelays();
         if (previousKey !== null && nextKey !== null && previousKey !== nextKey) {
           setMessage(
-            previousRelay === nextRelay
-              ? "Host key changed. Guests must add the new key."
-              : "Switched. The new relay issued a different host key; guests must add it once.",
+            m(
+              previousRelay === nextRelay
+                ? msg("Host key changed. Guests must add the new key.")
+                : msg(
+                    "Switched. The new relay issued a different host key; guests must add it once.",
+                  ),
+            ),
           );
         } else if (previousRelay !== "" && previousRelay !== nextRelay) {
           setMessage(
-            targetProfile?.hostId != null
-              ? `Switched to ${nextRelay}. The previous relay stays registered, so guests keep their keys.`
-              : `Switched to ${nextRelay}. Add its host key to guests once; paired guests that synced it pick it up automatically.`,
+            m(
+              targetProfile?.hostId != null
+                ? msg(
+                    "Switched to {relayUrl}. The previous relay stays registered, so guests keep their keys.",
+                    { relayUrl: nextRelay },
+                  )
+                : msg(
+                    "Switched to {relayUrl}. Add its host key to guests once; paired guests that synced it pick it up automatically.",
+                    { relayUrl: nextRelay },
+                  ),
+            ),
           );
         } else {
-          setMessage("Personal network settings saved.");
+          setMessage(m(msg("Personal network settings saved.")));
         }
       }
       return result as CommandResult<unknown>;
@@ -374,9 +411,13 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
           (relay) => relay.relayUrl === normalizeRelayUrl(relayUrl) && relay.hostId !== null,
         );
         setMessage(
-          prepared
-            ? "Relay saved. Paired guests pick up its key within a minute; switch after that."
-            : "Relay saved. It registers when you switch to it.",
+          m(
+            prepared
+              ? msg(
+                  "Relay saved. Paired guests pick up its key within a minute; switch after that.",
+                )
+              : msg("Relay saved. It registers when you switch to it."),
+          ),
         );
       }
       return result;
@@ -389,11 +430,16 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
       status?.enabled === true &&
       normalizeRelayUrl(status.relayUrl ?? "") === selected.relayUrl
     ) {
-      setError("Stop sharing before forgetting this relay.");
+      setError(m(msg("Stop sharing before forgetting this relay.")));
       return;
     }
     const confirmed = await requestConfirmDialog(
-      `Forget ${selected.relayUrl} on this computer? The relay still lists this host until it is removed from the relay's admin console.`,
+      m(
+        msg(
+          "Forget {relayUrl} on this computer? The relay still lists this host until it is removed from the relay's admin console.",
+          { relayUrl: selected.relayUrl },
+        ),
+      ),
       { variant: "destructive" },
     );
     if (confirmed !== true) return;
@@ -406,7 +452,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
       if (value !== null) {
         setRelays(value.relays);
         setRelayUrl(value.relays[0]?.relayUrl ?? "");
-        setMessage("Relay forgotten.");
+        setMessage(m(msg("Relay forgotten.")));
       }
       return forgotten;
     });
@@ -415,7 +461,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
   const copyHostKey = async () => {
     if (hostKey === null) return;
     await navigator.clipboard.writeText(hostKey);
-    setMessage("Host key copied.");
+    setMessage(m(msg("Host key copied.")));
   };
 
   const revealHostKey = async () => {
@@ -431,7 +477,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
       result === null ? null : resultValue(result as CommandResult<{ hostKey: string }>);
     if (value !== null) {
       setHostKey(value.hostKey);
-      setMessage("Host key rotated. Guests must enter the new key.");
+      setMessage(m(msg("Host key rotated. Guests must enter the new key.")));
     }
   };
 
@@ -445,7 +491,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
       resolved === null ? null : resultValue(resolved as CommandResult<PersonalResolvedHost>);
     if (host === null) return;
     if (!host.online) {
-      setError("That host is offline or paused. Try again when it is online.");
+      setError(m(msg("That host is offline or paused. Try again when it is online.")));
       return;
     }
     const paired = await connectPairing({
@@ -454,14 +500,16 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
       expectedEnvironmentId: host.environmentId as EnvironmentId,
     });
     if (paired._tag === "Failure") {
-      setError(failureMessage(paired as CommandResult<unknown>) ?? "The host refused the key.");
+      setError(
+        failureMessage(paired as CommandResult<unknown>) ?? m(msg("The host refused the key.")),
+      );
       return;
     }
     const record = personalHostRecord({ relayUrl: guestRelay, hostKey: key, resolved: host });
     setGuests(upsertPersonalHost(record));
     notifyPersonalHostsChanged();
     setGuestKey("");
-    setMessage(`Added ${host.label ?? host.publicUrl}.`);
+    setMessage(m(msg("Added {host}.", { host: host.label ?? host.publicUrl })));
   };
 
   const refreshGuests = async () => {
@@ -510,7 +558,8 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
   const selectedValue = selectedRelay === undefined ? NEW_RELAY_VALUE : selectedRelay.relayUrl;
   const isCurrentRelay =
     status?.enabled === true && normalizeRelayUrl(status.relayUrl ?? "") === normalizedRelayUrl;
-  const actionLabel = status?.enabled !== true ? "Register" : isCurrentRelay ? "Save" : "Switch";
+  const actionLabel =
+    status?.enabled !== true ? gt("Register") : isCurrentRelay ? gt("Save") : gt("Switch");
   const relaySuggestions = [
     ...new Set([
       ...relays.map((relay) => relay.relayUrl),
@@ -524,8 +573,18 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
       const learned = selectedRelay !== undefined && selectedRelay.hostId !== null;
       const confirmed = await requestConfirmDialog(
         learned
-          ? `Switch this computer to ${normalizedRelayUrl}? Guests using ${status.relayUrl} go offline until you switch back; their host keys stay valid.`
-          : `Switch this computer to ${normalizedRelayUrl}? Paired guests have not learned this relay yet. Save it first if you want them to add it automatically; switching now may ask each guest for its host key.`,
+          ? m(
+              msg(
+                "Switch this computer to {relayUrl}? Guests using {currentRelayUrl} go offline until you switch back; their host keys stay valid.",
+                { relayUrl: normalizedRelayUrl, currentRelayUrl: status.relayUrl ?? "" },
+              ),
+            )
+          : m(
+              msg(
+                "Switch this computer to {relayUrl}? Paired guests have not learned this relay yet. Save it first if you want them to add it automatically; switching now may ask each guest for its host key.",
+                { relayUrl: normalizedRelayUrl },
+              ),
+            ),
       );
       if (confirmed === false) return;
     }
@@ -536,11 +595,13 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
     <SettingsSection
       {...searchableSetting("personal-network")}
       id="personal-network"
-      title="Personal network"
+      title={gt("Personal network")}
     >
       <SettingsRow
-        title="Share this computer"
-        description="Guests with this computer's host key can use its projects while the app is running and sharing is on. Closing the window keeps sharing on; Quit stops it."
+        title={gt("Share this computer")}
+        description={gt(
+          "Guests with this computer's host key can use its projects while the app is running and sharing is on. Closing the window keeps sharing on; Quit stops it.",
+        )}
       >
         <div className="flex w-full max-w-md flex-col gap-2">
           <Select
@@ -551,23 +612,23 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
               setRelayKey("");
             }}
           >
-            <SelectTrigger aria-label="Saved relay" size="sm">
-              <SelectValue>{selectedRelay?.relayUrl ?? "New relay..."}</SelectValue>
+            <SelectTrigger aria-label={gt("Saved relay")} size="sm">
+              <SelectValue>{selectedRelay?.relayUrl ?? gt("New relay…")}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="start">
               {relays.map((relay) => (
                 <SelectItem hideIndicator key={relay.relayUrl} value={relay.relayUrl}>
                   {relay.relayUrl}
-                  {relay.hostId === null ? " (not registered)" : ""}
+                  {relay.hostId === null ? gt(" (not registered)") : ""}
                 </SelectItem>
               ))}
               <SelectItem hideIndicator value={NEW_RELAY_VALUE}>
-                New relay...
+                <T>New relay…</T>
               </SelectItem>
             </SelectPopup>
           </Select>
           <Input
-            aria-label="Relay URL"
+            aria-label={gt("Relay URL")}
             disabled={busy}
             onChange={(event) => {
               relayTouched.current = true;
@@ -577,24 +638,24 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
             value={relayUrl}
           />
           <Input
-            aria-label="Relay key"
+            aria-label={gt("Relay key")}
             autoComplete="off"
             disabled={busy}
             onChange={(event) => setRelayKey(event.currentTarget.value)}
             placeholder={
               selectedRelay?.hasRelayKey === true
-                ? "Saved enrollment key (leave blank to reuse)"
-                : "Enrollment key (Cloudflare relays only)"
+                ? gt("Saved enrollment key (leave blank to reuse)")
+                : gt("Enrollment key (Cloudflare relays only)")
             }
             type="password"
             value={relayKey}
           />
           <div className="flex gap-2">
             <Input
-              aria-label="This computer's label"
+              aria-label={gt("This computer's label")}
               disabled={busy}
               onChange={(event) => setLabel(event.currentTarget.value)}
-              placeholder="Home PC"
+              placeholder={gt("Home PC")}
               value={label}
             />
             <Button
@@ -614,7 +675,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                 variant="outline"
                 onClick={() => void saveCurrentRelay()}
               >
-                Save relay
+                <T>Save relay</T>
               </Button>
             ) : null}
             {selectedRelay !== undefined ? (
@@ -624,7 +685,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                 variant="ghost-destructive"
                 onClick={() => void forgetCurrentRelay()}
               >
-                Forget relay
+                <T>Forget relay</T>
               </Button>
             ) : null}
           </div>
@@ -633,21 +694,23 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
             <div className="space-y-2 text-xs text-muted-foreground">
               <p>
                 {status.paused
-                  ? "Paused: guests cannot connect."
+                  ? gt("Paused: guests cannot connect.")
                   : status.online
-                    ? "Online and discoverable."
-                    : "Connecting..."}
+                    ? gt("Online and discoverable.")
+                    : gt("Connecting…")}
                 {status.publicUrl ? ` · ${status.publicUrl}` : ""}
                 {status.connectorKind
-                  ? ` · ${status.connectorKind === "cloudflare-tunnel" ? "Cloudflare Tunnel" : "frpc"} ${status.connectorRunning ? "running" : "stopped"}`
+                  ? ` · ${status.connectorKind === "cloudflare-tunnel" ? gt("Cloudflare Tunnel") : "frpc"} ${status.connectorRunning ? gt("running") : gt("stopped")}`
                   : ""}
               </p>
               {status.connectorKind === "cloudflare-tunnel" && status.connectorMode === "quick" ? (
                 <Alert variant="warning">
                   <AlertDescription>
-                    Quick tunnels use a temporary trycloudflare.com address that changes whenever
-                    the tunnel restarts, without SSE support or an SLA. Use a named Cloudflare
-                    tunnel for a stable address.
+                    <T>
+                      Quick tunnels use a temporary trycloudflare.com address that changes whenever
+                      the tunnel restarts, without SSE support or an SLA. Use a named Cloudflare
+                      tunnel for a stable address.
+                    </T>
                   </AlertDescription>
                 </Alert>
               ) : null}
@@ -661,7 +724,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                   disabled={busy}
                   onClick={() => void revealHostKey()}
                 >
-                  Reveal
+                  <T>Reveal</T>
                 </Button>
                 <Button
                   size="xs"
@@ -669,7 +732,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                   disabled={busy || hostKey === null}
                   onClick={() => void copyHostKey()}
                 >
-                  Copy
+                  <T>Copy</T>
                 </Button>
                 <Button
                   size="xs"
@@ -677,7 +740,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                   disabled={busy}
                   onClick={() => void rotateKey()}
                 >
-                  Rotate key
+                  <T>Rotate key</T>
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -688,7 +751,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                     disabled={busy}
                     onClick={() => void run(() => resume({ environmentId, input: {} }))}
                   >
-                    Resume sharing
+                    <T>Resume sharing</T>
                   </Button>
                 ) : (
                   <Button
@@ -697,7 +760,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                     disabled={busy}
                     onClick={() => void run(() => pause({ environmentId, input: {} }))}
                   >
-                    Pause sharing
+                    <T>Pause sharing</T>
                   </Button>
                 )}
                 <Button
@@ -709,7 +772,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                     void run(() => stop({ environmentId, input: {} }));
                   }}
                 >
-                  Stop sharing
+                  <T>Stop sharing</T>
                 </Button>
               </div>
               {status.lastError ? <p className="text-destructive">{status.lastError}</p> : null}
@@ -719,12 +782,14 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
       </SettingsRow>
 
       <SettingsRow
-        title="Add a computer"
-        description="Paste a host key from another computer. Each key is a separate environment, and several can run at the same time."
+        title={gt("Add a computer")}
+        description={gt(
+          "Paste a host key from another computer. Each key is a separate environment, and several can run at the same time.",
+        )}
       >
         <div className="flex w-full max-w-md flex-col gap-2">
           <Input
-            aria-label="Guest relay URL"
+            aria-label={gt("Guest relay URL")}
             disabled={busy}
             list="personal-relay-urls"
             onChange={(event) => setGuestRelay(event.currentTarget.value)}
@@ -738,11 +803,11 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
           </datalist>
           <div className="flex gap-2">
             <Input
-              aria-label="Host key"
+              aria-label={gt("Host key")}
               autoComplete="off"
               disabled={busy}
               onChange={(event) => setGuestKey(event.currentTarget.value)}
-              placeholder="Paste a host key"
+              placeholder={gt("Paste a host key")}
               type="password"
               value={guestKey}
             />
@@ -751,7 +816,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
               size="sm"
               onClick={() => void addGuest()}
             >
-              Add
+              <T>Add</T>
             </Button>
           </div>
           {guests.length > 0 ? (
@@ -764,7 +829,7 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                   <div className="min-w-0">
                     <p className="truncate font-medium">{guest.label ?? guest.publicUrl}</p>
                     <p className="truncate text-muted-foreground">
-                      {guest.paused ? "Paused" : guest.online ? "Online" : "Offline"} ·{" "}
+                      {guest.paused ? gt("Paused") : guest.online ? gt("Online") : gt("Offline")} ·{" "}
                       {guest.relayUrl}
                       {guest.lastError ? ` · ${guest.lastError}` : ""}
                     </p>
@@ -776,14 +841,14 @@ function PersonalNetworkSettingsForHost({ environmentId }: { environmentId: Envi
                       disabled={busy}
                       onClick={() => void refreshGuests()}
                     >
-                      Refresh
+                      <T>Refresh</T>
                     </Button>
                     <Button
                       size="xs"
                       variant="ghost-destructive"
                       onClick={() => removeGuest(guest)}
                     >
-                      Remove
+                      <T>Remove</T>
                     </Button>
                   </div>
                 </div>

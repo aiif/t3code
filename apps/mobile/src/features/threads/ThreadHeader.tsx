@@ -1,3 +1,5 @@
+import { useGT, useMessages } from "gt-react-native";
+
 import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarAction } from "../../components/ui/AppBar.types";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
@@ -13,12 +15,14 @@ export function ThreadHeader(props: {
   /** Opens the details sheet that carries the context, usage, git and files controls. */
   readonly onOpenDetails: () => void;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const goBack = useWorkspaceBackNavigation();
   const { startNewTask } = useAdaptiveWorkspaceLayout();
-  const terminalMenu = threadTerminalMenu(props.gitControls);
+  const terminalMenu = threadTerminalMenu(props.gitControls, m);
   const actions: AppBarAction[] = [
     {
-      accessibilityLabel: "Thread details",
+      accessibilityLabel: gt("Thread details"),
       icon: "sidebar.right",
       separateBackground: false,
       onPress: props.onOpenDetails,
@@ -34,7 +38,7 @@ export function ThreadHeader(props: {
       backInSplitView={
         props.onReturnToThread
           ? {
-              accessibilityLabel: "Return to chat",
+              accessibilityLabel: gt("Return to chat"),
               icon: "chevron.left",
               onPress: props.onReturnToThread,
             }
