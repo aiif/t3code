@@ -139,6 +139,8 @@ export interface ThreadComposerProps {
   readonly placeholder: string;
   readonly contentMaxWidth?: number;
   readonly draftControls?: ReactNode;
+  /** The thread's context readout, rendered with the composer's trailing controls. */
+  readonly contextGauge?: ReactNode;
   readonly bottomInset?: number;
   readonly connectionState: RemoteClientConnectionState;
   readonly environmentLabel: string | null;
@@ -1030,6 +1032,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   {compactControl}
                   {modelControl}
                 </Animated.View>
+                {props.contextGauge ? <View className="shrink-0">{props.contextGauge}</View> : null}
                 <ComposerDictationStartAction
                   size={usesLargeControls ? "large" : "regular"}
                   state={voiceInput.state}

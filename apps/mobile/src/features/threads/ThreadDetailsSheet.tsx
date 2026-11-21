@@ -1,5 +1,6 @@
 import { Modal, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useGT } from "gt-react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { withUniwind } from "uniwind";
 
@@ -14,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/state/token-rate";
 import type {
   ProviderInstanceId,
+  ScopedThreadRef,
   ServerConfig,
   ServerProvider,
   UsageLimitSourceSnapshots,
@@ -25,6 +27,7 @@ import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { SheetHeader } from "../../components/ui/SheetHeader";
 import { ROW_MIN_HEIGHT } from "../../components/ui/listMetrics";
 import { cn } from "../../lib/cn";
+import { useQuietThreadStructure } from "../../state/use-thread-detail";
 import { useOutputTokenRate } from "./useOutputTokenRate";
 import { useVisibleSecondClock } from "./use-visible-second-clock";
 import { useThreadGitMenuDefinition, type ThreadGitControlsProps } from "./ThreadGitControls";
@@ -133,6 +136,7 @@ export function ThreadDetailsSheet(props: {
 }) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const gt = useGT();
   const nowMs = useVisibleSecondClock(props.visible);
   const { contextWindow, rateWindow } = useContextWindowReadout(props.structure);
   const outputRate =
@@ -168,25 +172,25 @@ export function ThreadDetailsSheet(props: {
       <View className="flex-1 bg-sheet">
         <SheetHeader
           presentation="inline"
-          title="Thread details"
+          title={gt("Thread details")}
           onClose={props.onClose}
-          accessibilityLabel="Close thread details"
+          accessibilityLabel={gt("Close thread details")}
         />
         <ScrollView
           className="flex-1"
           contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
           showsVerticalScrollIndicator={false}
         >
-          <SectionTitle>Context window</SectionTitle>
+          <SectionTitle>{gt("Context window")}</SectionTitle>
           <View className="mx-4 gap-1 rounded-2xl bg-grouped-card px-4 py-3">
             {contextWindow === null ? (
               <Text className="text-sm text-foreground-muted">
-                This provider has not reported context usage yet.
+                {gt("This provider has not reported context usage yet.")}
               </Text>
             ) : (
               <>
                 <View className="flex-row items-baseline justify-between gap-3">
-                  <Text className="text-sm font-t3-medium text-foreground">Context</Text>
+                  <Text className="text-sm font-t3-medium text-foreground">{gt("Context")}</Text>
                   <Text className="text-sm text-foreground-muted tabular-nums">
                     {fill !== null
                       ? `${fill}% · ${formatTokens(contextWindow.usedTokens)}${
@@ -194,7 +198,9 @@ export function ThreadDetailsSheet(props: {
                             ? ` / ${formatTokens(contextWindow.maxTokens)}`
                             : ""
                         }`
-                      : `${formatTokens(contextWindow.usedTokens)} tokens`}
+                      : gt("{tokens} tokens", {
+                          tokens: formatTokens(contextWindow.usedTokens),
+                        })}
                   </Text>
                 </View>
                 {fill !== null ? (
@@ -207,18 +213,18 @@ export function ThreadDetailsSheet(props: {
                 ) : null}
                 {outputRate !== null ? (
                   <Text className="text-xs text-foreground-muted tabular-nums">
-                    Output {formatTokensPerSecond(outputRate)}
+                    {gt("Output {rate}", { rate: formatTokensPerSecond(outputRate) })}
                   </Text>
                 ) : null}
               </>
             )}
           </View>
 
-          <SectionTitle>Usage limits</SectionTitle>
+          <SectionTitle>{gt("Usage limits")}</SectionTitle>
           <View className="mx-4 overflow-hidden rounded-2xl bg-grouped-card">
             {limits === null ? (
               <Text className="px-4 py-3 text-sm text-foreground-muted">
-                No usage limits reported for this provider.
+                {gt("No usage limits reported for this provider.")}
               </Text>
             ) : (
               limits.windows.map((limitWindow, index) => (
@@ -234,7 +240,7 @@ export function ThreadDetailsSheet(props: {
                     {limitWindow.label}
                   </Text>
                   <Text className="text-sm text-foreground-muted tabular-nums">
-                    {remainingPercent(limitWindow)}% left
+                    {gt("{percent}% left", { percent: remainingPercent(limitWindow) })}
                   </Text>
                 </View>
               ))
@@ -243,7 +249,7 @@ export function ThreadDetailsSheet(props: {
 
           {gitRows !== undefined && gitRows.length > 0 ? (
             <>
-              <SectionTitle>Git</SectionTitle>
+              <SectionTitle>{gt("Git")}</SectionTitle>
               <View className="mx-4 overflow-hidden rounded-2xl bg-grouped-card">
                 {gitRows.map((item, index) => (
                   <ActionRow
@@ -262,12 +268,12 @@ export function ThreadDetailsSheet(props: {
 
           {props.gitControls.canOpenFiles ? (
             <>
-              <SectionTitle>Files</SectionTitle>
+              <SectionTitle>{gt("Files")}</SectionTitle>
               <View className="mx-4 overflow-hidden rounded-2xl bg-grouped-card">
                 <ActionRow
                   icon="folder"
-                  title="Open files inspector"
-                  subtitle="Browse this thread's workspace"
+                  title={gt("Open files inspector")}
+                  subtitle={gt("Browse this thread's workspace")}
                   isLast
                   onPress={props.onOpenFilesInspector}
                 />
@@ -286,14 +292,16 @@ const CONTEXT_GAUGE_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_GAUGE_RADIUS;
 
 const ThemedSvg = withUniwind(Svg);
 
-/** The always-on context readout above the composer: circular progress ring, and the output rate while streaming. */
-export function ThreadContextStatusRow(props: {
-  readonly structure: ThreadStructure | null;
+/** The composer's context readout: circular progress ring, and the output rate while streaming. */
+export function ThreadContextGauge(props: {
+  readonly detailRef: ScopedThreadRef | null;
   readonly threadActive: boolean;
   readonly onOpenDetails?: () => void;
 }) {
-  const { contextWindow, rateWindow } = useContextWindowReadout(props.structure);
+  const structure = useQuietThreadStructure(props.detailRef);
+  const { contextWindow, rateWindow } = useContextWindowReadout(structure?.projection ?? null);
   const nowMs = useVisibleSecondClock(props.threadActive);
+  const gt = useGT();
   if (contextWindow === null) return null;
   const fill =
     contextWindow.usedPercentage == null
@@ -344,14 +352,14 @@ export function ThreadContextStatusRow(props: {
       accessibilityRole="button"
       accessibilityLabel={
         fill !== null
-          ? `Context: ${fill}% used`
-          : `Context: ${formatTokens(contextWindow.usedTokens)} used`
+          ? gt("Context: {percent}% used", { percent: fill })
+          : gt("Context: {tokens} used", { tokens: formatTokens(contextWindow.usedTokens) })
       }
-      accessibilityHint={props.onOpenDetails ? "Opens thread details" : undefined}
+      accessibilityHint={props.onOpenDetails ? gt("Opens thread details") : undefined}
       disabled={!props.onOpenDetails}
       hitSlop={8}
       onPress={props.onOpenDetails}
-      className="self-center flex-row items-center gap-1.5 px-3 pb-1 active:opacity-70"
+      className="h-[44px] flex-row items-center gap-1.5 px-1 active:opacity-70"
     >
       <View style={{ transform: [{ rotate: "-90deg" }] }}>
         <ThemedSvg
