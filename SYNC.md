@@ -115,7 +115,14 @@ Pending: none.
 
 - 2026-11-21: `095_AuthPersonalKeyState` → `106_AuthPersonalKeyState` (upstream's
   `095_TurnItemInlineWorkOutput` took the old slot; upstream's new maximum was
-  `105`). A database that ran the old id keeps its row, so that row must go
-  before the merged build starts or the fork migration never re-runs under its
-  new id:
-  `DELETE FROM effect_sql_migrations WHERE migration_id = 95 AND name = 'AuthPersonalKeyState';`
+  `105`). A database that ran the old id needs one of two repairs before the
+  merged build starts, because `95` now means upstream's migration:
+  - `inline_work_output` column absent: delete the old row, then start the merged
+    build, which applies `95` and then `96`–`106`:
+    `DELETE FROM effect_sql_migrations WHERE migration_id = 95 AND name = 'AuthPersonalKeyState';`
+  - `inline_work_output` column already present (the repair was applied by hand):
+    record it as upstream's so `95` is not re-run:
+    `UPDATE effect_sql_migrations SET name = 'TurnItemInlineWorkOutput' WHERE migration_id = 95;`
+    The three databases on this machine — the live `~/.t3/userdata`, `~/.t3/dev`,
+    and this checkout's `.t3` — are already in the second state, so nothing else is
+    needed here.
