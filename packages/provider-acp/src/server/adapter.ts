@@ -578,6 +578,8 @@ export interface AcpAdapterV2Flavor {
     notification: EffectAcpSchema.SessionNotification,
   ) => boolean;
   readonly deferFinalizeForBackgroundWork?: boolean;
+  /** When false, mutations complete the tool immediately without waiting 60s for hydration. Defaults to true. */
+  readonly requiresBackgroundHydration?: boolean;
   readonly assertComplete?: Effect.Effect<void, EffectAcpErrors.AcpError>;
   /** Interrupt the local prompt fiber before `session/cancel` (Grok wedged prompts). */
   readonly interruptPromptOnCancel?: boolean;
@@ -5831,8 +5833,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                           ? ("failed" as const)
                           : ("completed" as const);
                     if (nextStatus !== "inProgress") {
-                      yield* markAwaitingBackgroundHydration(context, mutation.taskId);
-                      nextStatus = "inProgress";
+                      if (flavor.requiresBackgroundHydration !== false) {
+                        yield* markAwaitingBackgroundHydration(context, mutation.taskId);
+                        nextStatus = "inProgress";
+                      }
                     }
                     yield* emitTool(
                       context,
@@ -5841,6 +5845,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                         mutation.appendOutput,
                       ),
                     );
+                    if (nextStatus !== "inProgress") {
+                      yield* rearmDeferredFinalize(context);
+                    }
                   }
                   yield* applyBackgroundTaskMutationRunning(mutation);
                   if (mutation.status !== "running" && !reportArrivedBeforeNotice) {
@@ -9101,6 +9108,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 }),
               }
             : {}),
+          awaitBackgroundTasks: Effect.fn("AcpAdapterV2.awaitBackgroundTasks")(function* ({
+            providerThread: _providerThread,
+            taskIds,
+            awaited: _awaited,
+          }) {
+            const active = yield* Ref.get(activeTurn);
+            const running = yield* Ref.get(runningBackgroundTaskIds);
+            const matched = [...new Set(taskIds)].filter((taskId) => {
+              if (running.has(taskId)) return true;
+              if (active?.toolCallIdsByBackgroundTaskId.has(taskId)) return true;
+              return false;
+            });
+            return { matched };
+          }),
           ensureThread: Effect.fn("AcpAdapterV2.ensureThread")(
             function* (threadInput: ProviderAdapter.ProviderAdapterV2EnsureThreadInput) {
               return yield* runtimeTransitionPermit.withPermit(

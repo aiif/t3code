@@ -411,12 +411,185 @@ function withAntigravityEditPatches(
   });
 }
 
+function antigravityToolOutputText(toolCall: AcpToolCallState): string | undefined {
+  const output = toolCall.data.rawOutput;
+  if (typeof output === "string" && output.trim()) {
+    return output.trim();
+  }
+  if (Predicate.isObject(output)) {
+    const direct =
+      (typeof output.combinedOutput === "string" && output.combinedOutput) ||
+      (typeof output.combined_output === "string" && output.combined_output) ||
+      (typeof output.output === "string" && output.output) ||
+      (typeof output.text === "string" && output.text);
+    if (direct) return direct.trim();
+  }
+  if (Array.isArray(toolCall.data.content)) {
+    const textBlocks: string[] = [];
+    for (const item of toolCall.data.content) {
+      if (Predicate.isObject(item) && item.type === "text" && typeof item.text === "string") {
+        textBlocks.push(item.text);
+      }
+    }
+    if (textBlocks.length > 0) return textBlocks.join("\n").trim();
+  }
+  return undefined;
+}
+
+export function isAntigravityBackgroundStartAck(output: string | undefined): boolean {
+  if (output === undefined) return false;
+  return /Tool is running as a background task with task id:/i.test(output);
+}
+
+const ANTIGRAVITY_BG_TASK_ID_RE =
+  /Tool is running as a background task with task id:\s*([^\s\r\n]+)/i;
+
+export function extractAntigravityBackgroundTaskId(toolCall: AcpToolCallState): string | undefined {
+  const text = antigravityToolOutputText(toolCall);
+  if (text) {
+    const match = text.match(ANTIGRAVITY_BG_TASK_ID_RE);
+    if (match?.[1]) return match[1].trim();
+  }
+  const rawInput = Predicate.isObject(toolCall.data.rawInput) ? toolCall.data.rawInput : undefined;
+  if (rawInput) {
+    const inputTaskId = rawInput.TaskId ?? rawInput.taskId;
+    if (typeof inputTaskId === "string" && inputTaskId.trim()) {
+      return inputTaskId.trim();
+    }
+  }
+  return undefined;
+}
+
+export function isAntigravityBackgroundCommandTool(toolCall: AcpToolCallState): boolean {
+  const rawInput = Predicate.isObject(toolCall.data.rawInput) ? toolCall.data.rawInput : undefined;
+  if (!rawInput) return false;
+  return (
+    rawInput.IsDaemon === true ||
+    rawInput.isDaemon === true ||
+    rawInput.is_daemon === true ||
+    rawInput.IsDaemon === "true" ||
+    rawInput.isDaemon === "true" ||
+    rawInput.is_daemon === "true"
+  );
+}
+
+export function isAntigravityPersistentBackgroundTool(toolCall: AcpToolCallState): boolean {
+  return isAntigravityBackgroundCommandTool(toolCall);
+}
+
+export interface AntigravityBackgroundToolMutation {
+  readonly taskId: string;
+  readonly status: "running" | "completed" | "failed";
+  readonly appendOutput: string;
+}
+
+export function extractAntigravityBackgroundToolMutation(
+  text: string,
+): ReadonlyArray<AntigravityBackgroundToolMutation> {
+  const mutations: AntigravityBackgroundToolMutation[] = [];
+  const seen = new Set<string>();
+
+  // Match harness task finish message: Task id "..." finished with result:
+  const finishedRe =
+    /Task id\s*["']?([^\s"']+)["']?\s*finished with result:\s*([\s\S]*?)(?=(?:Task id\s*["']?[^\s"']+["']?\s*finished with result:|<\/SYSTEM_MESSAGE>|$))/gi;
+  for (const match of text.matchAll(finishedRe)) {
+    const fullTaskId = match[1]?.trim();
+    if (!fullTaskId) continue;
+    const body = match[2] ?? "";
+    const exitCodeMatch = body.match(/Command exited with code\s*(\d+)/i);
+    const killedMatch = /Command was killed/i.test(body);
+    const status: "completed" | "failed" =
+      killedMatch || (exitCodeMatch && exitCodeMatch[1] !== "0") ? "failed" : "completed";
+
+    const outputMatch = body.match(/Command output:\s*([\s\S]*?)(?=\nLog:|<\/SYSTEM_MESSAGE>|$)/i);
+    const appendOutput = (outputMatch?.[1] ?? body).trim();
+    const formattedOutput = appendOutput ? `${appendOutput}\n` : "";
+
+    const taskIds = [fullTaskId];
+    if (fullTaskId.includes("/")) {
+      taskIds.push(fullTaskId.slice(fullTaskId.lastIndexOf("/") + 1));
+    }
+    for (const taskId of taskIds) {
+      if (!seen.has(taskId)) {
+        seen.add(taskId);
+        mutations.push({ taskId, status, appendOutput: formattedOutput });
+      }
+    }
+  }
+
+  // Pattern 2: manage_task output
+  // Task: <taskId>
+  // Status: DONE | FAILED | RUNNING | KILLED
+  const manageTaskRe =
+    /Task:\s*([^\s\r\n]+)\s*\r?\nStatus:\s*(DONE|FAILED|RUNNING|KILLED)\b([\s\S]*?)(?=(?:Task:\s*[^\s\r\n]+\s*\r?\nStatus:|$))/gi;
+  for (const match of text.matchAll(manageTaskRe)) {
+    const fullTaskId = match[1]?.trim();
+    if (!fullTaskId) continue;
+    const statusStr = match[2]?.toUpperCase();
+    const status: "completed" | "failed" | "running" =
+      statusStr === "DONE" ? "completed" : statusStr === "RUNNING" ? "running" : "failed";
+    const body = match[3] ?? "";
+    const logOutputMatch = body.match(/Log output:\s*([\s\S]*?)(?=\nLast progress:|\nLog:|$)/i);
+    const appendOutput = (logOutputMatch?.[1] ?? body).trim();
+    const formattedOutput = appendOutput ? `${appendOutput}\n` : "";
+
+    const taskIds = [fullTaskId];
+    if (fullTaskId.includes("/")) {
+      taskIds.push(fullTaskId.slice(fullTaskId.lastIndexOf("/") + 1));
+    }
+    for (const taskId of taskIds) {
+      if (!seen.has(taskId)) {
+        seen.add(taskId);
+        mutations.push({ taskId, status, appendOutput: formattedOutput });
+      }
+    }
+  }
+
+  return mutations;
+}
+
+export function extractAntigravityBackgroundTaskCompletion(
+  toolCall: AcpToolCallState,
+): ReadonlyArray<AntigravityBackgroundToolMutation> {
+  const text = antigravityToolOutputText(toolCall);
+  if (text) {
+    const mutations = extractAntigravityBackgroundToolMutation(text);
+    if (mutations.length > 0) return mutations;
+  }
+  const rawInput = Predicate.isObject(toolCall.data.rawInput) ? toolCall.data.rawInput : undefined;
+  if (rawInput) {
+    const action = typeof rawInput.Action === "string" ? rawInput.Action.toLowerCase() : "";
+    const taskId =
+      typeof rawInput.TaskId === "string"
+        ? rawInput.TaskId.trim()
+        : typeof rawInput.taskId === "string"
+          ? rawInput.taskId.trim()
+          : undefined;
+    if (taskId && action === "kill" && toolCall.status === "completed") {
+      const taskIds = [taskId];
+      if (taskId.includes("/")) taskIds.push(taskId.slice(taskId.lastIndexOf("/") + 1));
+      return taskIds.map((id) => ({
+        taskId: id,
+        status: "failed" as const,
+        appendOutput: "Task killed.\n",
+      }));
+    }
+  }
+  return [];
+}
+
 export function normalizeAntigravityToolCall(
   toolCall: AcpToolCallState,
   readPreEditFile = readAntigravityPreEditFile,
 ): AcpToolCallState {
   const input = Option.getOrUndefined(decodeNativeToolFields(toolCall.data.rawInput));
   const output = Option.getOrUndefined(decodeNativeToolFields(toolCall.data.rawOutput));
+  const rawOutputText = antigravityToolOutputText(toolCall);
+  const isBackgroundStart = isAntigravityBackgroundStartAck(rawOutputText);
+  const status =
+    toolCall.status === "completed" && isBackgroundStart
+      ? ("inProgress" as const)
+      : toolCall.status;
   const nativeCommand =
     input?.CommandLine ??
     input?.command_line ??
@@ -436,7 +609,12 @@ export function normalizeAntigravityToolCall(
     output?.working_dir;
   const cwd = nativeCwd?.trim() ? boundText(nativeCwd.trim()) : undefined;
   const nativeOutput = output?.combinedOutput ?? output?.combined_output;
-  const aggregatedOutput = nativeOutput === undefined ? undefined : boundText(nativeOutput);
+  const aggregatedOutput =
+    nativeOutput === undefined
+      ? rawOutputText === undefined
+        ? undefined
+        : boundText(rawOutputText)
+      : boundText(nativeOutput);
   const exitCode = output?.exitCode ?? output?.exit_code;
   const imagePath = localImagePath(output?.imagePath);
   const sanitizedData = sanitizeAntigravityToolPayload(toolCall.data);
@@ -468,6 +646,7 @@ export function normalizeAntigravityToolCall(
   }
   return {
     ...toolCall,
+    ...(status !== undefined ? { status } : {}),
     ...(kind !== undefined ? { kind } : {}),
     ...(command !== undefined ? { command } : {}),
     ...(toolCall.title !== undefined ? { title: boundText(toolCall.title) } : {}),

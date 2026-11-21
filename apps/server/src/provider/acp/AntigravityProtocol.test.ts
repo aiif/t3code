@@ -8,6 +8,11 @@ import {
   antigravityApprovalOptions,
   antigravitySubagentOutput,
   classifyAntigravitySubagentToolCall,
+  extractAntigravityBackgroundTaskId,
+  extractAntigravityBackgroundTaskCompletion,
+  extractAntigravityBackgroundToolMutation,
+  isAntigravityBackgroundCommandTool,
+  isAntigravityBackgroundStartAck,
   isAntigravityUserInputRequest,
   makeAntigravityUserInputResponse,
   normalizeAntigravitySessionUpdate,
@@ -621,5 +626,203 @@ describe("Antigravity served reads", () => {
       toolCallId: "call_current",
       status: "completed",
     });
+  });
+});
+
+describe("Antigravity background tasks", () => {
+  it("detects background task start ACKs and extracts task IDs", () => {
+    const output =
+      "Created At: 2026-11-21T13:00:06+08:00\nTool is running as a background task with task id: e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260\nTask Description: npm run build\nTask logs are available at: ...";
+    expect(isAntigravityBackgroundStartAck(output)).toBe(true);
+    expect(isAntigravityBackgroundStartAck("Command executed successfully")).toBe(false);
+
+    const toolCall = {
+      toolCallId: "call-1",
+      status: "completed" as const,
+      kind: "execute" as const,
+      data: {
+        rawOutput: output,
+      },
+    };
+    expect(extractAntigravityBackgroundTaskId(toolCall)).toBe(
+      "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+    );
+  });
+
+  it("extracts task ID from manage_task input", () => {
+    const toolCall = {
+      toolCallId: "call-2",
+      status: "completed" as const,
+      kind: "other" as const,
+      data: {
+        rawInput: {
+          Action: "status",
+          TaskId: "task-260",
+        },
+      },
+    };
+    expect(extractAntigravityBackgroundTaskId(toolCall)).toBe("task-260");
+  });
+
+  it("identifies daemon commands vs normal background commands", () => {
+    const daemonTool = {
+      toolCallId: "call-daemon",
+      status: "completed" as const,
+      kind: "execute" as const,
+      data: {
+        rawInput: {
+          CommandLine: "npm run dev",
+          IsDaemon: true,
+        },
+      },
+    };
+    expect(isAntigravityBackgroundCommandTool(daemonTool)).toBe(true);
+
+    const buildTool = {
+      toolCallId: "call-build",
+      status: "completed" as const,
+      kind: "execute" as const,
+      data: {
+        rawInput: {
+          CommandLine: "npm run build",
+          WaitMsBeforeAsync: 500,
+        },
+      },
+    };
+    expect(isAntigravityBackgroundCommandTool(buildTool)).toBe(false);
+  });
+
+  it("normalizes background start ACKs to inProgress status", () => {
+    const toolCall = {
+      toolCallId: "call-build-1",
+      status: "completed" as const,
+      kind: "execute" as const,
+      data: {
+        rawInput: { CommandLine: "npm run build" },
+        rawOutput:
+          "Tool is running as a background task with task id: e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+      },
+    };
+    const normalized = normalizeAntigravityToolCall(toolCall);
+    expect(normalized.status).toBe("inProgress");
+
+    const normalCompletedTool = {
+      toolCallId: "call-pwd",
+      status: "completed" as const,
+      kind: "execute" as const,
+      data: {
+        rawInput: { CommandLine: "pwd" },
+        rawOutput: "/home/user/project",
+      },
+    };
+    const normalizedNormal = normalizeAntigravityToolCall(normalCompletedTool);
+    expect(normalizedNormal.status).toBe("completed");
+  });
+
+  it("parses task completion mutations from system messages", () => {
+    const successMessage = [
+      "<SYSTEM_MESSAGE>",
+      '[Message] timestamp=2026-11-21T05:00:08Z sender=e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260 priority=MESSAGE_PRIORITY_HIGH content=Task id "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260" finished with result:',
+      "Command exited with code 0.",
+      "",
+      "Command output:",
+      "Build succeeded!",
+      "",
+      "Log: file:///path/to/task-260.log",
+      "</SYSTEM_MESSAGE>",
+    ].join("\n");
+
+    const mutations = extractAntigravityBackgroundToolMutation(successMessage);
+    expect(mutations).toContainEqual({
+      taskId: "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+      status: "completed",
+      appendOutput: "Build succeeded!\n",
+    });
+    // Also matches short ID for convenience
+    expect(mutations).toContainEqual({
+      taskId: "task-260",
+      status: "completed",
+      appendOutput: "Build succeeded!\n",
+    });
+
+    const failureMessage = [
+      'Task id "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-261" finished with result:',
+      "Command exited with code 1.",
+      "",
+      "Command output:",
+      "SyntaxError: unexpected token",
+    ].join("\n");
+
+    const failMutations = extractAntigravityBackgroundToolMutation(failureMessage);
+    expect(failMutations).toContainEqual({
+      taskId: "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-261",
+      status: "failed",
+      appendOutput: "SyntaxError: unexpected token\n",
+    });
+
+    const killedMessage = [
+      'Task id "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-262" finished with result:',
+      "Command was killed.",
+    ].join("\n");
+
+    const killedMutations = extractAntigravityBackgroundToolMutation(killedMessage);
+    expect(killedMutations).toContainEqual({
+      taskId: "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-262",
+      status: "failed",
+      appendOutput: "Command was killed.\n",
+    });
+  });
+
+  it("parses task mutations from manage_task output", () => {
+    const manageOutput = [
+      "Task: e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+      "Status: DONE",
+      "Log: file:///path/to/log",
+      "Log output:",
+      "Build complete.",
+      "",
+      "Last progress: 2s ago",
+    ].join("\n");
+
+    const mutations = extractAntigravityBackgroundToolMutation(manageOutput);
+    expect(mutations).toContainEqual({
+      taskId: "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+      status: "completed",
+      appendOutput: "Build complete.\n",
+    });
+
+    const toolCall = {
+      toolCallId: "manage-1",
+      status: "completed" as const,
+      data: {
+        rawOutput: manageOutput,
+      },
+    };
+    const completions = extractAntigravityBackgroundTaskCompletion(toolCall);
+    expect(completions).toContainEqual({
+      taskId: "task-260",
+      status: "completed",
+      appendOutput: "Build complete.\n",
+    });
+  });
+
+  it("treats manage_task kill action as failing the task", () => {
+    const killToolCall = {
+      toolCallId: "manage-kill",
+      status: "completed" as const,
+      data: {
+        rawInput: {
+          Action: "kill",
+          TaskId: "task-999",
+        },
+      },
+    };
+    expect(extractAntigravityBackgroundTaskCompletion(killToolCall)).toEqual([
+      {
+        taskId: "task-999",
+        status: "failed",
+        appendOutput: "Task killed.\n",
+      },
+    ]);
   });
 });

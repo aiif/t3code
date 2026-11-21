@@ -135,6 +135,54 @@ describe("AntigravityAdapterV2 flavor", () => {
       outcome: { outcome: "selected", optionId: "opt-dev" },
     });
   });
+
+  it("configures background task tracking and deferred finalization", () => {
+    assert.isTrue(flavor.deferFinalizeForBackgroundWork);
+    assert.isTrue(flavor.enablePostSettleContinuation);
+    assert.isFalse(flavor.requiresBackgroundHydration);
+
+    const bgToolCall = {
+      toolCallId: "call-build",
+      status: "completed" as const,
+      data: {
+        rawInput: { CommandLine: "npm run build" },
+        rawOutput:
+          "Tool is running as a background task with task id: e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+      },
+    };
+    assert.equal(
+      flavor.extractBackgroundTaskId?.(bgToolCall),
+      "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+    );
+    assert.isFalse(flavor.isBackgroundCommandTool?.(bgToolCall));
+
+    const daemonToolCall = {
+      toolCallId: "call-daemon",
+      status: "completed" as const,
+      data: {
+        rawInput: { CommandLine: "npm run dev", IsDaemon: true },
+        rawOutput:
+          "Tool is running as a background task with task id: e4c6850c-bdc4-466a-ac43-4990238d32c4/task-261",
+      },
+    };
+    assert.isTrue(flavor.isBackgroundCommandTool?.(daemonToolCall));
+
+    const mutations = flavor.extractBackgroundToolMutation?.(
+      'Task id "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260" finished with result:\nCommand exited with code 0.\n\nCommand output:\nBuild passed\n',
+    );
+    assert.deepEqual(mutations, [
+      {
+        taskId: "e4c6850c-bdc4-466a-ac43-4990238d32c4/task-260",
+        status: "completed",
+        appendOutput: "Build passed\n",
+      },
+      {
+        taskId: "task-260",
+        status: "completed",
+        appendOutput: "Build passed\n",
+      },
+    ]);
+  });
 });
 
 const layerSession = Layer.mergeAll(
