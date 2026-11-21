@@ -37,6 +37,7 @@ export interface DesktopSettings {
   readonly tailscaleServePort: number;
   readonly updateChannel: DesktopUpdateChannel;
   readonly updateChannelConfiguredByUser: boolean;
+  readonly autoDownloadUpdates: boolean;
   readonly wslBackendEnabled: boolean;
   readonly wslDistro: string | null;
   // Requires restart because the pool chooses its primary spec at layer initialization.
@@ -78,6 +79,7 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
   updateChannel: "latest",
   updateChannelConfiguredByUser: false,
+  autoDownloadUpdates: true,
   wslBackendEnabled: false,
   wslDistro: null,
   wslOnly: false,
@@ -105,6 +107,7 @@ const DesktopSettingsDocument = Schema.Struct({
   tailscaleServePort: optionalReadableKey(Schema.Number),
   updateChannel: optionalReadableKey(DesktopUpdateChannelSchema),
   updateChannelConfiguredByUser: optionalReadableKey(Schema.Boolean),
+  autoDownloadUpdates: optionalReadableKey(Schema.Boolean),
   wslBackendEnabled: optionalReadableKey(Schema.Boolean),
   wslMode: optionalReadableKey(Schema.Literals(["local", "wsl"])),
   wslDistro: optionalReadableKey(Schema.NullOr(Schema.String)),
@@ -169,6 +172,9 @@ export class DesktopAppSettings extends Context.Service<
     }) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setUpdateChannel: (
       channel: DesktopUpdateChannel,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
+    readonly setAutoDownloadUpdates: (
+      enabled: boolean,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setWslBackendEnabled: (
       enabled: boolean,
@@ -237,6 +243,7 @@ function normalizeDesktopSettingsDocument(
       ? Option.getOrElse(parsedUpdateChannel, () => defaultSettings.updateChannel)
       : defaultSettings.updateChannel,
     updateChannelConfiguredByUser,
+    autoDownloadUpdates: parsed.autoDownloadUpdates !== false,
     wslBackendEnabled,
     wslDistro: normalizeWslDistro(parsed.wslDistro),
     wslOnly: parsed.wslOnly === true,
@@ -276,6 +283,9 @@ function toDesktopSettingsDocument(
   }
   if (settings.updateChannelConfiguredByUser !== defaults.updateChannelConfiguredByUser) {
     document.updateChannelConfiguredByUser = settings.updateChannelConfiguredByUser;
+  }
+  if (settings.autoDownloadUpdates !== defaults.autoDownloadUpdates) {
+    document.autoDownloadUpdates = settings.autoDownloadUpdates;
   }
   if (settings.wslBackendEnabled !== defaults.wslBackendEnabled) {
     document.wslBackendEnabled = settings.wslBackendEnabled;
@@ -345,6 +355,15 @@ function setUpdateChannel(
         ...settings,
         updateChannel: requestedChannel,
         updateChannelConfiguredByUser: true,
+      };
+}
+
+function setAutoDownloadUpdates(settings: DesktopSettings, enabled: boolean): DesktopSettings {
+  return settings.autoDownloadUpdates === enabled
+    ? settings
+    : {
+        ...settings,
+        autoDownloadUpdates: enabled,
       };
 }
 
@@ -577,6 +596,13 @@ export const make = Effect.gen(function* () {
 
       return yield* persist((settings) => setUpdateChannel(settings, channel));
     }),
+    setAutoDownloadUpdates: Effect.fn("desktop.settings.setAutoDownloadUpdates")(
+      function* (enabled) {
+        yield* Effect.annotateCurrentSpan({ enabled });
+
+        return yield* persist((settings) => setAutoDownloadUpdates(settings, enabled));
+      },
+    ),
     setWslBackendEnabled: Effect.fn("desktop.settings.setWslBackendEnabled")(function* (enabled) {
       yield* Effect.annotateCurrentSpan({ enabled });
 
@@ -646,6 +672,11 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
         setUpdateChannel: Effect.fn("DesktopAppSettings.setUpdateChannel")(function (channel) {
           return update((settings) => setUpdateChannel(settings, channel));
         }),
+        setAutoDownloadUpdates: Effect.fn("DesktopAppSettings.setAutoDownloadUpdates")(
+          function (enabled) {
+            return update((settings) => setAutoDownloadUpdates(settings, enabled));
+          },
+        ),
         setWslBackendEnabled: Effect.fn("DesktopAppSettings.setWslBackendEnabled")(
           function (enabled) {
             return update((settings) => setWslBackendEnabled(settings, enabled));

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   createAppUpdateDeferral,
   installAppUpdateChecks,
+  isAppUpdateCheckAvailable,
   runAppUpdateCheck,
   type AppUpdateCheckState,
   type AppUpdateClient,
@@ -11,7 +12,7 @@ import {
 } from "./app-updates";
 
 vi.mock("expo-updates", () => ({
-  isEnabled: true,
+  isEnabled: false,
   checkForUpdateAsync: vi.fn(),
   fetchUpdateAsync: vi.fn(),
   reloadAsync: vi.fn(),
@@ -21,6 +22,9 @@ vi.mock("react-native", () => ({
   AppState: {
     currentState: "active",
     addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+  },
+  Platform: {
+    OS: "android",
   },
 }));
 
@@ -314,5 +318,16 @@ describe("installAppUpdateChecks", () => {
     dispose();
 
     expect(remove).toHaveBeenCalledOnce();
+  });
+});
+
+describe("isAppUpdateCheckAvailable", () => {
+  it("returns true on Android even when Expo Updates.isEnabled is false", () => {
+    expect(isAppUpdateCheckAvailable()).toBe(true);
+  });
+
+  it("honors custom client isEnabled flag", () => {
+    expect(isAppUpdateCheckAvailable({ isEnabled: false })).toBe(false);
+    expect(isAppUpdateCheckAvailable({ isEnabled: true })).toBe(true);
   });
 });

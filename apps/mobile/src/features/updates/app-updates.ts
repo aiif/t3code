@@ -1,6 +1,6 @@
 import * as Updates from "expo-updates";
 // Metro namespace imports evaluate unrelated React Native getters, including unavailable native modules.
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 
 import {
   type AtomCommandResult,
@@ -86,9 +86,17 @@ const UPDATE_CHECK_UNAVAILABLE_ERROR_CODES = new Set([
 ]);
 let appUpdateCheckInFlight: AppUpdateCheckInFlight | undefined;
 
+let lastPromptedGitHubVersion: string | undefined;
+
 /** Expo's development launcher reports updates as enabled even though its OTA APIs reject. */
 export function isAppUpdateCheckAvailable(client: Pick<AppUpdateClient, "isEnabled"> = Updates) {
-  return client.isEnabled && !(typeof __DEV__ !== "undefined" && __DEV__);
+  if (client !== Updates) {
+    return client.isEnabled && !(typeof __DEV__ !== "undefined" && __DEV__);
+  }
+  if (Updates.isEnabled && !(typeof __DEV__ !== "undefined" && __DEV__)) {
+    return true;
+  }
+  return Platform?.OS === "android";
 }
 
 export function registerHiddenUpdateTap(count: number): {
@@ -143,7 +151,7 @@ export async function runAppUpdateCheck(options: AppUpdateCheckOptions = {}): Pr
   // Publish the operation before any state listener can synchronously re-enter.
   appUpdateCheckInFlight = inFlight;
 
-  const execution = performAppUpdateCheck(client, {
+  const executionOptions: AppUpdateCheckOptions = {
     applyMode: options.applyMode,
     deferral: options.deferral,
     environment: options.environment,
@@ -155,7 +163,13 @@ export async function runAppUpdateCheck(options: AppUpdateCheckOptions = {}): Pr
       progress.state = state;
       notifyListeners(stateListeners, state);
     },
-  });
+  };
+
+  const isGitHubUpdate = client === Updates && !Updates.isEnabled;
+  const execution = isGitHubUpdate
+    ? performGitHubMobileAppUpdateCheck(executionOptions)
+    : performAppUpdateCheck(client, executionOptions);
+
   void execution.then(deferred.resolve, deferred.reject);
 
   try {
@@ -164,6 +178,94 @@ export async function runAppUpdateCheck(options: AppUpdateCheckOptions = {}): Pr
     if (appUpdateCheckInFlight === inFlight) {
       appUpdateCheckInFlight = undefined;
     }
+  }
+}
+
+async function performGitHubMobileAppUpdateCheck(options: AppUpdateCheckOptions): Promise<void> {
+  const setState = options.onStateChange ?? (() => {});
+  const onFailure = options.onFailure;
+  setState("checking");
+
+  try {
+    const { checkMobileAppUpdate, downloadAndInstallMobileUpdate } =
+      await import("./github-apk-updates");
+    const updateInfo = await checkMobileAppUpdate();
+    if (!updateInfo) {
+      setState("idle");
+      onFailure?.("Could not check for updates.");
+      return;
+    }
+
+    if (!updateInfo.isAvailable) {
+      setState("current");
+      return;
+    }
+
+    setState("ready");
+
+    const Dialog = await import("../../components/ui/Dialog");
+    const sizeStr = updateInfo.apkSize
+      ? ` (${(updateInfo.apkSize / (1024 * 1024)).toFixed(1)} MB)`
+      : "";
+
+    if (options.applyMode === "immediate") {
+      const message = [
+        `Version ${updateInfo.latestVersion} is available${sizeStr}.`,
+        updateInfo.releaseNotes ? `Release notes:\n${updateInfo.releaseNotes}` : null,
+        "Would you like to download and install it now?",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      Dialog.confirm({
+        title: "Update Available",
+        message,
+        confirmText: "Download & Install",
+        cancelText: "Later",
+        onConfirm: () => {
+          void (async () => {
+            try {
+              setState("downloading");
+              await downloadAndInstallMobileUpdate(updateInfo);
+              setState("ready");
+            } catch (error) {
+              setState("idle");
+              onFailure?.(error instanceof Error ? error.message : "Download or install failed.");
+            }
+          })();
+        },
+        onCancel: () => {
+          setState("ready");
+        },
+      });
+    } else {
+      if (lastPromptedGitHubVersion === updateInfo.latestVersion) {
+        return;
+      }
+      lastPromptedGitHubVersion = updateInfo.latestVersion;
+
+      Dialog.confirm({
+        title: "Update Available",
+        message: `T3 Code ${updateInfo.latestVersion} is available${sizeStr}. Update now?`,
+        confirmText: "Update",
+        cancelText: "Later",
+        onConfirm: () => {
+          void (async () => {
+            try {
+              setState("downloading");
+              await downloadAndInstallMobileUpdate(updateInfo);
+              setState("ready");
+            } catch (error) {
+              setState("idle");
+              onFailure?.(error instanceof Error ? error.message : "Download or install failed.");
+            }
+          })();
+        },
+      });
+    }
+  } catch (error) {
+    setState("idle");
+    onFailure?.(error instanceof Error ? error.message : "Could not check for updates.");
   }
 }
 

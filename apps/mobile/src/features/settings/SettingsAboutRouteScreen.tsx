@@ -12,7 +12,6 @@ import { useDeadlinePassed } from "../../lib/clock";
 import {
   type AppUpdateCheckState,
   isAppUpdateCheckAvailable,
-  registerHiddenUpdateTap,
   runAppUpdateCheck,
 } from "../updates/app-updates";
 import { SettingsRow } from "./components/SettingsRow";
@@ -47,7 +46,6 @@ function AppSettingsSection() {
   const updateState =
     checkState.state === "current" && confirmationExpired ? "idle" : checkState.state;
   const updateInFlight = useRef(false);
-  const hiddenUpdateTapCount = useRef(0);
 
   const version = Constants.expoConfig?.version ?? "0.0.0";
   // Match app.config.ts's production fallback to avoid mislabeling builds as development.
@@ -79,11 +77,7 @@ function AppSettingsSection() {
 
   function handleVersionPress() {
     if (!updateCheckAvailable || updateInFlight.current) return;
-    const tap = registerHiddenUpdateTap(hiddenUpdateTapCount.current);
-    hiddenUpdateTapCount.current = tap.nextCount;
-    if (tap.shouldCheck) {
-      void checkForUpdate();
-    }
+    void checkForUpdate();
   }
 
   const statusLabel =
@@ -128,6 +122,15 @@ function AppSettingsSection() {
         target="SettingsOpenSourceLicenses"
       />
       <SettingsRow icon="doc.text" label="Legal" fullScreenTarget="SettingsLegal" />
+      {updateCheckAvailable ? (
+        <SettingsRow
+          icon="arrow.clockwise"
+          label="Check for updates"
+          value={statusLabel ?? undefined}
+          disabled={busy}
+          onPress={() => void checkForUpdate()}
+        />
+      ) : null}
       {updateCheckAvailable ? (
         <Pressable
           accessibilityLabel={`Version ${versionLabel}`}

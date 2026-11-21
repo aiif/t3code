@@ -60,6 +60,7 @@ class T3NativeControlsModule : Module() {
       val intent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(contentUri, mimeType)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
       filePreviewPromise = promise
       try {
@@ -68,6 +69,23 @@ class T3NativeControlsModule : Module() {
         filePreviewPromise = null
         throw error
       }
+    }
+
+    AsyncFunction("installApk") { uri: String ->
+      val activity = appContext.currentActivity ?: error("The app is not active.")
+      val file = File(URI(uri)).canonicalFile
+      require(file.isFile) { "The APK file is no longer available." }
+      val contentUri = FileProvider.getUriForFile(
+        activity,
+        "${activity.packageName}.FileSystemFileProvider",
+        file
+      )
+      val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(contentUri, "application/vnd.android.package-archive")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      activity.startActivity(intent)
     }
 
     AsyncFunction("saveImageToLibrary") { uri: String, mimeType: String, name: String ->

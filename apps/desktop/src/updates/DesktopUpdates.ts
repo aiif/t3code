@@ -1234,8 +1234,9 @@ export const make = Effect.gen(function* () {
       }
       yield* Ref.set(updaterConfiguredRef, true);
 
-      yield* electronUpdater.setAutoDownload(false);
-      yield* electronUpdater.setAutoInstallOnAppQuit(false);
+      const autoDownload = settings.autoDownloadUpdates !== false;
+      yield* electronUpdater.setAutoDownload(autoDownload);
+      yield* electronUpdater.setAutoInstallOnAppQuit(autoDownload);
       yield* applyAutoUpdaterChannel(settings.updateChannel);
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo),

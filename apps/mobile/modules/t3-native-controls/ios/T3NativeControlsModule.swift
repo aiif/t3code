@@ -66,6 +66,10 @@ public final class T3NativeControlsModule: Module {
       try T3DpopKeys.sign(privateKey: privateKey, signingInput: signingInput)
     }
 
+    AsyncFunction("installApk") { (_: String) in
+      // No-op on iOS
+    }
+
     AsyncFunction("presentVideo") { (url: URL, title: String, sourceIdentifier: String, identifier: String, promise: Promise) in
       try self.presentVideo(
         url: url,
