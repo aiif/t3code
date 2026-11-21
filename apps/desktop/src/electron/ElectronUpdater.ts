@@ -7,6 +7,7 @@ import * as Scope from "effect/Scope";
 import { AppImageUpdater, autoUpdater } from "electron-updater";
 
 type AutoUpdater = typeof autoUpdater;
+type AutoUpdaterCancellationToken = NonNullable<Parameters<AutoUpdater["downloadUpdate"]>[0]>;
 type SpawnLog = (cmd: string, args?: Array<string>, ...rest: Array<unknown>) => Promise<boolean>;
 
 // Electron holds the AppImage runtime's keepalive pipe and some files without O_CLOEXEC; a
@@ -30,6 +31,13 @@ const relaunchWithoutInheritedDescriptors = (updater: AppImageUpdater) => {
 
 export type ElectronUpdaterFeedUrl = Parameters<AutoUpdater["setFeedURL"]>[0];
 
+// electron-updater only hands the token back from checkForUpdates, so keep the one its
+// automatic download uses and pass it into a manual download too.
+const downloadCancellation: {
+  lastCheck: AutoUpdaterCancellationToken | undefined;
+  active: AutoUpdaterCancellationToken | undefined;
+} = { lastCheck: undefined, active: undefined };
+
 export class ElectronUpdaterCheckForUpdatesError extends Schema.TaggedError<ElectronUpdaterCheckForUpdatesError>()(
   "ElectronUpdaterCheckForUpdatesError",
   {
@@ -47,6 +55,7 @@ export class ElectronUpdaterDownloadUpdateError extends Schema.TaggedError<Elect
   {
     channel: Schema.NullOr(Schema.String),
     cause: Schema.Defect(),
+    cancelled: Schema.optionalKey(Schema.Boolean),
   },
 ) {
   override get message(): string {
@@ -89,6 +98,8 @@ export class ElectronUpdater extends Context.Service<
     readonly setDisableDifferentialDownload: (value: boolean) => Effect.Effect<void>;
     readonly checkForUpdates: Effect.Effect<void, ElectronUpdaterCheckForUpdatesError>;
     readonly downloadUpdate: Effect.Effect<void, ElectronUpdaterDownloadUpdateError>;
+    /** Cancels the active download, including one electron-updater started itself. */
+    readonly cancelDownload: Effect.Effect<boolean>;
     readonly quitAndInstall: (options: {
       readonly isSilent: boolean;
       readonly isForceRunAfter: boolean;
@@ -158,14 +169,59 @@ export const make = ElectronUpdater.of({
     return Effect.tryPromise({
       try: () => autoUpdater.checkForUpdates(),
       catch: (cause) => new ElectronUpdaterCheckForUpdatesError({ channel, cause }),
-    }).pipe(Effect.asVoid);
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          if (result === null) return;
+          downloadCancellation.lastCheck = result.cancellationToken;
+          const downloadPromise = result.downloadPromise;
+          if (downloadPromise == null) return;
+          downloadCancellation.active = result.cancellationToken;
+          // An automatic download is otherwise an unobserved promise, so its rejection is unhandled.
+          void downloadPromise
+            .catch(() => undefined)
+            .finally(() => {
+              if (downloadCancellation.active === result.cancellationToken) {
+                downloadCancellation.active = undefined;
+              }
+            });
+        }),
+      ),
+      Effect.asVoid,
+    );
   }),
   downloadUpdate: Effect.suspend(() => {
     const channel = autoUpdater.channel;
+    const cancellationToken = downloadCancellation.lastCheck;
+    if (cancellationToken !== undefined) downloadCancellation.active = cancellationToken;
     return Effect.tryPromise({
-      try: () => autoUpdater.downloadUpdate(),
-      catch: (cause) => new ElectronUpdaterDownloadUpdateError({ channel, cause }),
-    }).pipe(Effect.asVoid);
+      try: () => autoUpdater.downloadUpdate(cancellationToken),
+      catch: (cause) =>
+        new ElectronUpdaterDownloadUpdateError({
+          channel,
+          cause,
+          cancelled: cancellationToken?.cancelled === true,
+        }),
+    }).pipe(
+      Effect.asVoid,
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (downloadCancellation.active === cancellationToken) {
+            downloadCancellation.active = undefined;
+          }
+        }),
+      ),
+    );
+  }),
+  cancelDownload: Effect.sync(() => {
+    const cancellationToken = downloadCancellation.active;
+    if (cancellationToken === undefined || cancellationToken.cancelled) return false;
+    downloadCancellation.active = undefined;
+    if (downloadCancellation.lastCheck === cancellationToken) {
+      downloadCancellation.lastCheck = undefined;
+    }
+    cancellationToken.cancel();
+    return true;
   }),
   quitAndInstall: Effect.fn("ElectronUpdater.quitAndInstall")(function ({
     isSilent,

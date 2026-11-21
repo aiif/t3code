@@ -43,9 +43,9 @@ import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateCancelConfirmationMessage,
   getDesktopUpdateDisabledReason,
   getDesktopUpdateInstallConfirmationMessage,
-  isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
@@ -127,7 +127,7 @@ import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentSessionStatesAtom } from "~/state/session";
 import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer } from "../ServerUpdateAction";
-import { downloadLocalUpdate } from "../sidebar/SidebarUpdatePill";
+import { cancelLocalUpdate, downloadLocalUpdate } from "../sidebar/SidebarUpdatePill";
 import { useUpdateEverythingRun } from "../sidebar/updateEverythingRun";
 import { awaitsTrackSwitch, channelSwitchLabel } from "../sidebar/updateEverything.logic";
 import { isHostedByThisApp } from "../sidebar/useUpdateEverything";
@@ -219,6 +219,37 @@ function AboutVersionSection() {
     const bridge = window.desktopBridge;
     if (!bridge) return;
 
+    if (updateState?.status === "downloading") {
+      if (isUpdateActionPending) return;
+      setIsUpdateActionPending(true);
+      let confirmed = false;
+      try {
+        confirmed = await ensureLocalApi().dialogs.confirm(
+          getDesktopUpdateCancelConfirmationMessage(resolveMessage),
+          { variant: "destructive" },
+        );
+      } catch (error) {
+        setIsUpdateActionPending(false);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Could not confirm update"),
+            description:
+              error instanceof Error
+                ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
+                : gt("Update confirmation failed."),
+          }),
+        );
+        return;
+      }
+      if (!confirmed) {
+        setIsUpdateActionPending(false);
+        return;
+      }
+      void cancelLocalUpdate(bridge).finally(() => setIsUpdateActionPending(false));
+      return;
+    }
+
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
     if (action === "download") {
@@ -305,22 +336,36 @@ function AboutVersionSection() {
       });
   };
 
+  const handleCardCancelDownload = () => {
+    const bridge = window.desktopBridge;
+    if (!bridge || isUpdateActionPending) return;
+    setIsUpdateActionPending(true);
+    void cancelLocalUpdate(bridge).finally(() => setIsUpdateActionPending(false));
+  };
+
   const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
   const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState, messages) : null;
   const buttonDisabled =
-    action === "none"
-      ? !canCheckForUpdate(updateState)
-      : isDesktopUpdateButtonDisabled(updateState);
+    updateState?.status === "downloading"
+      ? false
+      : action === "none"
+        ? !canCheckForUpdate(updateState)
+        : false;
 
   const actionLabel: Record<string, string> = { download: gt("Download"), install: gt("Install") };
   const statusLabel: Record<string, string> = {
     checking: gt("Checking…"),
-    downloading: gt("Downloading…"),
     // Off its track, "up to date" only means no switch is pending; Review moves it.
     ...(appOffTrack ? {} : { "up-to-date": gt("Up to Date") }),
   };
+  const downloadPercent =
+    updateState?.status === "downloading"
+      ? Math.min(100, Math.max(0, Math.floor(updateState.downloadPercent ?? 0)))
+      : 0;
   const buttonLabel =
-    actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? gt("Check for Updates");
+    updateState?.status === "downloading"
+      ? gt("Downloading {percent}%", { percent: downloadPercent })
+      : (actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? gt("Check for Updates"));
   const description =
     action === "download" || action === "install"
       ? gt("Update available.")
@@ -352,6 +397,45 @@ function AboutVersionSection() {
           </Tooltip>
         }
       />
+      {hasDesktopBridge && updateState?.status === "downloading" ? (
+        <SettingsRow
+          title={
+            updateState.availableVersion
+              ? gt("Downloading update {version}", { version: updateState.availableVersion })
+              : gt("Downloading update")
+          }
+          description={
+            <span className="flex flex-col gap-2">
+              <span className="text-xs tabular-nums">
+                {gt("Downloading {percent}%", { percent: downloadPercent })}
+              </span>
+              <span
+                role="progressbar"
+                aria-label={gt("Downloading update")}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={downloadPercent}
+                className="block h-1.5 w-full overflow-hidden rounded-full bg-muted"
+              >
+                <span
+                  className="block h-full rounded-full bg-primary transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                  style={{ width: `${Math.max(2, downloadPercent)}%` }}
+                />
+              </span>
+            </span>
+          }
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isUpdateActionPending}
+              onClick={handleCardCancelDownload}
+            >
+              {gt("Cancel download")}
+            </Button>
+          }
+        />
+      ) : null}
       {hasDesktopBridge ? (
         <SettingsRow
           {...setting("update-track")}

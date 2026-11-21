@@ -49,6 +49,7 @@ import {
   createInitialDesktopUpdateState,
   reduceDesktopUpdateStateOnCheckFailure,
   reduceDesktopUpdateStateOnCheckStart,
+  reduceDesktopUpdateStateOnDownloadCancel,
   reduceDesktopUpdateStateOnDownloadComplete,
   reduceDesktopUpdateStateOnDownloadFailure,
   reduceDesktopUpdateStateOnDownloadProgress,
@@ -217,6 +218,7 @@ export class DesktopUpdates extends Context.Service<
       options?: { readonly allowDowngrade?: boolean },
     ) => Effect.Effect<DesktopUpdateCheckResult>;
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
+    readonly cancelDownload: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
     readonly installPrepared: (
       expectedVersion: string,
@@ -714,6 +716,15 @@ export const make = Effect.gen(function* () {
       Effect.catchTags({
         ElectronUpdaterDownloadUpdateError: Effect.fn("desktop.updates.handleDownloadFailure")(
           function* (error) {
+            if (error.cancelled === true) {
+              yield* updateState((current) =>
+                current.status === "downloading"
+                  ? reduceDesktopUpdateStateOnDownloadCancel(current)
+                  : current,
+              );
+              yield* logUpdaterInfo("cancelled update download");
+              return { accepted: true, completed: false };
+            }
             const cause = describeUpdateErrorCause(error.cause);
             yield* updateState((current) =>
               reduceDesktopUpdateStateOnDownloadFailure(current, `${error.message} ${cause}`),
@@ -728,9 +739,14 @@ export const make = Effect.gen(function* () {
         ),
       }),
       Effect.onInterrupt(() =>
-        updateState((current) => (current.status === "downloading" ? state : current)).pipe(
-          Effect.asVoid,
-        ),
+        Effect.gen(function* () {
+          yield* electronUpdater.cancelDownload;
+          yield* updateState((current) =>
+            current.status === "downloading"
+              ? reduceDesktopUpdateStateOnDownloadCancel(current)
+              : current,
+          );
+        }),
       ),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
@@ -1223,6 +1239,15 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const handleUpdateCancelled = Effect.gen(function* () {
+    yield* updateState((current) =>
+      current.status === "downloading"
+        ? reduceDesktopUpdateStateOnDownloadCancel(current)
+        : current,
+    );
+    yield* logUpdaterInfo("update download cancelled");
+  }).pipe(Effect.withSpan("desktop.updates.handleUpdateCancelled"));
+
   const handleUpdateDownloaded = Effect.fn("desktop.updates.handleUpdateDownloaded")(function* (
     raw: unknown,
   ) {
@@ -1360,6 +1385,9 @@ export const make = Effect.gen(function* () {
       yield* electronUpdater.on("download-progress", (progress: unknown) => {
         runEffect(handleDownloadProgress(progress));
       });
+      yield* electronUpdater.on("update-cancelled", () => {
+        runEffect(handleUpdateCancelled);
+      });
       yield* electronUpdater.on("update-downloaded", (info: unknown) => {
         runEffect(handleUpdateDownloaded(info));
       });
@@ -1458,6 +1486,20 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }).pipe(Effect.withSpan("desktop.updates.download")),
+    cancelDownload: Effect.gen(function* () {
+      const state = yield* Ref.get(updateStateRef);
+      if (state.status !== "downloading") {
+        return { accepted: false, completed: false, state };
+      }
+      const cancelled = yield* electronUpdater.cancelDownload;
+      if (!cancelled) {
+        return { accepted: false, completed: false, state };
+      }
+      const next = reduceDesktopUpdateStateOnDownloadCancel(state);
+      yield* setState(next);
+      yield* logUpdaterInfo("cancelled update download");
+      return { accepted: true, completed: false, state: next };
+    }).pipe(Effect.withSpan("desktop.updates.cancelDownload")),
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),

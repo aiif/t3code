@@ -4,6 +4,7 @@ import type { DesktopUpdateState } from "@t3tools/contracts";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateCancelConfirmationMessage,
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateReleaseUrl,
   resolveDesktopUpdateButtonAction,
@@ -40,6 +41,20 @@ describe("desktop update button state", () => {
     };
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
     expect(getDesktopUpdateButtonTooltip(state)).toContain("Click to retry");
+  });
+
+  it("shows progress and offers cancellation while downloading", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "downloading",
+      availableVersion: "1.1.0",
+      downloadPercent: 42.8,
+    };
+    expect(getDesktopUpdateButtonTooltip(state)).toBe("Downloading update (42%). Click to cancel.");
+    expect(getDesktopUpdateCancelConfirmationMessage()).toContain("Cancel download?");
+    expect(getDesktopUpdateCancelConfirmationMessage()).toContain(
+      "Do you want to cancel the active update download?",
+    );
   });
 
   it("shows the download failure after returning to available", () => {

@@ -29,6 +29,7 @@ export interface UpdatesHarnessOptions {
   readonly setUpdateChannelError?: DesktopAppSettings.DesktopSettingsWriteError;
   readonly setDisableDifferentialDownload?: Effect.Effect<void>;
   readonly downloadUpdate?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterDownloadUpdateError>;
+  readonly cancelDownload?: Effect.Effect<boolean>;
   readonly quitAndInstall?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>;
   readonly stopBackend?: Effect.Effect<void>;
   readonly startBackend?: Effect.Effect<void>;
@@ -50,6 +51,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   let checkCount = 0;
   let quitAndInstallCount = 0;
   let downloadCount = 0;
+  let cancelDownloadCount = 0;
   let allowDowngrade = false;
   const checkAllowedDowngrade: boolean[] = [];
   let fullChangelog = false;
@@ -101,6 +103,9 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     downloadUpdate: Effect.sync(() => {
       downloadCount += 1;
     }).pipe(Effect.andThen(options.downloadUpdate ?? Effect.void)),
+    cancelDownload: Effect.sync(() => {
+      cancelDownloadCount += 1;
+    }).pipe(Effect.andThen(options.cancelDownload ?? Effect.succeed(true))),
     quitAndInstall: () =>
       Effect.sync(() => {
         quitAndInstallCount += 1;
@@ -323,6 +328,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     installRecords,
     previousInstallRecord: () => previousInstallRecord,
     downloadCount: () => downloadCount,
+    cancelDownloadCount: () => cancelDownloadCount,
     feedUrls: (): ElectronUpdater.ElectronUpdaterFeedUrl[] => feedUrls,
     fullChangelog: () => fullChangelog,
     /** Whether each feed check could offer an older release, and the flag now. */

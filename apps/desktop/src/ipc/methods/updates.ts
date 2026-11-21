@@ -44,6 +44,16 @@ export const downloadUpdate = DesktopIpc.makeIpcMethod({
   }),
 });
 
+export const cancelUpdateDownload = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.UPDATE_CANCEL_CHANNEL,
+  payload: Schema.Void,
+  result: DesktopUpdateActionResultSchema,
+  handler: Effect.fn("desktop.ipc.updates.cancelDownload")(function* () {
+    const updates = yield* DesktopUpdates.DesktopUpdates;
+    return yield* updates.cancelDownload;
+  }),
+});
+
 export const installUpdate = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.UPDATE_INSTALL_CHANNEL,
   /** A version installs only that downloaded build, never one that replaced it. */

@@ -19,10 +19,10 @@ import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateCancelConfirmationMessage,
   getDesktopUpdateDownloadedVersion,
   getDesktopUpdateIdleTooltip,
   getDesktopUpdateInstallConfirmationMessage,
-  isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
   shouldToastDesktopUpdateActionResult,
@@ -170,6 +170,24 @@ export async function downloadLocalUpdate(
   }
 }
 
+export async function cancelLocalUpdate(
+  bridge: DesktopBridge,
+  reportError: ReportLocalUpdateError = toastUpdateError,
+): Promise<boolean> {
+  try {
+    const result = await bridge.cancelUpdateDownload();
+    const actionError = getDesktopUpdateActionError(result);
+    if (actionError) reportError(m(msg("Could not cancel update download")), actionError);
+    return result.accepted;
+  } catch (error) {
+    reportError(
+      m(msg("Could not cancel update download")),
+      thrownErrorMessage(error, m) ?? m(msg("An unexpected error occurred.")),
+    );
+    return false;
+  }
+}
+
 export async function installLocalUpdate(
   bridge: DesktopBridge,
   reportError: ReportLocalUpdateError = toastUpdateError,
@@ -273,7 +291,7 @@ function SidebarUpdateControl() {
     : runsEverything
       ? false
       : showUpdateDetails
-        ? isDesktopUpdateButtonDisabled(state)
+        ? false
         : !canCheckForUpdate(state);
   const isInteractionDisabled = disabled || isActionPending || isRunningEverything;
   const showReleaseNotesPopover =
@@ -303,6 +321,32 @@ function SidebarUpdateControl() {
 
     if (!bridge || !state) return;
     setIsActionPending(true);
+
+    if (state.status === "downloading") {
+      let confirmed = false;
+      try {
+        confirmed = await ensureLocalApi().dialogs.confirm(
+          getDesktopUpdateCancelConfirmationMessage(m),
+          { variant: "destructive" },
+        );
+      } catch (error) {
+        setIsActionPending(false);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Could not confirm update"),
+            description: thrownErrorMessage(error, m) ?? gt("Update confirmation failed."),
+          }),
+        );
+        return;
+      }
+      if (!confirmed) {
+        setIsActionPending(false);
+        return;
+      }
+      void cancelLocalUpdate(bridge).finally(() => setIsActionPending(false));
+      return;
+    }
 
     if (action === "download") {
       void downloadLocalUpdate(bridge, { notifyDownloaded: true }).finally(() =>

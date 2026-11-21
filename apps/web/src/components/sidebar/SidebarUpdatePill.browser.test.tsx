@@ -1,9 +1,10 @@
-import type { DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render } from "../../../test/render";
+import { ConfirmDialogHost } from "../ConfirmDialogHost";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
 import type { UpdateEverythingRow } from "./updateEverything.logic";
 
@@ -122,6 +123,44 @@ describe("SidebarUpdatePill release notes", () => {
     );
     await expect.element(page.getByText("One-time tasks.", { exact: true })).toBeVisible();
     await expect.element(page.getByText("Plus 2 more bug fixes.")).toBeVisible();
+  });
+});
+
+describe("SidebarUpdatePill downloading", () => {
+  it("shows progress and cancels after confirmation", async () => {
+    const downloading = {
+      ...nightlyUpdate([]),
+      status: "downloading" as const,
+      availableVersion: "0.0.50-nightly.2",
+      downloadPercent: 42,
+    };
+    setup(downloading);
+    const cancelUpdateDownload = vi.fn(async () => ({
+      accepted: true,
+      completed: false,
+      state: { ...downloading, status: "available" as const, downloadPercent: null },
+    }));
+    using _bridge = { [Symbol.dispose]: () => vi.unstubAllGlobals() };
+    vi.stubGlobal("desktopBridge", {
+      cancelUpdateDownload,
+    } as unknown as DesktopBridge);
+
+    await using screen = await render(
+      <>
+        <SidebarUpdatePill />
+        <ConfirmDialogHost />
+      </>,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Downloading update (42%). Click to cancel." }),
+    );
+    await expect.element(page.getByText("Cancel download?")).toBeVisible();
+    await expect
+      .element(page.getByText("Do you want to cancel the active update download?"))
+      .toBeVisible();
+
+    await userEvent.click(page.getByRole("button", { name: "Confirm" }));
+    await vi.waitFor(() => expect(cancelUpdateDownload).toHaveBeenCalledOnce());
   });
 });
 

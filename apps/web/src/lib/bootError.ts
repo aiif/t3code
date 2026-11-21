@@ -208,11 +208,10 @@ function mountUpdateButton(
   const render = (state: DesktopUpdateState) => {
     action = updateActionFor(state);
     button.hidden = action === null;
-    // aria-disabled keeps keyboard focus on the button while the download runs.
-    button.setAttribute("aria-disabled", String(action?.kind === "downloading"));
+    // aria-disabled keeps keyboard focus on the button while the install runs.
+    button.setAttribute("aria-disabled", String(action?.kind === "install"));
     if (action?.kind === "download") button.textContent = "Download update";
-    if (action?.kind === "downloading")
-      button.textContent = `Downloading update (${action.percent}%)`;
+    if (action?.kind === "downloading") button.textContent = `Cancel download (${action.percent}%)`;
     if (action?.kind === "install") button.textContent = "Restart to update";
     const failure = !action
       ? ""
@@ -232,7 +231,9 @@ function mountUpdateButton(
         ? bridge.installUpdate()
         : action?.kind === "download"
           ? bridge.downloadUpdate()
-          : undefined;
+          : action?.kind === "downloading"
+            ? bridge.cancelUpdateDownload()
+            : undefined;
     run?.then(
       (result) => render(result.state),
       (error: unknown) => console.warn("Could not update T3 Code.", error),

@@ -33,6 +33,7 @@ import {
   resolveSshPasswordPrompt,
 } from "./methods/sshEnvironment.ts";
 import {
+  cancelUpdateDownload,
   checkForUpdate,
   downloadUpdate,
   getUpdateState,
@@ -178,6 +179,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getUpdateState);
   yield* ipc.handle(setUpdateChannel);
   yield* ipc.handle(downloadUpdate);
+  yield* ipc.handle(cancelUpdateDownload);
   yield* ipc.handle(installUpdate);
   yield* ipc.handle(checkForUpdate);
   yield* ipc.handle(getCliCommandState);

@@ -73,8 +73,10 @@ export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | nul
   return state?.hostArch === "arm64" && state.appArch === "x64";
 }
 
-export function isDesktopUpdateButtonDisabled(state: DesktopUpdateState | null): boolean {
-  return state?.status === "downloading";
+export function getDesktopUpdateCancelConfirmationMessage(resolve: MessageResolver = m): string {
+  return `${resolve(msg("Cancel download?"))}\n\n${resolve(
+    msg("Do you want to cancel the active update download?"),
+  )}`;
 }
 
 export function getArm64IntelBuildWarningDescription(
@@ -137,9 +139,11 @@ export function getDesktopUpdateButtonTooltip(
   if (state.status === "downloading") {
     return typeof state.downloadPercent === "number"
       ? resolve(
-          msg("Downloading update ({percent}%)", { percent: Math.floor(state.downloadPercent) }),
+          msg("Downloading update ({percent}%). Click to cancel.", {
+            percent: Math.floor(state.downloadPercent),
+          }),
         )
-      : resolve(msg("Downloading update"));
+      : resolve(msg("Downloading update. Click to cancel."));
   }
   if (state.status === "downloaded") {
     const version = state.downloadedVersion ?? state.availableVersion;

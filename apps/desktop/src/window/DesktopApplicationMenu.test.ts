@@ -87,6 +87,7 @@ const layerDesktopUpdates = ({ checkResult }: MenuServices) =>
     setChannel: () => Effect.die("unexpected setChannel"),
     check: () => (checkResult ? Effect.succeed(checkResult) : Effect.die("unexpected check")),
     download: Effect.die("unexpected download"),
+    cancelDownload: Effect.die("unexpected cancelDownload"),
     install: Effect.die("unexpected install"),
     installPrepared: () => Effect.die("unexpected installPrepared"),
   } satisfies DesktopUpdates.DesktopUpdates["Service"]);

@@ -508,6 +508,98 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("cancels an active download and returns to the available offer", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        downloadUpdate: Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* flushCallbacks;
+
+          const downloadFiber = yield* updates.download.pipe(Effect.forkScoped);
+          yield* Deferred.await(started);
+          yield* flushCallbacks;
+          assert.equal((yield* updates.getState).status, "downloading");
+
+          const result = yield* updates.cancelDownload;
+          assert.isTrue(result.accepted);
+          assert.isFalse(result.completed);
+          const state = yield* updates.getState;
+          assert.equal(state.status, "available");
+          assert.equal(state.downloadPercent, null);
+          assert.isNull(state.message);
+          assert.isNull(state.errorContext);
+          assert.equal(harness.cancelDownloadCount(), 1);
+
+          yield* Fiber.interrupt(downloadFiber);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
+  it.effect("treats the updater's cancellation as a cancel, not a download failure", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        downloadUpdate: Effect.fail(
+          new ElectronUpdater.ElectronUpdaterDownloadUpdateError({
+            channel: null,
+            cause: new Error("cancelled"),
+            cancelled: true,
+          }),
+        ),
+      });
+
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* flushCallbacks;
+
+          const result = yield* updates.download;
+          assert.isTrue(result.accepted);
+          assert.isFalse(result.completed);
+          const state = yield* updates.getState;
+          assert.equal(state.status, "available");
+          assert.isNull(state.message);
+          assert.isNull(state.errorContext);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
+  it.effect("returns to available when an automatic download is cancelled", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        downloadUpdate: Effect.never,
+      });
+
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-available", { version: "1.2.4" });
+          harness.emit("download-progress", { percent: 40 });
+          yield* flushCallbacks;
+          assert.equal((yield* updates.getState).status, "downloading");
+
+          harness.emit("update-cancelled", { version: "1.2.4" });
+          yield* flushCallbacks;
+          const state = yield* updates.getState;
+          assert.equal(state.status, "available");
+          assert.equal(state.downloadPercent, null);
+          assert.isNull(state.errorContext);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
   it.effect("downloads the newest release published since the last check", () => {
     // electron-updater downloads the release its last checkForUpdates found.
     let published = "1.2.4";

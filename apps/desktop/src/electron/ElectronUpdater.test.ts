@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -45,6 +46,56 @@ const childProcess = NodeModule.createRequire(import.meta.url)("node:child_proce
     options: NodeChildProcess.SpawnOptions,
   ) => NodeChildProcess.ChildProcess;
 };
+
+describe("ElectronUpdater download cancellation", () => {
+  it.effect("cancels the check's download token and reports the cancellation", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const listeners: Array<() => void> = [];
+      const token = {
+        cancelled: false,
+        cancel() {
+          token.cancelled = true;
+          for (const listener of listeners) listener();
+        },
+        onCancel(listener: () => void) {
+          listeners.push(listener);
+        },
+      };
+      const originalCheckForUpdates = autoUpdater.checkForUpdates;
+      const originalDownloadUpdate = autoUpdater.downloadUpdate;
+      const restore = Effect.sync(() => {
+        Object.assign(autoUpdater, {
+          checkForUpdates: originalCheckForUpdates,
+          downloadUpdate: originalDownloadUpdate,
+        });
+      });
+
+      return yield* Effect.gen(function* () {
+        Object.assign(autoUpdater, {
+          checkForUpdates: async () => ({ cancellationToken: token, downloadPromise: null }),
+          downloadUpdate: (candidate: typeof token) => {
+            assert.equal(candidate, token);
+            return new Promise((_resolve, reject) => {
+              candidate.onCancel(() => reject(new Error("cancelled")));
+              Deferred.doneUnsafe(started, Effect.void);
+            });
+          },
+        });
+
+        const electronUpdater = yield* ElectronUpdater.ElectronUpdater;
+        yield* electronUpdater.checkForUpdates;
+        const download = yield* electronUpdater.downloadUpdate.pipe(Effect.flip, Effect.forkChild);
+        yield* Deferred.await(started);
+
+        assert.isTrue(yield* electronUpdater.cancelDownload);
+        const error = yield* Fiber.join(download);
+        assert.isTrue(error.cancelled);
+        assert.isFalse(yield* electronUpdater.cancelDownload);
+      }).pipe(Effect.ensuring(restore), Effect.provide(ElectronUpdater.layer));
+    }),
+  );
+});
 
 describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")(
   "ElectronUpdater AppImage install",

@@ -4,6 +4,7 @@ import {
   createInitialDesktopUpdateState,
   reduceDesktopUpdateStateOnCheckFailure,
   reduceDesktopUpdateStateOnCheckStart,
+  reduceDesktopUpdateStateOnDownloadCancel,
   reduceDesktopUpdateStateOnDownloadComplete,
   reduceDesktopUpdateStateOnDownloadFailure,
   reduceDesktopUpdateStateOnInstallFailure,
@@ -65,6 +66,23 @@ describe("updateMachine", () => {
     expect(state.availableVersion).toBe("1.1.0");
     expect(state.errorContext).toBe("download");
     expect(state.canRetry).toBe(true);
+  });
+
+  it("returns to the available offer after a cancelled download", () => {
+    const state = reduceDesktopUpdateStateOnDownloadCancel({
+      ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+      enabled: true,
+      status: "downloading",
+      availableVersion: "1.1.0",
+      downloadPercent: 43,
+    });
+
+    expect(state.status).toBe("available");
+    expect(state.availableVersion).toBe("1.1.0");
+    expect(state.downloadPercent).toBeNull();
+    expect(state.message).toBeNull();
+    expect(state.errorContext).toBeNull();
+    expect(state.canRetry).toBe(false);
   });
 
   it("transitions to downloaded and then preserves install retry state", () => {

@@ -882,6 +882,34 @@ describe("DesktopRemoteUpdates", () => {
     );
   });
 
+  it.effect("stops an in-flight download when its request is cancelled", () => {
+    const releaseDownload = Deferred.makeUnsafe<void>();
+    const harness = makeHarness({ downloadUpdate: Deferred.await(releaseDownload) });
+
+    return runRemoteUpdatesTest(harness, ({ requests, cancellations }) =>
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* Queue.offer(requests, request("req-cancel-download"));
+        yield* settle;
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* settle;
+        assert.equal(harness.downloadCount(), 1);
+        assert.equal((yield* updates.getState).status, "downloading");
+
+        yield* Queue.offer(cancellations, {
+          version: 1,
+          type: "cancelDesktopUpdate",
+          requestId: "req-cancel-download",
+        });
+        yield* settle;
+
+        assert.equal(harness.cancelDownloadCount(), 1);
+        assert.equal((yield* updates.getState).status, "available");
+        yield* Deferred.succeed(releaseDownload, undefined);
+      }),
+    );
+  });
+
   it.effect("remembers a cancellation that arrives before its request starts", () => {
     const harness = makeHarness();
 

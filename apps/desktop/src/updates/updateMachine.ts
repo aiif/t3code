@@ -165,6 +165,19 @@ export function reduceDesktopUpdateStateOnDownloadStart(
   };
 }
 
+export function reduceDesktopUpdateStateOnDownloadCancel(
+  state: DesktopUpdateState,
+): DesktopUpdateState {
+  return {
+    ...withoutTrackMismatch(state),
+    status: state.availableVersion ? "available" : "up-to-date",
+    downloadPercent: null,
+    message: null,
+    errorContext: null,
+    canRetry: false,
+  };
+}
+
 export function reduceDesktopUpdateStateOnDownloadFailure(
   state: DesktopUpdateState,
   message: string,
