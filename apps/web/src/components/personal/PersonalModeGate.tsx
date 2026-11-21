@@ -1,10 +1,11 @@
-import type { PersonalAdminHost, PersonalGuestClient } from "@t3tools/contracts";
+import type { EnvironmentId, PersonalAdminHost, PersonalGuestClient } from "@t3tools/contracts";
 import {
   detectAndConnectPersonalKey,
   forgetPersonalAdminConfig,
   getAdminHost,
   isPersonalAdminError,
   listAdminHosts,
+  personalHostRecord,
   readPersonalAdminConfig,
   readPersonalHosts,
   removeAdminHost,
@@ -12,6 +13,7 @@ import {
   restoreAdminHost,
   revokeAdminClient,
   rotateAdminHostKey,
+  upsertPersonalHost,
   type DetectedPersonalKeyOutcome,
   type PairPersonalHost,
   type PersonalAdminConfig,
@@ -29,7 +31,28 @@ import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 const PERSONAL_OPEN_ADMIN_EVENT = "t3:open-personal-admin";
 const PERSONAL_HOSTS_CHANGED_EVENT = "t3:personal-hosts-changed";
 
+function hasAdminQueryOrHash(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("admin")) return true;
+    if (window.location.hash.toLowerCase().includes("admin")) return true;
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
 export function openPersonalAdminConsole(): void {
+  if (typeof window !== "undefined") {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("admin", "1");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    } catch {
+      // ignore
+    }
+  }
   window.dispatchEvent(new CustomEvent(PERSONAL_OPEN_ADMIN_EVENT));
 }
 
@@ -58,19 +81,26 @@ export function PersonalModeGate({
 }) {
   const [config, setConfig] = useState(readPersonalAdminConfig);
   const [hosts, setHosts] = useState(readPersonalHosts);
-  const [showAdmin, setShowAdmin] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(hasAdminQueryOrHash);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- listens to global window events to switch between workspace and admin console or update host records
   useEffect(() => {
     const onOpenAdmin = () => setShowAdmin(true);
     const onHostsChanged = () => setHosts(readPersonalHosts());
+    const onPopState = () => {
+      if (hasAdminQueryOrHash()) {
+        setShowAdmin(true);
+      }
+    };
     window.addEventListener(PERSONAL_OPEN_ADMIN_EVENT, onOpenAdmin);
     window.addEventListener(PERSONAL_HOSTS_CHANGED_EVENT, onHostsChanged);
     window.addEventListener("storage", onHostsChanged);
+    window.addEventListener("popstate", onPopState);
     return () => {
       window.removeEventListener(PERSONAL_OPEN_ADMIN_EVENT, onOpenAdmin);
       window.removeEventListener(PERSONAL_HOSTS_CHANGED_EVENT, onHostsChanged);
       window.removeEventListener("storage", onHostsChanged);
+      window.removeEventListener("popstate", onPopState);
     };
   }, []);
 
@@ -94,14 +124,49 @@ export function PersonalModeGate({
             setHosts(readPersonalHosts());
             setShowAdmin(false);
           }}
-          onGoToWorkspace={() => setShowAdmin(false)}
+          onGoToWorkspace={() => {
+            if (typeof window !== "undefined") {
+              try {
+                const url = new URL(window.location.href);
+                if (url.searchParams.has("admin")) {
+                  url.searchParams.delete("admin");
+                  window.history.replaceState(
+                    null,
+                    "",
+                    url.pathname + (url.search ? url.search : "") + url.hash,
+                  );
+                }
+              } catch {
+                // ignore
+              }
+            }
+            setShowAdmin(false);
+          }}
         />
       );
     }
   }
 
   if (hosts.length > 0) {
-    return <>{children}</>;
+    return (
+      <>
+        {children}
+        {config !== null ? (
+          <div className="fixed bottom-3 right-3 z-40 hidden sm:flex">
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => {
+                openPersonalAdminConsole();
+                setShowAdmin(true);
+              }}
+            >
+              Admin console
+            </Button>
+          </div>
+        ) : null}
+      </>
+    );
   }
 
   return (
@@ -112,13 +177,8 @@ export function PersonalModeGate({
           setShowAdmin(false);
         } else {
           setConfig(outcome.config);
-          const currentHosts = readPersonalHosts();
-          setHosts(currentHosts);
-          if (currentHosts.length > 0) {
-            setShowAdmin(false);
-          } else {
-            setShowAdmin(true);
-          }
+          setHosts(readPersonalHosts());
+          setShowAdmin(true);
         }
       }}
     />
@@ -269,6 +329,41 @@ function AdminConsole({
     try {
       const detail = await getAdminHost({ config, hostId: host.hostId });
       setClients((current) => ({ ...current, [host.hostId]: detail.clients }));
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const connectHost = async (host: PersonalAdminHost) => {
+    setBusy(host.hostId);
+    setError("");
+    try {
+      const record = personalHostRecord({
+        relayUrl: config.relayUrl,
+        hostKey: host.hostKey,
+        resolved: {
+          hostId: host.hostId,
+          environmentId: host.environmentId as EnvironmentId,
+          label: host.label,
+          publicUrl: host.publicUrl,
+          online: host.online,
+          paused: host.paused,
+        },
+      });
+      upsertPersonalHost(record);
+      const paired = await pairHostWithRuntime({
+        host: host.publicUrl,
+        pairingCode: host.hostKey,
+        expectedEnvironmentId: host.environmentId as EnvironmentId,
+      });
+      if (!paired.ok) {
+        setError(paired.error ?? "The host refused the key.");
+        return;
+      }
+      notifyPersonalHostsChanged();
+      onGoToWorkspace?.();
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -449,6 +544,15 @@ function AdminConsole({
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {host.online && !host.paused ? (
+                      <Button
+                        disabled={busy !== null}
+                        size="xs"
+                        onClick={() => void connectHost(host)}
+                      >
+                        Open workspace
+                      </Button>
+                    ) : null}
                     <Button
                       disabled={busy !== null}
                       size="xs"

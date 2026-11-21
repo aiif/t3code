@@ -246,6 +246,35 @@ it("submits key and connects as host", async () => {
   });
 });
 
+it("submits admin key and shows admin console directly", async () => {
+  localStorage.clear();
+  vi.mocked(detectAndConnectPersonalKey).mockImplementationOnce(async () => {
+    localStorage.setItem("t3.admin.key", "admin-key-test");
+    localStorage.setItem("t3.admin.relay", "https://t3.example.test");
+    return {
+      kind: "admin",
+      config: {
+        relayUrl: "https://t3.example.test",
+        adminKey: "admin-key-test",
+      },
+      hosts: [],
+      records: [],
+    } as unknown as DetectedPersonalKeyOutcome;
+  });
+
+  await using _screen = await render(
+    <PersonalModeGate hosted>
+      <div>app content</div>
+    </PersonalModeGate>,
+    { router: false },
+  );
+
+  await page.getByLabelText("Key").fill("admin-key-test");
+  await page.getByRole("button", { name: "Connect" }).click();
+
+  await expect.element(page.getByText("Personal network admin")).toBeVisible();
+});
+
 it("shows error when key detection fails", async () => {
   localStorage.clear();
   vi.mocked(detectAndConnectPersonalKey).mockRejectedValueOnce(
