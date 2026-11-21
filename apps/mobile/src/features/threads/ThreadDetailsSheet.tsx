@@ -1,5 +1,7 @@
 import { Modal, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Line } from "react-native-svg";
+import { withUniwind } from "uniwind";
 
 import type { ThreadStructure } from "@t3tools/client-runtime/state/models";
 import {
@@ -279,10 +281,16 @@ export function ThreadDetailsSheet(props: {
   );
 }
 
-/** The always-on context readout above the composer: window share, and the output rate while streaming. */
+const CONTEXT_GAUGE_RADIUS = 5.75;
+const CONTEXT_GAUGE_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_GAUGE_RADIUS;
+
+const ThemedSvg = withUniwind(Svg);
+
+/** The always-on context readout above the composer: circular progress ring, and the output rate while streaming. */
 export function ThreadContextStatusRow(props: {
   readonly structure: ThreadStructure | null;
   readonly threadActive: boolean;
+  readonly onOpenDetails?: () => void;
 }) {
   const { contextWindow, rateWindow } = useContextWindowReadout(props.structure);
   const nowMs = useVisibleSecondClock(props.threadActive);
@@ -295,14 +303,119 @@ export function ThreadContextStatusRow(props: {
     props.threadActive && rateWindow !== null
       ? deriveOutputTokensPerSecond(rateWindow, nowMs)
       : null;
+
+  const threshold = contextWindow.autoCompactThreshold ?? null;
+  const maxTokens = contextWindow.maxTokens ?? null;
+  const tick =
+    fill !== null &&
+    maxTokens !== null &&
+    threshold !== null &&
+    threshold > 0 &&
+    threshold < maxTokens
+      ? (threshold / maxTokens) * 100
+      : null;
+
+  const tickCoords =
+    tick !== null && tick > 0 && tick < 100
+      ? {
+          x1: 8 + 4.2 * Math.cos((tick / 100) * 2 * Math.PI),
+          y1: 8 + 4.2 * Math.sin((tick / 100) * 2 * Math.PI),
+          x2: 8 + 7.3 * Math.cos((tick / 100) * 2 * Math.PI),
+          y2: 8 + 7.3 * Math.sin((tick / 100) * 2 * Math.PI),
+        }
+      : null;
+
+  const strokeDashoffset =
+    fill !== null
+      ? CONTEXT_GAUGE_CIRCUMFERENCE * (1 - Math.max(0, Math.min(100, fill)) / 100)
+      : null;
+
+  const tone =
+    fill !== null && fill >= 90 ? "error" : fill !== null && fill >= 80 ? "warning" : "normal";
+  const colorClassName =
+    tone === "error"
+      ? "text-danger-foreground"
+      : tone === "warning"
+        ? "text-warning-foreground"
+        : "text-foreground-muted";
+
   return (
-    <Text className="self-center px-3 pb-0.5 text-2xs text-foreground-muted tabular-nums">
-      {fill !== null
-        ? `Context ${fill}% · ${formatTokens(contextWindow.usedTokens)}${
-            contextWindow.maxTokens != null ? ` / ${formatTokens(contextWindow.maxTokens)}` : ""
-          }`
-        : `Context ${formatTokens(contextWindow.usedTokens)} tokens`}
-      {rate === null ? "" : ` · ${formatTokensPerSecond(rate)}`}
-    </Text>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={
+        fill !== null
+          ? `Context: ${fill}% used`
+          : `Context: ${formatTokens(contextWindow.usedTokens)} used`
+      }
+      accessibilityHint={props.onOpenDetails ? "Opens thread details" : undefined}
+      disabled={!props.onOpenDetails}
+      hitSlop={8}
+      onPress={props.onOpenDetails}
+      className="self-center flex-row items-center gap-1.5 px-3 pb-1 active:opacity-70"
+    >
+      <View style={{ transform: [{ rotate: "-90deg" }] }}>
+        <ThemedSvg
+          width={16}
+          height={16}
+          viewBox="0 0 16 16"
+          colorClassName={colorClassName}
+          accessible={false}
+        >
+          {/* Background track circle */}
+          <Circle
+            cx={8}
+            cy={8}
+            r={CONTEXT_GAUGE_RADIUS}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.75}
+            opacity={0.25}
+          />
+          {/* Progress arc */}
+          {fill !== null && fill > 0 ? (
+            <Circle
+              cx={8}
+              cy={8}
+              r={CONTEXT_GAUGE_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.75}
+              strokeDasharray={[CONTEXT_GAUGE_CIRCUMFERENCE, CONTEXT_GAUGE_CIRCUMFERENCE]}
+              strokeDashoffset={strokeDashoffset ?? 0}
+              strokeLinecap="round"
+            />
+          ) : fill === null ? (
+            <Circle
+              cx={8}
+              cy={8}
+              r={CONTEXT_GAUGE_RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.75}
+              strokeDasharray={[2, 3]}
+              opacity={0.5}
+            />
+          ) : null}
+          {/* Auto-compact threshold tick */}
+          {tickCoords !== null ? (
+            <Line
+              x1={tickCoords.x1}
+              y1={tickCoords.y1}
+              x2={tickCoords.x2}
+              y2={tickCoords.y2}
+              stroke="currentColor"
+              strokeWidth={1.2}
+              strokeLinecap="round"
+              opacity={0.6}
+            />
+          ) : null}
+        </ThemedSvg>
+      </View>
+      {rate !== null ? (
+        <Text className="text-2xs font-t3-medium text-foreground-muted tabular-nums">
+          {formatTokensPerSecond(rate)}
+        </Text>
+      ) : null}
+    </Pressable>
   );
 }

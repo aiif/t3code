@@ -1002,6 +1002,7 @@ function ThreadRouteContent(
               />
             )
           }
+          onOpenDetails={openThreadDetails}
           canOperateThread={canOperateThread}
           selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
           selectedThreadDetailRef={selectedThreadDetailRef}

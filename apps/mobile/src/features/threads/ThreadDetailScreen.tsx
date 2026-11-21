@@ -220,6 +220,7 @@ import type { OrchestrationV2ProviderSession } from "@t3tools/contracts";
 
 export interface ThreadDetailScreenProps {
   readonly header?: React.ReactNode;
+  readonly onOpenDetails?: () => void;
   readonly draftMode?: {
     /** viewportHeight excludes the composer so draft chrome can resize it without feedback. */
     readonly content: (
@@ -1819,6 +1820,7 @@ function ThreadDetailBody(
                     threadActive={["preparing", "starting", "running"].includes(
                       props.activityRun?.status ?? "",
                     )}
+                    onOpenDetails={props.onOpenDetails}
                   />
                   {isProviderSubagent ? (
                     <View
