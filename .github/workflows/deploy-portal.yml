@@ -1,0 +1,65 @@
+name: Deploy Web Portal
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web-portal
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy web portal
+    if: github.repository == 'aiif/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VITE_PERSONAL_ADMIN_CONSOLE: "1"
+      VITE_T3CODE_PERSONAL_ONLY: "1"
+      VITE_HOSTED_APP_URL: ""
+      VITE_HOSTED_APP_CHANNEL: ""
+      T3CODE_WEB_SOURCEMAP: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Build Web Client
+        run: |
+          vp run --filter @t3tools/web build
+
+      - name: Deploy to VPS
+        if: env.PORTAL_SSH_HOST != '' && env.PORTAL_SSH_KEY != ''
+        env:
+          PORTAL_SSH_HOST: ${{ secrets.PORTAL_SSH_HOST }}
+          PORTAL_SSH_USER: ${{ secrets.PORTAL_SSH_USER || 'root' }}
+          PORTAL_SSH_KEY: ${{ secrets.PORTAL_SSH_KEY }}
+          PORTAL_TARGET_DIR: ${{ secrets.PORTAL_TARGET_DIR || '/srv/t3-portal' }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$PORTAL_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$PORTAL_SSH_HOST" >> ~/.ssh/known_hosts
+
+          tar -czf dist.tar.gz -C apps/web/dist .
+          scp -i ~/.ssh/deploy_key dist.tar.gz "$PORTAL_SSH_USER@$PORTAL_SSH_HOST:/tmp/dist.tar.gz"
+          ssh -i ~/.ssh/deploy_key "$PORTAL_SSH_USER@$PORTAL_SSH_HOST" "mkdir -p $PORTAL_TARGET_DIR && tar -xzf /tmp/dist.tar.gz -C $PORTAL_TARGET_DIR && rm -f /tmp/dist.tar.gz"
