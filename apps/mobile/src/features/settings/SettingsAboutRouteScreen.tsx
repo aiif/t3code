@@ -2,17 +2,22 @@ import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import Constants from "expo-constants";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { useDeadlinePassed } from "../../lib/clock";
+import { formatBytes } from "../../lib/formatBytes";
 import {
   type AppUpdateCheckState,
+  type MobileDownloadProgress,
+  cancelMobileAppUpdateDownload,
+  getActiveMobileDownloadProgress,
   isAppUpdateCheckAvailable,
   runAppUpdateCheck,
+  subscribeMobileDownloadProgress,
 } from "../updates/app-updates";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
@@ -47,6 +52,17 @@ function AppSettingsSection() {
     checkState.state === "current" && confirmationExpired ? "idle" : checkState.state;
   const updateInFlight = useRef(false);
 
+  const [downloadProgress, setDownloadProgress] = useState<MobileDownloadProgress | null>(
+    getActiveMobileDownloadProgress(),
+  );
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- synchronizes active mobile update download progress with the UI
+  useEffect(() => {
+    return subscribeMobileDownloadProgress((progress) => {
+      setDownloadProgress(progress);
+    });
+  }, []);
+
   const version = Constants.expoConfig?.version ?? "0.0.0";
   // Match app.config.ts's production fallback to avoid mislabeling builds as development.
   const variant = (Constants.expoConfig?.extra?.appVariant as string | undefined) ?? "production";
@@ -55,6 +71,13 @@ function AppSettingsSection() {
   const updateCheckAvailable = isAppUpdateCheckAvailable();
   const busy =
     updateState === "checking" || updateState === "downloading" || updateState === "restarting";
+
+  function handleCancelDownload() {
+    cancelMobileAppUpdateDownload();
+    setCheckState({ state: "idle", settledUntil: null });
+    setDownloadProgress(null);
+    updateInFlight.current = false;
+  }
 
   async function checkForUpdate() {
     // disabled updates next render; the ref blocks same-frame double taps.
@@ -65,11 +88,16 @@ function AppSettingsSection() {
       runAppUpdateCheck({
         applyMode: "immediate",
         onFailure: (message) => Dialog.alert("Update failed", message),
-        onStateChange: (state) =>
+        onProgress: (progress) => setDownloadProgress(progress),
+        onStateChange: (state) => {
           setCheckState({
             state,
             settledUntil: state === "current" ? Date.now() + 3000 : null,
-          }),
+          });
+          if (state !== "downloading") {
+            setDownloadProgress(null);
+          }
+        },
       }),
     );
     updateInFlight.current = false;
@@ -77,6 +105,17 @@ function AppSettingsSection() {
 
   function handleVersionPress() {
     if (!updateCheckAvailable || updateInFlight.current) return;
+    if (updateState === "downloading") {
+      Dialog.confirm({
+        title: "Cancel download?",
+        message: "Do you want to cancel the active update download?",
+        confirmText: "Cancel download",
+        destructive: true,
+        cancelText: "Continue",
+        onConfirm: handleCancelDownload,
+      });
+      return;
+    }
     void checkForUpdate();
   }
 
@@ -84,7 +123,9 @@ function AppSettingsSection() {
     updateState === "checking"
       ? "Checking…"
       : updateState === "downloading"
-        ? "Downloading…"
+        ? downloadProgress && downloadProgress.percent > 0
+          ? `Downloading… ${downloadProgress.percent}%`
+          : "Downloading…"
         : updateState === "ready"
           ? "Update ready"
           : updateState === "restarting"
@@ -125,11 +166,52 @@ function AppSettingsSection() {
       {updateCheckAvailable ? (
         <SettingsRow
           icon="arrow.clockwise"
-          label="Check for updates"
+          label={updateState === "downloading" ? "Downloading update…" : "Check for updates"}
           value={statusLabel ?? undefined}
-          disabled={busy}
-          onPress={() => void checkForUpdate()}
+          disabled={updateState === "checking" || updateState === "restarting"}
+          onPress={() => {
+            if (updateState === "downloading") {
+              Dialog.confirm({
+                title: "Cancel download?",
+                message: "Do you want to cancel the active update download?",
+                confirmText: "Cancel download",
+                destructive: true,
+                cancelText: "Continue",
+                onConfirm: handleCancelDownload,
+              });
+            } else {
+              void checkForUpdate();
+            }
+          }}
         />
+      ) : null}
+      {updateState === "downloading" ? (
+        <View className="rounded-2xl border border-border bg-card p-4 gap-3 mx-1">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-3">
+              <Text className="text-base font-semibold text-foreground">Downloading update…</Text>
+              <Text className="text-sm text-foreground-muted mt-0.5">
+                {downloadProgress && downloadProgress.totalBytes > 0
+                  ? `${downloadProgress.percent}% · ${formatBytes(downloadProgress.bytesWritten)} / ${formatBytes(downloadProgress.totalBytes)}`
+                  : "Connecting…"}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cancel update download"
+              className="rounded-full bg-surface-muted px-4 py-1.5 active:opacity-70"
+              onPress={handleCancelDownload}
+            >
+              <Text className="text-sm font-medium text-destructive">Cancel</Text>
+            </Pressable>
+          </View>
+          <View className="h-2 w-full overflow-hidden rounded-full bg-surface-muted">
+            <View
+              className="h-full bg-accent rounded-full"
+              style={{ width: `${Math.max(2, downloadProgress?.percent ?? 0)}%` }}
+            />
+          </View>
+        </View>
       ) : null}
       {updateCheckAvailable ? (
         <Pressable

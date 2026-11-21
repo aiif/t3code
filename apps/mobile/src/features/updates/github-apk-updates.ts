@@ -106,9 +106,20 @@ export async function checkMobileAppUpdate(options?: {
   return parseMobileUpdateInfo(release, currentVersion);
 }
 
+export interface MobileDownloadProgress {
+  readonly bytesWritten: number;
+  readonly totalBytes: number;
+  readonly percent: number;
+}
+
+export interface DownloadMobileUpdateOptions {
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (progress: MobileDownloadProgress) => void;
+}
+
 export async function downloadAndInstallMobileUpdate(
   updateInfo: MobileAppUpdateInfo,
-  options: { readonly signal?: AbortSignal } = {},
+  options: DownloadMobileUpdateOptions = {},
 ): Promise<void> {
   if (options.signal?.aborted) return;
 
@@ -127,13 +138,56 @@ export async function downloadAndInstallMobileUpdate(
     const targetFile = new File(cache, fileName);
 
     // If already downloaded and size matches, install directly
-    const needsDownload =
-      !targetFile.exists || (updateInfo.apkSize !== null && targetFile.size !== updateInfo.apkSize);
+    const isComplete =
+      targetFile.exists && updateInfo.apkSize !== null && targetFile.size === updateInfo.apkSize;
 
-    if (needsDownload) {
+    if (!isComplete) {
       if (options.signal?.aborted) return;
-      await File.downloadFileAsync(updateInfo.downloadUrl, targetFile, {
-        signal: options.signal,
+
+      // Clean up any incomplete or conflicting existing file from an earlier interrupted download.
+      // This prevents "Destination already exists" failures and corrupted APK installations.
+      if (targetFile.exists) {
+        try {
+          targetFile.delete();
+        } catch {
+          // ignore cleanup error
+        }
+      }
+
+      try {
+        await File.downloadFileAsync(updateInfo.downloadUrl, targetFile, {
+          idempotent: true,
+          signal: options.signal,
+          onProgress: (event) => {
+            const total = event.totalBytes > 0 ? event.totalBytes : (updateInfo.apkSize ?? 0);
+            const percent =
+              total > 0 ? Math.min(100, Math.round((event.bytesWritten / total) * 100)) : 0;
+            options.onProgress?.({
+              bytesWritten: event.bytesWritten,
+              totalBytes: total,
+              percent,
+            });
+          },
+        });
+      } catch (error) {
+        // If aborted or failed during transfer, clean up the incomplete file
+        if (targetFile.exists && targetFile.size !== updateInfo.apkSize) {
+          try {
+            targetFile.delete();
+          } catch {
+            // ignore
+          }
+        }
+        if (options.signal?.aborted) return;
+        throw error;
+      }
+    } else {
+      // Already complete, report 100% progress
+      const total = updateInfo.apkSize ?? targetFile.size;
+      options.onProgress?.({
+        bytesWritten: total,
+        totalBytes: total,
+        percent: 100,
       });
     }
 

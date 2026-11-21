@@ -18,6 +18,12 @@ export type AppUpdateCheckState =
   | "restarting"
   | "current";
 
+export interface MobileDownloadProgress {
+  readonly bytesWritten: number;
+  readonly totalBytes: number;
+  readonly percent: number;
+}
+
 export interface AppUpdateClient {
   readonly isEnabled: boolean;
   readonly checkForUpdateAsync: () => Promise<{
@@ -52,12 +58,13 @@ export function createAppUpdateDeferral(): AppUpdateDeferral {
 
 const appUpdateDeferral = createAppUpdateDeferral();
 
-interface AppUpdateCheckOptions {
+export interface AppUpdateCheckOptions {
   readonly applyMode?: "background" | "immediate";
   readonly client?: AppUpdateClient;
   readonly deferral?: AppUpdateDeferral;
   readonly environment?: AppUpdateEnvironment;
   readonly onFailure?: (message: string) => void;
+  readonly onProgress?: (progress: MobileDownloadProgress) => void;
   readonly onStateChange?: (state: AppUpdateCheckState) => void;
 }
 
@@ -181,6 +188,36 @@ export async function runAppUpdateCheck(options: AppUpdateCheckOptions = {}): Pr
   }
 }
 
+let activeMobileDownloadAbortController: AbortController | undefined;
+let activeMobileDownloadProgress: MobileDownloadProgress | null = null;
+const mobileDownloadProgressListeners = new Set<(progress: MobileDownloadProgress) => void>();
+
+export function getActiveMobileDownloadProgress(): MobileDownloadProgress | null {
+  return activeMobileDownloadProgress;
+}
+
+export function subscribeMobileDownloadProgress(
+  listener: (progress: MobileDownloadProgress) => void,
+): () => void {
+  mobileDownloadProgressListeners.add(listener);
+  if (activeMobileDownloadProgress) {
+    listener(activeMobileDownloadProgress);
+  }
+  return () => {
+    mobileDownloadProgressListeners.delete(listener);
+  };
+}
+
+export function cancelMobileAppUpdateDownload(): boolean {
+  if (activeMobileDownloadAbortController) {
+    activeMobileDownloadAbortController.abort();
+    activeMobileDownloadAbortController = undefined;
+    activeMobileDownloadProgress = null;
+    return true;
+  }
+  return false;
+}
+
 async function performGitHubMobileAppUpdateCheck(options: AppUpdateCheckOptions): Promise<void> {
   const setState = options.onStateChange ?? (() => {});
   const onFailure = options.onFailure;
@@ -204,9 +241,52 @@ async function performGitHubMobileAppUpdateCheck(options: AppUpdateCheckOptions)
     setState("ready");
 
     const Dialog = await import("../../components/ui/Dialog");
-    const sizeStr = updateInfo.apkSize
-      ? ` (${(updateInfo.apkSize / (1024 * 1024)).toFixed(1)} MB)`
-      : "";
+    const { formatBytes } = await import("../../lib/formatBytes");
+    const sizeStr = updateInfo.apkSize ? ` (${formatBytes(updateInfo.apkSize)})` : "";
+
+    const startDownload = () => {
+      void (async () => {
+        const controller = new AbortController();
+        activeMobileDownloadAbortController = controller;
+        setState("downloading");
+
+        const updateProgress = (progress: MobileDownloadProgress) => {
+          activeMobileDownloadProgress = progress;
+          options.onProgress?.(progress);
+          for (const listener of mobileDownloadProgressListeners) {
+            listener(progress);
+          }
+        };
+
+        updateProgress({
+          bytesWritten: 0,
+          totalBytes: updateInfo.apkSize ?? 0,
+          percent: 0,
+        });
+
+        try {
+          await downloadAndInstallMobileUpdate(updateInfo, {
+            signal: controller.signal,
+            onProgress: updateProgress,
+          });
+          setState("ready");
+        } catch (error) {
+          if (controller.signal.aborted) {
+            setState("idle");
+            return;
+          }
+          setState("idle");
+          const rawMessage = error instanceof Error ? error.message : "Download or install failed.";
+          const userMessage = formatDownloadErrorMessage(rawMessage);
+          onFailure?.(userMessage);
+        } finally {
+          if (activeMobileDownloadAbortController === controller) {
+            activeMobileDownloadAbortController = undefined;
+            activeMobileDownloadProgress = null;
+          }
+        }
+      })();
+    };
 
     if (options.applyMode === "immediate") {
       const message = [
@@ -222,18 +302,7 @@ async function performGitHubMobileAppUpdateCheck(options: AppUpdateCheckOptions)
         message,
         confirmText: "Download & Install",
         cancelText: "Later",
-        onConfirm: () => {
-          void (async () => {
-            try {
-              setState("downloading");
-              await downloadAndInstallMobileUpdate(updateInfo);
-              setState("ready");
-            } catch (error) {
-              setState("idle");
-              onFailure?.(error instanceof Error ? error.message : "Download or install failed.");
-            }
-          })();
-        },
+        onConfirm: startDownload,
         onCancel: () => {
           setState("ready");
         },
@@ -249,24 +318,31 @@ async function performGitHubMobileAppUpdateCheck(options: AppUpdateCheckOptions)
         message: `T3 Code ${updateInfo.latestVersion} is available${sizeStr}. Update now?`,
         confirmText: "Update",
         cancelText: "Later",
-        onConfirm: () => {
-          void (async () => {
-            try {
-              setState("downloading");
-              await downloadAndInstallMobileUpdate(updateInfo);
-              setState("ready");
-            } catch (error) {
-              setState("idle");
-              onFailure?.(error instanceof Error ? error.message : "Download or install failed.");
-            }
-          })();
-        },
+        onConfirm: startDownload,
       });
     }
   } catch (error) {
     setState("idle");
     onFailure?.(error instanceof Error ? error.message : "Could not check for updates.");
   }
+}
+
+function formatDownloadErrorMessage(error: string): string {
+  if (error.includes("Destination already exists")) {
+    return "Existing temporary download file conflicted. It has been cleaned up; please try downloading again.";
+  }
+  if (
+    error.includes("Network") ||
+    error.includes("connection") ||
+    error.includes("timeout") ||
+    error.includes("UnableToDownload")
+  ) {
+    return "Network connection interrupted while downloading update. Please check your network and try again.";
+  }
+  return error.replace(
+    /^Call to function '[^']+' has been rejected\.\s*->\s*(?:Caused by:\s*)?/i,
+    "",
+  );
 }
 
 function createDeferred(): Deferred {
