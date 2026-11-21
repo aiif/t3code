@@ -1,6 +1,16 @@
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { AgentElapsed } from "./AgentElapsed";
-import { projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
+import {
+  contextUsageFromTokenUsage,
+  isActiveSubagentStatus,
+  projectedSubagentsToRuntime,
+  subagentContextUsage,
+  subagentProviderTurnTokenUsage,
+} from "@t3tools/client-runtime/state/subagentRuntime";
+import {
+  deriveOutputTokensPerSecond,
+  formatTokensPerSecond,
+} from "@t3tools/client-runtime/state/token-rate";
 import type { ReactNode } from "react";
 import { useThreadShell, useProject } from "../../state/entities";
 import { useEnvironment } from "../../state/environments";
@@ -14,6 +24,8 @@ import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import * as DateTime from "effect/DateTime";
 import { WorkLogRow } from "./WorkLog";
+import { useOutputTokenRate } from "./useOutputTokenRate";
+import { tickTextContent } from "../../lib/tickTextContent";
 import {
   resolveHandoffEndpoints,
   type HandoffEndpoints,
@@ -29,6 +41,7 @@ import {
   type ModelSelection,
   type OrchestrationV2ModelSwitch,
   type OrchestrationV2Notification,
+  type OrchestrationV2ProviderTurn,
   type OrchestrationV2TurnItem,
   type OrchestrationV2RemoteTaskChild,
   type OrchestrationV2Subagent,
@@ -70,6 +83,10 @@ import { Button, InlineButton } from "../ui/button";
 import { T3Wordmark } from "../T3Wordmark";
 
 export type { HandoffTimelineRun } from "@t3tools/client-runtime/handoff";
+
+const EMPTY_PROVIDER_TURNS: ReadonlyArray<
+  Pick<OrchestrationV2ProviderTurn, "providerThreadId" | "tokenUsage">
+> = [];
 
 export function V2LifecycleRow(props: {
   readonly item: OrchestrationV2TurnItem;
@@ -419,6 +436,27 @@ function SubagentTimelineLink(props: {
     environmentThreadDetails.threadAtom(props.parentRef),
     (thread) => thread?.projection.subagents.find((agent) => agent.id === props.subagentId) ?? null,
   );
+  const agentProviderThreadId = agent?.providerThreadId ?? null;
+  // Mirrored usage first (app-owned tasks), then the join over the parent's provider turns.
+  const liveUsage = useAtomValue(environmentThreadDetails.threadAtom(props.parentRef), (thread) =>
+    agent?.tokenUsage !== undefined
+      ? agent.tokenUsage
+      : subagentProviderTurnTokenUsage(
+          agentProviderThreadId,
+          thread?.projection.providerTurns ?? EMPTY_PROVIDER_TURNS,
+        ),
+  );
+  const rateWindow = useOutputTokenRate(
+    liveUsage,
+    agentProviderThreadId ?? (agent === null ? null : `subagent:${agent.id}`),
+  );
+  const contextUsage =
+    liveUsage === null
+      ? null
+      : agent?.tokenUsage !== undefined
+        ? subagentContextUsage(agent, EMPTY_PROVIDER_TURNS)
+        : contextUsageFromTokenUsage(liveUsage);
+  const workflowTokens = agent?.workflow?.totalTokens;
   const remote = props.remote ?? agent?.remoteChild;
   const remoteEnvironment = useEnvironment(remote?.environmentId ?? null);
   const navigate = useNavigate();
@@ -488,6 +526,29 @@ function SubagentTimelineLink(props: {
           {statusLabel}
         </span>
       ) : null}
+      {contextUsage?.usedPercentage != null ? (
+        <span
+          className={cn(
+            "shrink-0 text-xs tabular-nums",
+            contextUsage.usedPercentage >= 90
+              ? "text-error"
+              : contextUsage.usedPercentage >= 80
+                ? "text-warning"
+                : "text-muted-foreground",
+          )}
+        >
+          {Math.round(Math.max(0, Math.min(100, contextUsage.usedPercentage)))}%
+        </span>
+      ) : null}
+      {rateWindow !== null && isActiveSubagentStatus(liveStatus) ? (
+        <span
+          ref={tickTextContent((nowMs) => {
+            const rate = deriveOutputTokensPerSecond(rateWindow, nowMs);
+            return rate === null ? "" : formatTokensPerSecond(rate);
+          }, true)}
+          className="shrink-0 text-xs text-muted-foreground tabular-nums"
+        />
+      ) : null}
       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
         {props.event ? props.event.timestamp : <SubagentElapsed agent={timing} />}
       </span>
@@ -536,6 +597,8 @@ function SubagentTimelineLink(props: {
           status={liveStatus}
           result={agent?.result ?? props.result}
           progress={agent?.progress ?? props.progress}
+          contextUsage={contextUsage}
+          usageTotalTokens={workflowTokens}
         />
       </ThreadHoverCardPopup>
     </Tooltip>
@@ -547,6 +610,8 @@ function SubagentTimelineTooltip(
     model: string | null;
     modelSelection: OrchestrationV2Subagent["modelSelection"];
     elapsed: ReactNode;
+    contextUsage: ReturnType<typeof contextUsageFromTokenUsage> | null;
+    usageTotalTokens: number | undefined;
   },
 ) {
   const environmentId = props.parentRef.environmentId;
@@ -575,6 +640,8 @@ function SubagentTimelineTooltip(
       status={props.status}
       result={props.result}
       progress={props.progress}
+      contextUsage={props.contextUsage}
+      usageTotalTokens={props.usageTotalTokens}
       parentThread={parent}
       childThread={child}
       parentProject={parentProject ?? undefined}

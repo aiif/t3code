@@ -14,13 +14,17 @@ import {
 import { REASONING_EFFORT_OPTION_IDS } from "@t3tools/client-runtime/state/thread-execution";
 import { getModelSelectionStringOptionValue, resolveSelectableModel } from "@t3tools/shared/model";
 import { getTraitsSpeedDisplay, TraitsSpeedIcon } from "./TraitsSpeed";
+import type { SubagentContextUsage } from "@t3tools/client-runtime/state/subagentRuntime";
+import { formatContextWindowTokens } from "../../lib/contextWindow";
 import type { ReactNode } from "react";
 import {
+  ActivityIcon,
   BotIcon,
   CheckIcon,
   CircleDashedIcon,
   CircleXIcon,
   FolderIcon,
+  GaugeIcon,
   GitBranchIcon,
   TerminalIcon,
 } from "lucide-react";
@@ -49,6 +53,10 @@ export function SubagentTooltipContent(props: {
   status: OrchestrationV2TurnItemStatus;
   result?: string | null | undefined;
   progress?: string | null | undefined;
+  /** The task's live context usage, when its provider thread reports token usage. */
+  contextUsage?: SubagentContextUsage | null | undefined;
+  /** Total tokens a workflow coordinator's agents consumed, when the workflow reports them. */
+  usageTotalTokens?: number | undefined;
 }) {
   const childSelection =
     props.modelSelection ??
@@ -167,6 +175,34 @@ export function SubagentTooltipContent(props: {
         </span>
         {props.elapsed}
       </div>
+      {props.contextUsage ? (
+        <div className="flex min-w-0 items-center justify-between gap-4">
+          <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
+            <GaugeIcon aria-hidden className="size-3 shrink-0" />
+            Context
+          </span>
+          <span className="inline-flex items-center gap-1 text-foreground/75 tabular-nums">
+            {props.contextUsage.usedPercentage !== null
+              ? `${Math.round(props.contextUsage.usedPercentage)}% · `
+              : null}
+            {formatContextWindowTokens(props.contextUsage.usedTokens)}
+            {props.contextUsage.maxTokens !== null
+              ? ` / ${formatContextWindowTokens(props.contextUsage.maxTokens)}`
+              : null}
+          </span>
+        </div>
+      ) : null}
+      {props.usageTotalTokens !== undefined ? (
+        <div className="flex min-w-0 items-center justify-between gap-4">
+          <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground">
+            <ActivityIcon aria-hidden className="size-3 shrink-0" />
+            Tokens
+          </span>
+          <span className="text-foreground/75 tabular-nums">
+            {formatContextWindowTokens(props.usageTotalTokens)}
+          </span>
+        </div>
+      ) : null}
       {metadata.map(({ label, value }) => {
         const Icon = label === "Branch" ? GitBranchIcon : FolderIcon;
         return (

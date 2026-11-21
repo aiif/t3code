@@ -110,6 +110,7 @@ const workflowRailOf = (
           title: "Mobile Stop review",
           prompt: "",
           model: null,
+          providerThreadId: null,
           status,
           result: null,
           startedAt: DateTime.makeUnsafe("2026-08-01T10:00:00.000Z"),

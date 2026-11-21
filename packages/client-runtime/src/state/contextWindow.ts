@@ -76,6 +76,28 @@ export function latestProviderTurnTokenUsage(
   );
 }
 
+/**
+ * The newest turn reporting usage on a provider thread, with the turn's id: output token counts
+ * are per-turn cumulatives, so callers tracking a rate use the id to reset on a new turn.
+ */
+export function latestProviderTurnTokenUsageEntry(
+  turns: ReadonlyArray<Pick<OrchestrationV2ProviderTurn, "id" | "providerThreadId" | "tokenUsage">>,
+  providerThread?: Pick<OrchestrationV2ProviderThread, "id"> | null,
+): { readonly turnId: string; readonly usage: OrchestrationV2ProviderTurnTokenUsage } | null {
+  let latest: {
+    readonly turnId: string;
+    readonly usage: OrchestrationV2ProviderTurnTokenUsage;
+  } | null = null;
+  for (const { id, providerThreadId, tokenUsage } of turns) {
+    if (tokenUsage === undefined) continue;
+    if (providerThread != null && providerThreadId !== providerThread.id) continue;
+    if (latest === null || Date.parse(tokenUsage.updatedAt) >= Date.parse(latest.usage.updatedAt)) {
+      latest = { turnId: id, usage: tokenUsage };
+    }
+  }
+  return latest;
+}
+
 export function deriveLatestContextWindowSnapshot(
   entries: ReadonlyArray<{
     readonly item: ThreadStructureTurnItem;

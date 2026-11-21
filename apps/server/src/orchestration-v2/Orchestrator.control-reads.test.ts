@@ -42,6 +42,7 @@ import {
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as DelegatedTaskQuestionReactor from "./DelegatedTaskQuestionReactor.ts";
+import * as DelegatedTaskUsageReactor from "./DelegatedTaskUsageReactor.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
@@ -1731,6 +1732,111 @@ it.effect("wakes the parent once when its delegated task asks a question", () =>
       childThreadId: task.childThreadId!,
     });
   }).pipe(Effect.provide(DelegatedTaskQuestionReactor.layer.pipe(Layer.provideMerge(layerTest)))),
+);
+
+it.effect("mirrors a delegated task's child usage onto its parent record, throttled", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const reactor = yield* DelegatedTaskUsageReactor.DelegatedTaskUsageReactor;
+    const parentThreadId = ThreadId.make("thread:usage-parent");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-usage-parent"),
+      threadId: parentThreadId,
+      projectId: ProjectId.make("project:usage"),
+      title: "Parent",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("start-usage-parent"),
+      threadId: parentThreadId,
+      messageId: MessageId.make("message:usage-parent"),
+      text: "Delegate the work",
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const parentRun = (yield* projections.getThreadProjection(parentThreadId)).runs[0]!;
+    yield* orchestrator.dispatch({
+      type: "delegated_task.request",
+      commandId: CommandId.make("delegate-usage-task"),
+      parentThreadId,
+      parentRunId: parentRun.id,
+      parentNodeId: parentRun.rootNodeId!,
+      task: "Do the work",
+      completionWake: "settled_only",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdBy: "agent",
+      creationSource: "mcp",
+    });
+    const task = (yield* projections.getThreadProjection(parentThreadId)).subagents[0]!;
+    const now = yield* DateTime.now;
+    const childUsageEvent = (eventId: string, usedTokens: number, updatedAt: string) =>
+      ({
+        id: EventId.make(eventId),
+        type: "provider-turn.updated",
+        threadId: task.childThreadId!,
+        occurredAt: now,
+        payload: {
+          id: ProviderTurnId.make(`provider-turn:${eventId}`),
+          providerThreadId: ProviderThreadId.make("provider-thread:usage-child"),
+          nodeId: NodeId.make(`node:${eventId}`),
+          runAttemptId: null,
+          nativeTurnRef: null,
+          ordinal: 1,
+          status: "running",
+          startedAt: now,
+          completedAt: null,
+          tokenUsage: {
+            usedTokens,
+            maxTokens: 200_000,
+            outputTokens: Math.round(usedTokens / 2),
+            updatedAt,
+          },
+        },
+      }) satisfies OrchestrationV2DomainEvent;
+
+    const mirroredUsage = () =>
+      projections
+        .getThreadRecords(parentThreadId, ["subagents"])
+        .pipe(
+          Effect.map(
+            (records) =>
+              records.subagents.find((candidate) => candidate.id === task.id)?.tokenUsage ?? null,
+          ),
+        );
+
+    yield* reactor.handle(childUsageEvent("usage-1", 10_000, "2026-11-20T10:00:00.000Z"));
+    assert.deepEqual(yield* mirroredUsage(), {
+      usedTokens: 10_000,
+      maxTokens: 200_000,
+      outputTokens: 5_000,
+      updatedAt: "2026-11-20T10:00:00.000Z",
+    });
+
+    // Same twentieth of the window inside the interval: throttled away.
+    yield* reactor.handle(childUsageEvent("usage-2", 11_000, "2026-11-20T10:00:01.000Z"));
+    assert.equal((yield* mirroredUsage())?.usedTokens, 10_000);
+
+    // A bucket move crosses even inside the interval.
+    yield* reactor.handle(childUsageEvent("usage-3", 25_000, "2026-11-20T10:00:01.500Z"));
+    assert.equal((yield* mirroredUsage())?.usedTokens, 25_000);
+
+    // A replay of the last mirrored snapshot changes nothing and dispatches nothing.
+    yield* reactor.handle(childUsageEvent("usage-3-replay", 25_000, "2026-11-20T10:00:01.500Z"));
+    assert.equal((yield* mirroredUsage())?.usedTokens, 25_000);
+  }).pipe(Effect.provide(DelegatedTaskUsageReactor.layer.pipe(Layer.provideMerge(layerTest)))),
 );
 
 it.effect.each([false, true])(

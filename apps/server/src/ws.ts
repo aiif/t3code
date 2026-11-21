@@ -2070,6 +2070,7 @@ export const layerWsRpc = (
                 ? command.targetThreadId
                 : command.type === "delegated_task.request" ||
                     command.type === "delegated_task.wake-policy" ||
+                    command.type === "delegated_task.usage" ||
                     command.type === "delegated_task.completion-delivery.acknowledge" ||
                     command.type === "delegated_task.completion-delivery.dispose" ||
                     command.type === "thread.created.record"

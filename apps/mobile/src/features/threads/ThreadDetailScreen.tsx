@@ -14,6 +14,8 @@ import { mobilePreferencesAtom } from "../../state/preferences";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import { createThreadVisitTracker } from "@t3tools/client-runtime/state/thread-visits";
 import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
+import { useQuietThreadStructure } from "../../state/use-thread-detail";
+import { ThreadContextStatusRow } from "./ThreadDetailsSheet";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
@@ -425,6 +427,7 @@ function ThreadDetailBody(
   const openInspector = useOpenThreadInspector();
   const { session: voiceInputSession } = useGlobalVoiceInput();
   const reportedModelSelection = useThreadReportedModelSelection(props.selectedThreadDetailRef);
+  const structure = useQuietThreadStructure(props.selectedThreadDetailRef);
   const deviceState = useEnvironmentQuery(
     deviceEnvironment.state({ environmentId: props.environmentId, input: {} }),
   );
@@ -1811,6 +1814,12 @@ function ThreadDetailBody(
                 </View>
 
                 <View style={composerSlotHidden ? { display: "none" } : undefined}>
+                  <ThreadContextStatusRow
+                    structure={structure?.projection ?? null}
+                    threadActive={["preparing", "starting", "running"].includes(
+                      props.activityRun?.status ?? "",
+                    )}
+                  />
                   {isProviderSubagent ? (
                     <View
                       className="self-center px-3 pt-1.5"

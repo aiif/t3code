@@ -110,6 +110,7 @@ import {
   threadRouteOpensDraft,
 } from "./thread-route-hydration";
 import { ThreadHeader } from "./ThreadHeader";
+import { ThreadDetailsSheet } from "./ThreadDetailsSheet";
 import { resumeThread } from "./resume-thread";
 import {
   useAndroidWorkspaceBack,
@@ -822,6 +823,9 @@ function ThreadRouteContent(
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
   };
+  const [threadDetailsOpen, setThreadDetailsOpen] = useState(false);
+  const openThreadDetails = () => setThreadDetailsOpen(true);
+  const closeThreadDetails = () => setThreadDetailsOpen(false);
   const handleEditFailedCreation = async () => {
     const creation = selectedThreadCreation?.message;
     if (!creation?.creation || routeThreadIdentity === null) {
@@ -971,6 +975,20 @@ function ThreadRouteContent(
         onOpenPullRequest={openPullRequest}
       />
 
+      <ThreadDetailsSheet
+        visible={threadDetailsOpen}
+        onClose={closeThreadDetails}
+        structure={selectedThreadDetail}
+        threadActive={["preparing", "starting", "running"].includes(
+          composer.selectedThreadActivityRun?.status ?? "",
+        )}
+        providerInstanceId={selectedThread.modelSelection.instanceId}
+        serverConfig={routeEnvironmentRuntime?.serverConfig ?? null}
+        gitControls={threadGitControlProps}
+        hasThreadCwd={selectedThreadCwd !== null}
+        onOpenFilesInspector={handleOpenFilesInspector}
+      />
+
       <>
         <ThreadScreenBinding
           header={
@@ -979,9 +997,7 @@ function ThreadRouteContent(
                 title={selectedThread.title}
                 subtitle={headerSubtitle}
                 gitControls={threadGitControlProps}
-                hasThreadCwd={selectedThreadCwd !== null}
-                inspectorMode={inspectorMode}
-                onOpenFilesInspector={handleOpenFilesInspector}
+                onOpenDetails={openThreadDetails}
                 onReturnToThread={props.onReturnToThread}
               />
             )

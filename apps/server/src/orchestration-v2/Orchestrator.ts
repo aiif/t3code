@@ -684,6 +684,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "delegated_task.remote.complete":
     case "delegated_task.remote.stop":
     case "delegated_task.wake-policy":
+    case "delegated_task.usage":
     case "delegated_task.completion-delivery.acknowledge":
     case "delegated_task.completion-delivery.dispose":
     case "thread.created.record":
@@ -10319,6 +10320,60 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return completionPlan.parentRun?.id;
   });
 
+  // Mirrors a delegated task's child-thread usage onto its record; the reactor throttles, so a
+  // repeat of the last mirrored snapshot or a settled task records nothing instead of an error.
+  const dispatchDelegatedTaskUsage = Effect.fn("orchestrationV2.dispatch.delegatedTaskUsage")(
+    function* (
+      command: Extract<OrchestrationV2Command, { readonly type: "delegated_task.usage" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const parentProjection = yield* projectionStore
+        .getThreadRecords(command.parentThreadId, ["subagents"], {
+          omitSettledSubagents: { except: [command.taskId] },
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestratorProjectionError({
+                threadId: command.parentThreadId,
+                cause,
+              }),
+          ),
+        );
+      const task = parentProjection.subagents.find(
+        (candidate) => candidate.id === command.taskId && candidate.origin === "app_owned",
+      );
+      if (task === undefined || isTerminalDelegatedTaskStatus(task.status)) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Delegated task ${command.taskId} is not an active app-owned task of thread ${command.parentThreadId}.`,
+        });
+      }
+      if (task.tokenUsage?.updatedAt === command.tokenUsage.updatedAt) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Delegated task ${command.taskId} already mirrors usage reported at ${command.tokenUsage.updatedAt}.`,
+        });
+      }
+      const now = yield* DateTime.now;
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "subagent.updated",
+        threadId: command.parentThreadId,
+        ...(task.runId === null ? {} : { runId: task.runId }),
+        nodeId: task.id,
+        driver: task.driver,
+        providerInstanceId: task.providerInstanceId,
+        occurredAt: now,
+        payload: { ...task, tokenUsage: command.tokenUsage, updatedAt: now },
+      });
+    },
+  );
+
   const dispatchCreatedThreadRecord = Effect.fn("orchestrationV2.dispatch.createdThreadRecord")(
     function* (
       command: Extract<OrchestrationV2Command, { readonly type: "thread.created.record" }>,
@@ -15312,6 +15367,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command,
           events,
         );
+        break;
+      case "delegated_task.usage":
+        yield* dispatchDelegatedTaskUsage(command, events);
         break;
       case "delegated_task.completion-delivery.acknowledge":
       case "delegated_task.completion-delivery.dispose":

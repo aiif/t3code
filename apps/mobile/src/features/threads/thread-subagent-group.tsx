@@ -129,6 +129,8 @@ export function ThreadSubagentGroup(props: {
       progress: live?.progress ?? item.progress,
       model: live?.model ?? null,
       modelSelection: live?.modelSelection,
+      providerThreadId: live?.providerThreadId ?? null,
+      tokenUsage: live?.tokenUsage,
     };
   });
   const grouped = agents.length > 1;

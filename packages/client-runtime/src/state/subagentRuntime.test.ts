@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
   ThreadId,
   type OrchestrationV2Subagent,
   type OrchestrationV2SubagentWorkflow,
@@ -9,10 +10,13 @@ import {
 import * as DateTime from "effect/DateTime";
 
 import {
+  contextUsageFromTokenUsage,
   deriveWorkflowGroups,
   isWorkflowScriptMessage,
   projectedSubagentsToRuntime,
   resolveWorkflowOpening,
+  subagentContextUsage,
+  subagentProviderTurnTokenUsage,
   workflowMemberModelSelection,
 } from "./subagentRuntime.ts";
 import { resolveSubagentMetadata } from "./subagentDisplay.ts";
@@ -28,6 +32,7 @@ function subagent(overrides: Partial<ProjectedSubagent> = {}): ProjectedSubagent
     title: "probe",
     prompt: "export const meta = …",
     model: "claude-opus-5[1m]",
+    providerThreadId: null,
     status: "running" satisfies OrchestrationV2Subagent["status"],
     result: null,
     startedAt: at("2026-08-01T10:00:00.000Z"),
@@ -316,5 +321,127 @@ describe("resolveWorkflowOpening", () => {
       false,
     );
     expect(isWorkflowScriptMessage({ role: "assistant", text: SCRIPT })).toBe(false);
+  });
+});
+
+describe("subagent context usage join", () => {
+  const subagentThread = ProviderThreadId.make("subthread-1");
+  const mainThread = ProviderThreadId.make("mainthread-1");
+
+  function turn(
+    providerThreadId: ReturnType<typeof ProviderThreadId.make>,
+    tokenUsage: { usedTokens: number; maxTokens?: number; updatedAt: string } | undefined,
+  ) {
+    return { providerThreadId, ...(tokenUsage === undefined ? {} : { tokenUsage }) };
+  }
+
+  it("picks the newest usage among the subagent's own provider turns", () => {
+    const usage = subagentProviderTurnTokenUsage(subagentThread, [
+      turn(mainThread, {
+        usedTokens: 999,
+        maxTokens: 200_000,
+        updatedAt: "2026-08-01T10:00:01.000Z",
+      }),
+      turn(subagentThread, {
+        usedTokens: 4_000,
+        maxTokens: 200_000,
+        updatedAt: "2026-08-01T10:00:02.000Z",
+      }),
+      turn(subagentThread, {
+        usedTokens: 8_000,
+        maxTokens: 200_000,
+        updatedAt: "2026-08-01T10:00:03.000Z",
+      }),
+    ]);
+    expect(usage?.usedTokens).toBe(8_000);
+  });
+
+  it("returns null without a provider thread or any reporting turn", () => {
+    expect(subagentProviderTurnTokenUsage(null, [])).toBeNull();
+    expect(
+      subagentProviderTurnTokenUsage(subagentThread, [turn(subagentThread, undefined)]),
+    ).toBeNull();
+  });
+
+  it("derives the used percentage from the window size", () => {
+    expect(
+      contextUsageFromTokenUsage({ usedTokens: 50_000, maxTokens: 200_000, updatedAt: "" }),
+    ).toEqual({ usedTokens: 50_000, maxTokens: 200_000, usedPercentage: 25 });
+    expect(contextUsageFromTokenUsage({ usedTokens: 50_000, updatedAt: "" })).toEqual({
+      usedTokens: 50_000,
+      maxTokens: null,
+      usedPercentage: null,
+    });
+  });
+
+  it("fills the coordinator's contextUsage from matching turns only", () => {
+    const [agent] = projectedSubagentsToRuntime(
+      [subagent({ providerThreadId: subagentThread })],
+      [
+        turn(mainThread, { usedTokens: 999, updatedAt: "2026-08-01T10:00:01.000Z" }),
+        turn(subagentThread, {
+          usedTokens: 20_000,
+          maxTokens: 100_000,
+          updatedAt: "2026-08-01T10:00:02.000Z",
+        }),
+      ],
+    );
+    expect(agent?.contextUsage).toEqual({
+      usedTokens: 20_000,
+      maxTokens: 100_000,
+      usedPercentage: 20,
+    });
+  });
+
+  it("prefers the task record's mirrored usage over the provider-turn join", () => {
+    const [agent] = projectedSubagentsToRuntime(
+      [
+        subagent({
+          providerThreadId: null,
+          tokenUsage: {
+            usedTokens: 30_000,
+            maxTokens: 150_000,
+            updatedAt: "2026-08-01T10:00:04.000Z",
+          },
+        }),
+      ],
+      [
+        turn(subagentThread, {
+          usedTokens: 20_000,
+          maxTokens: 100_000,
+          updatedAt: "2026-08-01T10:00:02.000Z",
+        }),
+      ],
+    );
+    expect(agent?.contextUsage).toEqual({
+      usedTokens: 30_000,
+      maxTokens: 150_000,
+      usedPercentage: 20,
+    });
+    expect(
+      subagentContextUsage(
+        {
+          providerThreadId: null,
+          tokenUsage: { usedTokens: 8_000, updatedAt: "2026-08-01T10:00:05.000Z" },
+        },
+        [],
+      ),
+    ).toEqual({ usedTokens: 8_000, maxTokens: null, usedPercentage: null });
+  });
+
+  it("leaves contextUsage null for workflow coordinators and without turns", () => {
+    const [plain] = projectedSubagentsToRuntime([subagent({ providerThreadId: subagentThread })]);
+    expect(plain?.contextUsage).toBeNull();
+    const [workflow] = projectedSubagentsToRuntime(
+      [
+        subagent({
+          providerThreadId: subagentThread,
+          workflow: { phases: [], agents: [member()] },
+        }),
+      ],
+      [turn(subagentThread, { usedTokens: 20_000, updatedAt: "2026-08-01T10:00:02.000Z" })],
+    );
+    expect(workflow?.contextUsage).toBeNull();
+    expect(subagentContextUsage({ providerThreadId: subagentThread }, [])).toBeNull();
   });
 });

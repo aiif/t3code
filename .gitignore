@@ -71,3 +71,4 @@ node_modules/
 /GOAL.md
 /goal-cf.md
 /goal-*.md
+.zcode/

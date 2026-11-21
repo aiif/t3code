@@ -3,6 +3,8 @@ import * as DateTime from "effect/DateTime";
 import type {
   ModelSelection,
   OrchestrationV2AppThread,
+  OrchestrationV2ProviderTurn,
+  OrchestrationV2ProviderTurnTokenUsage,
   OrchestrationV2Subagent,
   OrchestrationV2SubagentWorkflow,
   OrchestrationV2TurnItem,
@@ -27,6 +29,70 @@ export interface SubagentUsage {
   readonly reasoningOutputTokens?: number;
   readonly toolUses?: number;
   readonly durationMs?: number;
+}
+
+export interface SubagentContextUsage {
+  readonly usedTokens: number;
+  readonly maxTokens: number | null;
+  readonly usedPercentage: number | null;
+}
+
+type ProviderTurnUsageSource = Pick<OrchestrationV2ProviderTurn, "providerThreadId" | "tokenUsage">;
+
+/**
+ * The newest streamed token usage among a provider thread's turns. Provider-native subagents
+ * report through their own provider turns inside the parent projection, so the returned object
+ * keeps its identity until that thread reports again.
+ */
+export function subagentProviderTurnTokenUsage(
+  providerThreadId: OrchestrationV2Subagent["providerThreadId"],
+  providerTurns: ReadonlyArray<ProviderTurnUsageSource>,
+): OrchestrationV2ProviderTurnTokenUsage | null {
+  if (providerThreadId === null) return null;
+  let latest: OrchestrationV2ProviderTurnTokenUsage | null = null;
+  for (const { providerThreadId: turnProviderThreadId, tokenUsage } of providerTurns) {
+    if (turnProviderThreadId !== providerThreadId || tokenUsage === undefined) continue;
+    // Ties go to the later entry, since live upserts append.
+    if (latest === null || Date.parse(tokenUsage.updatedAt) >= Date.parse(latest.updatedAt)) {
+      latest = tokenUsage;
+    }
+  }
+  return latest;
+}
+
+export function contextUsageFromTokenUsage(
+  usage: OrchestrationV2ProviderTurnTokenUsage,
+): SubagentContextUsage {
+  const usedTokens = Math.max(0, usage.usedTokens);
+  const maxTokens = usage.maxTokens ?? null;
+  const usedPercentage =
+    maxTokens !== null && maxTokens > 0 ? Math.min(100, (usedTokens / maxTokens) * 100) : null;
+  return { usedTokens, maxTokens, usedPercentage };
+}
+
+/**
+ * A subagent's live context usage, or null when nothing reports one: an app-owned task's record
+ * carries the server's mirrored usage, and a provider-native one reports through its own
+ * provider turns inside the parent projection.
+ */
+export function subagentContextUsage(
+  subagent: Pick<OrchestrationV2Subagent, "providerThreadId" | "tokenUsage">,
+  providerTurns: ReadonlyArray<ProviderTurnUsageSource>,
+): SubagentContextUsage | null {
+  const mirrored = subagent.tokenUsage;
+  if (mirrored !== undefined) {
+    const maxTokens = mirrored.maxTokens ?? null;
+    return {
+      usedTokens: Math.max(0, mirrored.usedTokens),
+      maxTokens,
+      usedPercentage:
+        maxTokens !== null && maxTokens > 0
+          ? Math.min(100, (Math.max(0, mirrored.usedTokens) / maxTokens) * 100)
+          : null,
+    };
+  }
+  const usage = subagentProviderTurnTokenUsage(subagent.providerThreadId, providerTurns);
+  return usage === null ? null : contextUsageFromTokenUsage(usage);
 }
 
 export interface SubagentActivityEntry {
@@ -57,6 +123,7 @@ export interface RuntimeSubagent {
   readonly status: RuntimeSubagentStatus;
   readonly activationCount: number;
   readonly usage: SubagentUsage | null;
+  readonly contextUsage: SubagentContextUsage | null;
   readonly progress: string | null;
   readonly lastToolName: string | null;
   readonly result: string | null;
@@ -161,6 +228,7 @@ function workflowMembersToRuntime(
       status,
       activationCount: agent.attempt ?? 1,
       usage: workflowUsage(agent),
+      contextUsage: null,
       progress: agent.prompt ?? null,
       result: failed ? null : (agent.result ?? null),
       error: failed ? (agent.result ?? null) : null,
@@ -212,6 +280,8 @@ export function projectedSubagentsToRuntime(
     readonly title: string | null;
     readonly prompt: string;
     readonly model: string | null;
+    readonly providerThreadId: OrchestrationV2Subagent["providerThreadId"];
+    readonly tokenUsage?: OrchestrationV2Subagent["tokenUsage"];
     readonly status: OrchestrationV2Subagent["status"];
     readonly progress?: string | undefined;
     readonly childThreadId?: string | null | undefined;
@@ -221,6 +291,7 @@ export function projectedSubagentsToRuntime(
     readonly completedAt: DateTime.Utc | null;
     readonly updatedAt: DateTime.Utc;
   }>,
+  providerTurns?: ReadonlyArray<ProviderTurnUsageSource> | null,
 ): ReadonlyArray<RuntimeSubagent> {
   return subagents.flatMap((subagent) => {
     const updatedAt = DateTime.formatIso(subagent.updatedAt);
@@ -238,6 +309,10 @@ export function projectedSubagentsToRuntime(
       status: subagent.status,
       activationCount: 1,
       usage: workflow === undefined ? null : workflowUsage(workflow),
+      contextUsage:
+        providerTurns == null || workflow !== undefined
+          ? null
+          : subagentContextUsage(subagent, providerTurns),
       progress: subagent.progress ?? null,
       lastToolName: null,
       result: subagent.result,

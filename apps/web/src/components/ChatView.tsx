@@ -281,6 +281,8 @@ import {
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { ComposerContextGauge } from "./chat/ComposerContextGauge";
+import { useOutputTokenRate } from "./chat/useOutputTokenRate";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
@@ -343,6 +345,7 @@ import {
   deriveLatestContextWindowSnapshot,
   hasDismissedResumeCompaction,
   latestProviderTurnTokenUsage,
+  latestProviderTurnTokenUsageEntry,
   shouldOfferResumeCompaction,
 } from "@t3tools/client-runtime/state/context-window";
 import {
@@ -1517,6 +1520,24 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadLiveTokenUsage,
     activeProviderThread,
   );
+  const activeTokenUsageEntry = latestProviderTurnTokenUsageEntry(
+    serverProjection?.providerTurns ?? [],
+    activeProviderThread,
+  );
+  const outputRateWindow = useOutputTokenRate(
+    activeTokenUsageEntry?.usage ?? null,
+    activeTokenUsageEntry === null
+      ? null
+      : `${activeProviderThread?.id ?? "thread"}:${activeTokenUsageEntry.turnId}`,
+  );
+  const composerContextGauge =
+    activeContextWindow === null ? null : (
+      <ComposerContextGauge
+        usage={activeContextWindow}
+        rateWindow={outputRateWindow}
+        running={isWorking}
+      />
+    );
   const pendingBackgroundTasks = deriveThreadPendingBackgroundTasks(serverProjection);
   const activeWorkStartedAt =
     deriveActiveWorkStartedAt(activeActivityRun, activeRuntime, localDispatchStartedAt) ??
@@ -3644,6 +3665,7 @@ export default function ChatView(props: ChatViewProps) {
                               <ChatComposer
                                 canOperateThread={canOperateThread}
                                 reportedModelSelection={reportedModelSelection}
+                                contextGauge={composerContextGauge}
                                 multipleModelSelections={multipleModelSelections}
                                 supportsMultipleModels={
                                   serverConfig?.environment.capabilities

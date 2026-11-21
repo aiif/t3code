@@ -70,6 +70,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -386,6 +387,8 @@ export interface ChatComposerProps {
   canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
   resumeCompactionTokens: number | null;
+  /** The always-on context readout beside the footer controls; absent when nothing reports. */
+  contextGauge?: ReactNode;
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
@@ -3725,6 +3728,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               >
                 {composerAttachButton && !dictationTakesFooter ? (
                   <div className="me-2">{composerAttachButton}</div>
+                ) : null}
+                {props.contextGauge ? (
+                  <div className="shrink-0" data-chat-composer-context-gauge="true">
+                    {props.contextGauge}
+                  </div>
                 ) : null}
                 <div
                   data-chat-composer-actions="right"

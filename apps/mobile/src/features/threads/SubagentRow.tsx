@@ -8,8 +8,19 @@ import {
   resolveSubagentMetadata,
   subagentCardDetail,
 } from "@t3tools/client-runtime/state/subagent-display";
+import {
+  contextUsageFromTokenUsage,
+  subagentContextUsage,
+  subagentProviderTurnTokenUsage,
+  type SubagentContextUsage,
+} from "@t3tools/client-runtime/state/subagentRuntime";
 import { formatSubagentEffort } from "@t3tools/client-runtime/state/thread-execution";
+import {
+  deriveOutputTokensPerSecond,
+  formatTokensPerSecond,
+} from "@t3tools/client-runtime/state/token-rate";
 import type { EnvironmentId, OrchestrationV2Subagent } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import type { ReactNode } from "react";
 import { View } from "react-native";
 
@@ -17,25 +28,39 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { ProviderIcon, ProviderInstanceIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
+import { environmentThreadDetails } from "../../state/threads";
 import { useEnvironmentServerConfig, useProject, useThreadShell } from "../../state/entities";
 import { SUBAGENT_TONE_TEXT_CLASS, SubagentStatusDot } from "./SubagentStatusDot";
 import { resolveSubagentRowPresentation } from "./threadAgentsPresentation";
+import { useOutputTokenRate } from "./useOutputTokenRate";
+import { useVisibleSecondClock } from "./use-visible-second-clock";
 
-type SubagentRowSubagent = Pick<
-  OrchestrationV2Subagent,
-  | "threadId"
-  | "childThreadId"
-  | "model"
-  | "modelSelection"
-  | "driver"
-  | "providerInstanceId"
-  | "title"
-  | "prompt"
-  | "status"
-  | "progress"
-  | "result"
-  | "remoteChild"
->;
+// `id` and `providerThreadId` stay optional: timeline turn items carry neither, and without a
+// provider thread the row simply shows no usage.
+type SubagentRowSubagent = Omit<
+  Pick<
+    OrchestrationV2Subagent,
+    | "id"
+    | "threadId"
+    | "childThreadId"
+    | "model"
+    | "modelSelection"
+    | "driver"
+    | "providerInstanceId"
+    | "providerThreadId"
+    | "tokenUsage"
+    | "title"
+    | "prompt"
+    | "status"
+    | "progress"
+    | "result"
+    | "remoteChild"
+  >,
+  "id" | "providerThreadId"
+> & {
+  readonly id?: string | undefined;
+  readonly providerThreadId?: OrchestrationV2Subagent["providerThreadId"] | undefined;
+};
 
 export function SubagentRow(props: {
   readonly environmentId: EnvironmentId;
@@ -46,6 +71,31 @@ export function SubagentRow(props: {
 }) {
   const presentation = resolveSubagentRowPresentation(props.subagent, props.canOpenRemote);
   const detail = subagentCardDetail(presentation.detail);
+  const subagent = props.subagent;
+  const parentRef = scopeThreadRef(props.environmentId, subagent.threadId);
+  // Mirrored usage first (app-owned tasks), then the join over the parent's provider turns.
+  const liveUsage = useAtomValue(environmentThreadDetails.threadAtom(parentRef), (thread) =>
+    subagent.tokenUsage !== undefined
+      ? subagent.tokenUsage
+      : subagentProviderTurnTokenUsage(
+          subagent.providerThreadId ?? null,
+          thread?.projection.providerTurns ?? [],
+        ),
+  );
+  const rateWindow = useOutputTokenRate(
+    liveUsage,
+    subagent.providerThreadId ?? (subagent.id === undefined ? null : `subagent:${subagent.id}`),
+  );
+  const contextUsage: SubagentContextUsage | null =
+    liveUsage === null
+      ? null
+      : subagent.tokenUsage !== undefined
+        ? subagentContextUsage({ ...subagent, providerThreadId: null }, [])
+        : contextUsageFromTokenUsage(liveUsage);
+  const active = ["pending", "running", "waiting"].includes(subagent.status);
+  const nowMs = useVisibleSecondClock(active);
+  const outputRate =
+    active && rateWindow !== null ? deriveOutputTokensPerSecond(rateWindow, nowMs) : null;
   return (
     <View className="flex-row gap-3">
       <View className="h-5 justify-center">
@@ -81,6 +131,16 @@ export function SubagentRow(props: {
               </Text>
             ) : null}
           </View>
+          {contextUsage?.usedPercentage != null ? (
+            <Text className="shrink-0 text-xs text-foreground-muted tabular-nums">
+              {Math.round(Math.max(0, Math.min(100, contextUsage.usedPercentage)))}%
+            </Text>
+          ) : null}
+          {outputRate !== null ? (
+            <Text className="shrink-0 text-xs text-foreground-muted tabular-nums">
+              {formatTokensPerSecond(outputRate)}
+            </Text>
+          ) : null}
           {props.elapsed}
           {presentation.canOpenThread ? (
             <SymbolView name="chevron.right" size={12} tintColorClassName="accent-icon-subtle" />

@@ -921,6 +921,18 @@ export const OrchestrationV2RemoteTaskChild = Schema.Struct({
 });
 export type OrchestrationV2RemoteTaskChild = typeof OrchestrationV2RemoteTaskChild.Type;
 
+/**
+ * A delegated task's live token usage, mirrored from its child thread's provider turns onto the
+ * parent's task record. `updatedAt` is an ISO string, like provider turn token usage.
+ */
+export const OrchestrationV2SubagentTokenUsage = Schema.Struct({
+  usedTokens: NonNegativeInt,
+  maxTokens: Schema.optional(Schema.NullOr(NonNegativeInt)),
+  outputTokens: Schema.optional(NonNegativeInt),
+  updatedAt: Schema.String,
+});
+export type OrchestrationV2SubagentTokenUsage = typeof OrchestrationV2SubagentTokenUsage.Type;
+
 export const OrchestrationV2Subagent = Schema.Struct({
   id: NodeId,
   threadId: ThreadId,
@@ -955,6 +967,7 @@ export const OrchestrationV2Subagent = Schema.Struct({
     "interrupted",
   ]),
   progress: Schema.optional(Schema.String),
+  tokenUsage: Schema.optional(OrchestrationV2SubagentTokenUsage),
   workflow: Schema.optional(OrchestrationV2SubagentWorkflow),
   result: Schema.NullOr(Schema.String),
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -3557,6 +3570,14 @@ export const OrchestrationV2Command = Schema.Union([
     parentThreadId: ThreadId,
     taskId: NodeId,
     completionWake: Schema.Literals(["always", "settled_only"]),
+  }),
+  Schema.Struct({
+    // Mirrors a delegated task's child-thread usage onto the parent record; the reactor throttles.
+    type: Schema.Literal("delegated_task.usage"),
+    commandId: CommandId,
+    parentThreadId: ThreadId,
+    taskId: NodeId,
+    tokenUsage: OrchestrationV2SubagentTokenUsage,
   }),
   Schema.Struct({
     type: Schema.Literal("delegated_task.completion-delivery.acknowledge"),
