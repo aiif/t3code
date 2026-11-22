@@ -244,6 +244,7 @@ function ProviderAccount({
   }
   const name = provider.displayName ?? provider.driver;
   const email = signedIn && !active && provider.enabled ? provider.auth.email?.trim() : undefined;
+  const authLabel = signedIn && !active ? provider.auth.label : undefined;
   const methods = state?.methods ?? [];
   // The status line says why a provider that is missing or turned off can't sign in.
   const canSignIn =
@@ -266,7 +267,11 @@ function ProviderAccount({
       : !provider.enabled
         ? gt("Turned off")
         : signedIn
-          ? gt("Signed in")
+          ? email
+            ? gt("Signed in")
+            : authLabel
+              ? `${gt("Signed in")} · ${authLabel}`
+              : gt("Signed in")
           : isDiscovering
             ? gt("Discovering sign-in methods…")
             : needsExternalSetup

@@ -281,4 +281,36 @@ describe("Antigravity setup", () => {
     expect(screen.button("Sign in")?.disabled).toBe(true);
     expect(setup.startAuth).not.toHaveBeenCalled();
   });
+
+  it("shows a known account before its sign-in is verified", async () => {
+    resetSetup();
+    setup.auth = authState({ phase: "idle", flowId: null, authorizationUrl: null });
+    await using screen = await renderSetup({
+      provider: {
+        ...provider,
+        status: "warning",
+        auth: { status: "unknown", type: "oauth-personal", email: "someone@example.com" },
+      },
+    });
+    await expect
+      .element(screen.getByRole("button", { name: "Toggle account email visibility" }))
+      .toBeVisible();
+  });
+
+  it("shows the configured API key hint when no account email is available", async () => {
+    resetSetup();
+    setup.auth = authState({ phase: "idle", flowId: null, authorizationUrl: null });
+    await using screen = await renderSetup({
+      provider: {
+        ...provider,
+        status: "ready",
+        auth: {
+          status: "authenticated",
+          type: "gemini-api-key",
+          label: "Gemini API key (••••abcd)",
+        },
+      },
+    });
+    await expect.element(screen.getByText("Gemini API key (••••abcd)")).toBeVisible();
+  });
 });

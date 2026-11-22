@@ -109,16 +109,23 @@ export function antigravityAuthUsesBrowser(authMethod: AntigravityAuthMethod): b
   return authMethod === "oauth-personal" || authMethod === "oauth-business";
 }
 
-export function antigravityAuthLabel(authMethod: AntigravityAuthMethod): string {
+/** Enough of a key to tell two saved keys apart without exposing a usable credential. */
+function antigravityCredentialHint(apiKey: string): string | undefined {
+  const key = apiKey.trim();
+  return key.length >= 8 ? `••••${key.slice(-4)}` : undefined;
+}
+
+export function antigravityAuthLabel(authMethod: AntigravityAuthMethod, apiKey = ""): string {
+  const hint = antigravityCredentialHint(apiKey);
   switch (authMethod) {
     case "oauth-personal":
       return "Google account";
     case "oauth-business":
       return "Gemini Enterprise";
     case "gemini-api-key":
-      return "Gemini API key";
+      return hint ? `Gemini API key (${hint})` : "Gemini API key";
     case "agent-platform":
-      return "Agent Platform";
+      return hint ? `Agent Platform (${hint})` : "Agent Platform";
   }
 }
 

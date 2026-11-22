@@ -570,8 +570,12 @@ export const AntigravityDriver: ProviderDriver<
       stampIdentity: classifyModels,
       probe,
       probeUsage: usage.probe,
+      accountEmail: usage.accountEmail,
       clearUsage: usage.clear,
-      auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
+      auth: {
+        type: auth.authMethod,
+        label: antigravityAuthLabel(auth.authMethod, auth.apiKey),
+      },
       supportsTextGeneration: isAntigravityTextGenerationAvailable(profileDirectory).pipe(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),

@@ -138,6 +138,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
     readonly enabled?: boolean;
     readonly safe?: boolean;
     readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
+    readonly accountEmail?: Effect.Effect<string | undefined>;
   } = {},
 ) {
   const initialProbe = yield* Deferred.make<EffectAcpSchema.InitializeResponse, ProbeError>();
@@ -153,6 +154,7 @@ const makeHarness = Effect.fn("makeAntigravityProviderHarness")(function* (
       stampIdentity: (snapshot) => Effect.succeed({ ...snapshot, instanceId, driver }),
       ...(options.auth ? { auth: options.auth } : {}),
       ...(options.probeUsage ? { probeUsage: options.probeUsage } : {}),
+      ...(options.accountEmail ? { accountEmail: options.accountEmail } : {}),
       probe: Ref.update(probeCalls, (count) => count + 1).pipe(
         Effect.andThen(Ref.get(probe)),
         Effect.flatten,
@@ -410,6 +412,33 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
         expectedCommands,
       );
       expect(yield* Ref.get(harness.probeCalls)).toBe(1);
+    }),
+  );
+
+  it.effect("publishes the signed-in Google account and clears it on sign-out", () =>
+    Effect.gen(function* () {
+      const email = "someone@example.com";
+      const limits: ServerProviderUsageLimits = {
+        checkedAt: "2026-10-09T12:00:00.000Z",
+        windows: [],
+        unavailable: { reason: "unsupported" },
+      };
+      const harness = yield* makeHarness({
+        probeUsage: Effect.succeed(limits),
+        accountEmail: Effect.succeed<string | undefined>(email),
+      });
+      const published = yield* harness.nextPublish((snapshot) => snapshot.auth.email === email);
+      yield* harness.initialize;
+      expect((yield* published)?.auth).toMatchObject({ email });
+      yield* harness.provider.onSessionStarted(started);
+      expect((yield* harness.provider.snapshot.getSnapshot).auth).toMatchObject({
+        status: "authenticated",
+        email,
+      });
+      yield* harness.provider.onSignedIn;
+      expect((yield* harness.provider.snapshot.getSnapshot).auth).not.toHaveProperty("email");
+      yield* harness.provider.onSignedOut;
+      expect((yield* harness.provider.snapshot.getSnapshot).auth).not.toHaveProperty("email");
     }),
   );
 

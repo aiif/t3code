@@ -169,6 +169,8 @@ interface AntigravityProviderOptions {
   >;
   readonly supportsTextGeneration: Effect.Effect<boolean>;
   readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
+  /** The account named by the same read that produced the usage limits, when it can be named. */
+  readonly accountEmail?: Effect.Effect<string | undefined>;
   readonly clearUsage?: Effect.Effect<void>;
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
   readonly auth?: { readonly type: string; readonly label: string };
@@ -261,16 +263,29 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       usageRead,
       options.probeUsage.pipe(
         Effect.flatMap((probed) =>
-          SubscriptionRef.update(metadata, (state) => ({
-            ...state,
-            draft: {
-              ...state.draft,
-              usageLimits: resolveUsageLimitsAfterProbe({
-                published: state.draft.usageLimits,
-                probed,
-              }),
-            },
-          })),
+          Effect.flatMap(options.accountEmail ?? Effect.undefined, (accountEmail) =>
+            SubscriptionRef.update(metadata, (state) => {
+              const signedOut = state.draft.auth.status === "unauthenticated";
+              const email = signedOut ? undefined : accountEmail;
+              const { email: _previousEmail, ...authWithoutEmail } = state.draft.auth;
+              const auth = email
+                ? { ...state.draft.auth, email }
+                : signedOut || probed.unavailable?.reason === "unsupported"
+                  ? authWithoutEmail
+                  : state.draft.auth;
+              return {
+                ...state,
+                draft: {
+                  ...state.draft,
+                  auth,
+                  usageLimits: resolveUsageLimitsAfterProbe({
+                    published: state.draft.usageLimits,
+                    probed,
+                  }),
+                },
+              };
+            }),
+          ),
         ),
         // Enrichment cannot change published limits; a health check publishes them.
         Effect.andThen(
@@ -421,6 +436,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             status: "authenticated",
             type: options.auth?.type ?? "oauth-personal",
             label: options.auth?.label ?? "Google account",
+            ...(draft.auth.email ? { email: draft.auth.email } : {}),
           },
           checkedAt: updatedAt,
           models: buildAntigravityModelsFromSession(started.sessionSetupResult, thinkingLevels),
@@ -556,13 +572,14 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     onSessionStarted,
     onConfigOptionsUpdated,
     onAvailableCommands,
-    // The new sign-in may be another account. Clear and republish its limits so a failed read
+    // The new sign-in may be another account. Clear its limits and identity so a failed read
     // cannot fall back to them; the session start then reads the new account's limits.
     onSignedIn: resetUsage.pipe(
       Effect.andThen(
         SubscriptionRef.update(metadata, (state) => {
           const { usageLimits: _previousAccount, ...draft } = state.draft;
-          return { ...state, draft };
+          const { email: _previousEmail, ...auth } = draft.auth;
+          return { ...state, draft: { ...draft, auth } };
         }),
       ),
       Effect.andThen(

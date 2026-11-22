@@ -25,6 +25,7 @@ import { CopyButton } from "../ui/copy-button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingsRow } from "./settingsLayout";
+import { providerAuthLabel } from "./providerStatus";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 
 const ProviderAuthTerminal = lazy(() => import("./ProviderAuthTerminal"));
@@ -65,6 +66,7 @@ export function ProviderAuthenticationSection({
   const signedIn =
     provider.auth.status === "authenticated" ||
     (provider.auth.status === "unknown" && auth?.phase === "succeeded");
+  const authLabel = providerAuthLabel(provider.auth);
   const isDiscovering =
     provider.driver === "acpRegistry" &&
     !active &&
@@ -176,7 +178,7 @@ export function ProviderAuthenticationSection({
     <SettingsRow
       title={gt("Account")}
       description={
-        signedIn && !active && provider.auth.email?.trim() ? (
+        !active && provider.auth.email?.trim() ? (
           <span>
             <T>
               Signed in as{" "}
@@ -191,7 +193,9 @@ export function ProviderAuthenticationSection({
             </T>
           </span>
         ) : (
-          <span role="status">{accountDescription}</span>
+          <span role="status">
+            {signedIn && !active && authLabel ? authLabel : accountDescription}
+          </span>
         )
       }
       status={

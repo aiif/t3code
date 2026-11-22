@@ -31,6 +31,7 @@ import {
   makeAntigravityStderrHandler,
   makeAntigravityStdoutTransform,
   antigravityLoginResponse,
+  antigravityAuthLabel,
   parseAntigravityAuthorizationUrl,
   prepareAntigravityProfile,
   resolveAntigravityInstanceDirectories,
@@ -45,6 +46,19 @@ const encode = (text: string) => new TextEncoder().encode(text);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+describe("Antigravity auth labels", () => {
+  it("names a saved API key by its last four characters", () => {
+    expect(antigravityAuthLabel("gemini-api-key", "AIzaSyExample1234abcd")).toBe(
+      "Gemini API key (••••abcd)",
+    );
+    expect(antigravityAuthLabel("agent-platform", "vertex-key-5678")).toBe(
+      "Agent Platform (••••5678)",
+    );
+    expect(antigravityAuthLabel("gemini-api-key", "short")).toBe("Gemini API key");
+    expect(antigravityAuthLabel("oauth-personal", "ignored-for-oauth")).toBe("Google account");
+  });
+});
 
 describe("Antigravity process environment", () => {
   const profile: AntigravityProfile = {

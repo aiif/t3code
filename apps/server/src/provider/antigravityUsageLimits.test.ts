@@ -590,14 +590,19 @@ describe("Antigravity subscription limits", () => {
   it.effect("names one Google account the same way from every sign-in", () =>
     Effect.gen(function* () {
       const read = (refreshToken: string, userId: string) =>
-        fixture({ refreshToken, userId }).pipe(Effect.flatMap((usage) => usage.probe));
+        fixture({ refreshToken, userId }).pipe(
+          Effect.flatMap((usage) => Effect.all({ limits: usage.probe, email: usage.accountEmail })),
+        );
       const machineA = yield* read("refresh-a", "google-user-1");
       const machineB = yield* read("refresh-b", "google-user-1");
       const otherAccount = yield* read("refresh-c", "google-user-2");
-      expect(machineA.credentialFingerprint).toMatch(/^[0-9a-f]{64}$/);
-      expect(machineB.credentialFingerprint).toBe(machineA.credentialFingerprint);
-      expect(otherAccount.credentialFingerprint).not.toBe(machineA.credentialFingerprint);
-      expect(JSON.stringify(machineA)).not.toMatch(/google-user-1|someone@example.com/);
+      expect(machineA.limits.credentialFingerprint).toMatch(/^[0-9a-f]{64}$/);
+      expect(machineB.limits.credentialFingerprint).toBe(machineA.limits.credentialFingerprint);
+      expect(otherAccount.limits.credentialFingerprint).not.toBe(
+        machineA.limits.credentialFingerprint,
+      );
+      expect(machineA.email).toBe("someone@example.com");
+      expect(JSON.stringify(machineA.limits)).not.toMatch(/google-user-1|someone@example.com/);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
