@@ -33,9 +33,9 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
+import { copyWithFeedback } from "../ui/copyFeedback";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { projectEnvironment } from "~/state/projects";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 
@@ -64,23 +64,6 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   const writeProjectFile = useAtomCommand(projectEnvironment.writeFile, {
     reportFailure: false,
   });
-  const { copyToClipboard, isCopied } = useCopyToClipboard({
-    target: {
-      target: "plan",
-      unavailableMessage: msg("Clipboard API is unavailable while copying plan."),
-      failureMessage: msg("Failed to copy plan to the clipboard."),
-    },
-    onError: (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: gt("Could not copy plan"),
-          description:
-            error instanceof Error ? error.message : gt("An error occurred while copying."),
-        }),
-      );
-    },
-  });
   const title = proposedPlanTitle(planMarkdown) ?? gt("Proposed plan");
   const lineCount = planMarkdown.split("\n").length;
   const canCollapse = planMarkdown.length > 900 || lineCount > 20;
@@ -100,7 +83,14 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   };
 
   const handleCopyPlan = () => {
-    copyToClipboard(saveContents);
+    void copyWithFeedback(saveContents, {
+      target: {
+        target: "plan",
+        unavailableMessage: msg("Clipboard API is unavailable while copying plan."),
+        failureMessage: msg("Failed to copy plan to the clipboard."),
+      },
+      failureTitle: gt("Could not copy plan"),
+    });
   };
 
   const openSaveDialog = () => {
@@ -183,9 +173,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             <EllipsisIcon aria-hidden="true" className="size-4" />
           </MenuTrigger>
           <MenuPopup align="end">
-            <MenuItem onClick={handleCopyPlan}>
-              {isCopied ? gt("Copied!") : gt("Copy to clipboard")}
-            </MenuItem>
+            <MenuItem onClick={handleCopyPlan}>{gt("Copy to clipboard")}</MenuItem>
             <MenuItem onClick={handleDownload}>
               <T>Download as markdown</T>
             </MenuItem>

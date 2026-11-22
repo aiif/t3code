@@ -14,7 +14,7 @@ import * as Schema from "effect/Schema";
 import { msg, T, useGT, Var } from "gt-react";
 import { type ReactNode, useState } from "react";
 
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { CopyLabelButton } from "../ui/copy-button";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
 import { serverEnvironment } from "../../state/server";
@@ -57,13 +57,6 @@ export function DatabaseStorageNotice({
     [],
     DismissedEnvironmentIds,
   );
-  const { copyToClipboard } = useCopyToClipboard({
-    target: {
-      target: "command",
-      unavailableMessage: msg("Clipboard API is unavailable while copying command."),
-      failureMessage: msg("Failed to copy command to the clipboard."),
-    },
-  });
   const visible = recommendations
     .filter((recommendation) => !dismissed.includes(recommendation.environmentId))
     .map((recommendation) => ({
@@ -117,13 +110,18 @@ export function DatabaseStorageNotice({
             description={<code className="select-text break-all">{status.compactCommand}</code>}
             control={
               <div className="flex flex-wrap items-center gap-1.5">
-                <Button
+                <CopyLabelButton
+                  value={status.compactCommand}
+                  label={gt("Copy command")}
+                  target={{
+                    target: "command",
+                    unavailableMessage: msg("Clipboard API is unavailable while copying command."),
+                    failureMessage: msg("Failed to copy command to the clipboard."),
+                  }}
+                  showIcon={false}
                   variant="outline"
                   size="xs"
-                  onClick={() => copyToClipboard(status.compactCommand, undefined)}
-                >
-                  <T>Copy command</T>
-                </Button>
+                />
                 {dismiss}
               </div>
             }

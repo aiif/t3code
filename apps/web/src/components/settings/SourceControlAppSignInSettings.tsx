@@ -9,11 +9,12 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { msg, T, useGT, Var } from "gt-react";
-import { CheckIcon, ExternalLinkIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, ExternalLinkIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { T3AppIcon } from "~/components/T3AppIcon";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { CopyButton } from "../ui/copy-button";
+import { copyWithFeedback } from "../ui/copyFeedback";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { serverEnvironment } from "../../state/server";
@@ -114,14 +115,6 @@ export function SourceControlAppSignInSettings({
   const cancel = useAtomCommand(sourceControlEnvironment.cancelSignIn, { reportFailure: false });
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
     label: `sign out of ${appSignIn.appName}`,
-  });
-  const { copyToClipboard, isCopied } = useCopyToClipboard({
-    timeout: 1500,
-    target: {
-      target: "sign-in code",
-      unavailableMessage: msg("Clipboard API is unavailable while copying sign-in code."),
-      failureMessage: msg("Failed to copy sign-in code to the clipboard."),
-    },
   });
   const [state, setState] = useState<SignInState>({ status: "idle" });
 
@@ -236,14 +229,18 @@ export function SourceControlAppSignInSettings({
         <div className="grid gap-4 border-t border-border bg-muted/40 px-3 py-4 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-6">
           <div className="flex items-center gap-2">
             <DeviceCode code={waiting.userCode} />
-            <Button
+            <CopyButton
+              value={waiting.userCode}
+              label={gt("Copy code")}
+              target={{
+                target: "sign-in code",
+                unavailableMessage: msg("Clipboard API is unavailable while copying sign-in code."),
+                failureMessage: msg("Failed to copy sign-in code to the clipboard."),
+              }}
               size="icon-xs"
               variant="ghost"
-              aria-label={gt("Copy code")}
-              onClick={() => copyToClipboard(waiting.userCode, undefined)}
-            >
-              {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
-            </Button>
+              iconClassName="size-3.5"
+            />
           </div>
           <div className="grid gap-2 sm:justify-items-end">
             <Button
@@ -251,7 +248,17 @@ export function SourceControlAppSignInSettings({
               render={
                 <a href={waiting.verificationUri} target="_blank" rel="noreferrer noopener" />
               }
-              onClick={() => copyToClipboard(waiting.userCode, undefined)}
+              onClick={() =>
+                void copyWithFeedback(waiting.userCode, {
+                  target: {
+                    target: "sign-in code",
+                    unavailableMessage: msg(
+                      "Clipboard API is unavailable while copying sign-in code.",
+                    ),
+                    failureMessage: msg("Failed to copy sign-in code to the clipboard."),
+                  },
+                })
+              }
             >
               <T>Copy code & open GitHub</T>
               <ExternalLinkIcon aria-hidden className="size-3.5" />

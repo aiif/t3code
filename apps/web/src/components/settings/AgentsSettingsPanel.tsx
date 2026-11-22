@@ -1,8 +1,8 @@
 import type { AgentSummary } from "@t3tools/contracts";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { BrainCircuitIcon, CopyIcon, FolderTreeIcon, RefreshCwIcon } from "lucide-react";
+import { BrainCircuitIcon, FolderTreeIcon, RefreshCwIcon } from "lucide-react";
 
-import { namedClipboardTarget, useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { namedClipboardTarget } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import type { MessageResolver } from "../../i18n/messages";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -10,6 +10,7 @@ import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useAgentList } from "../../state/agents";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { CopyLabelButton } from "../ui/copy-button";
 
 const SOURCE_LABELS = {
   project: "Project",
@@ -65,7 +66,6 @@ function delegationLabel(agent: AgentSummary, resolve: MessageResolver): string 
 
 function AgentCard({ agent }: { readonly agent: AgentSummary }) {
   const resolve = useMessages();
-  const { copyToClipboard } = useCopyToClipboard({ target: namedClipboardTarget("agent id") });
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border/60 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -81,15 +81,15 @@ function AgentCard({ agent }: { readonly agent: AgentSummary }) {
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{agent.description}</p>
         </div>
-        <Button
+        <CopyLabelButton
+          value={agent.id}
+          label={agent.id}
+          ariaLabel={resolve(msg("Copy agent id {agentId}", { agentId: agent.id }))}
           size="xs"
           variant="ghost"
-          onClick={() => copyToClipboard(agent.id, undefined)}
-          aria-label={resolve(msg("Copy agent id {agentId}", { agentId: agent.id }))}
-        >
-          <CopyIcon className="size-3.5" />
-          <span className="font-mono text-xs">{agent.id}</span>
-        </Button>
+          iconClassName="size-3.5"
+          target={namedClipboardTarget("agent id")}
+        />
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>{providerLabel(agent, resolve)}</span>

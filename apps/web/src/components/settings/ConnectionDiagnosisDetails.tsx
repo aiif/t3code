@@ -15,12 +15,11 @@ import { ChevronRightIcon } from "lucide-react";
 import { APP_VERSION } from "~/branding";
 import { environmentCatalog } from "~/connection/catalog";
 import { type EnvironmentPresentation, useRelayEnvironmentDiscovery } from "~/state/environments";
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { copyWithFeedback } from "../ui/copyFeedback";
 import { useDeadlinePassed } from "../../hooks/useDeadline";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
-import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /**
  * What failed on the way to an environment, or null while it is connected, off,
@@ -144,23 +143,7 @@ export function ConnectionDiagnosisPanel({
   readonly onRetry: () => void;
   readonly onAddRoute: (() => void) | null;
 }) {
-  const gt = useGT();
   const m = useMessages();
-  const { copyToClipboard } = useCopyToClipboard({
-    target: {
-      target: "connection diagnostics",
-      unavailableMessage: msg("Clipboard API is unavailable while copying connection diagnostics."),
-      failureMessage: msg("Failed to copy connection diagnostics to the clipboard."),
-    },
-    onError: (error) =>
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: gt("Could not copy diagnostics"),
-          description: error.message,
-        }),
-      ),
-  });
   return (
     <div className="mt-2 grid gap-3 border-t border-border/50 pt-2 text-xs">
       <ol className="grid gap-0.5">
@@ -216,10 +199,17 @@ export function ConnectionDiagnosisPanel({
           type="button"
           size="xs"
           variant="outline"
-          onClick={() => {
-            const text = connectionDiagnosisText(hostLabel, diagnosis);
-            copyToClipboard(text, undefined);
-          }}
+          onClick={() =>
+            void copyWithFeedback(connectionDiagnosisText(hostLabel, diagnosis), {
+              target: {
+                target: "connection diagnostics",
+                unavailableMessage: msg(
+                  "Clipboard API is unavailable while copying connection diagnostics.",
+                ),
+                failureMessage: msg("Failed to copy connection diagnostics to the clipboard."),
+              },
+            })
+          }
         >
           <T>Copy diagnostics</T>
         </Button>

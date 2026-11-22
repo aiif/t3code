@@ -6,6 +6,7 @@ import {
 } from "@t3tools/shared/composerContextClipboard";
 import { msg } from "gt-react";
 
+import { showCopiedToast } from "../components/ui/copyFeedback";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { m } from "../i18n/messages";
@@ -30,6 +31,7 @@ export async function copyThreadReference(target: ThreadReferenceCopyTarget): Pr
           },
       fragment ? { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: fragment } : undefined,
     );
+    showCopiedToast();
   } catch (error) {
     console.error(error);
     toastManager.add(

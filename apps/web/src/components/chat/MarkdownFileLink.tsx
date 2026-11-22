@@ -18,6 +18,7 @@ import { shouldOpenMarkdownFileLinkInEditor } from "../../markdown-links";
 import type { markdownFileCopyPaths } from "../../markdownFileHostPath";
 import { documentChipKindForFileName } from "../../pierre-icons";
 import { ContextChip } from "../ContextChip";
+import { showCopiedToast } from "../ui/copyFeedback";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { FileTagChipContent } from "./FileTagChip";
@@ -232,19 +233,22 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
             }),
           ])
         : value.then((text) => navigator.clipboard.writeText(text));
-    void Promise.all([write, value]).catch((error) => {
-      reportMarkdownActionFailure(
-        { operation: "copy-file-path", target: targetPath, copyTarget: title },
-        error,
-      );
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: failureTitle,
-          description: error instanceof Error ? error.message : gt("An error occurred."),
-        }),
-      );
-    });
+    void Promise.all([write, value]).then(
+      () => showCopiedToast(),
+      (error) => {
+        reportMarkdownActionFailure(
+          { operation: "copy-file-path", target: targetPath, copyTarget: title },
+          error,
+        );
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: failureTitle,
+            description: error instanceof Error ? error.message : gt("An error occurred."),
+          }),
+        );
+      },
+    );
   };
 
   const showFileContextMenu = async (

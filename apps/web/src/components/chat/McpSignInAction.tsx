@@ -1,15 +1,15 @@
 import type { EnvironmentId, ProviderThreadId, ThreadId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { T, useGT } from "gt-react";
-import { CheckIcon, CopyIcon, ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { ensureLocalApi } from "../../localApi";
 import { formatEnvironmentQueryError } from "../../state/query";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button, InlineButton } from "../ui/button";
+import { CopyLabelButton } from "../ui/copy-button";
 import {
   Dialog,
   DialogDescription,
@@ -56,7 +56,6 @@ export function McpSignInAction({
   );
   const start = useAtomCommand(threadEnvironment.mcpSignInStart, { reportFailure: false });
   const complete = useAtomCommand(threadEnvironment.mcpSignInComplete, { reportFailure: false });
-  const { copyToClipboard, isCopied } = useCopyToClipboard();
   const [signIn, setSignIn] = useState<SignIn | null>(null);
   const [callbackUrl, setCallbackUrl] = useState("");
   // Counts attempts, so a result that lands after a close or a restart changes nothing.
@@ -161,10 +160,7 @@ export function McpSignInAction({
                     <ExternalLinkIcon aria-hidden />
                     <T>Open sign-in page</T>
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(url)}>
-                    {isCopied ? <CheckIcon aria-hidden /> : <CopyIcon aria-hidden />}
-                    <T>Copy link</T>
-                  </Button>
+                  <CopyLabelButton value={url} label={gt("Copy link")} variant="ghost" size="sm" />
                 </div>
                 <label className="grid gap-1.5 text-sm">
                   <T>Address of the page your browser opened</T>

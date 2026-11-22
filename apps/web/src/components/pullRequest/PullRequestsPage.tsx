@@ -104,6 +104,7 @@ import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useOpenPanelPullRequestUrl } from "~/hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { showCopiedToast } from "../ui/copyFeedback";
 import { toastManager } from "../ui/toast";
 import { usePanelAnimationSettings, usePanelPresence } from "~/panelAnimations";
 import {
@@ -1533,17 +1534,20 @@ export function PullRequestsPage() {
         "Failed to copy {term, select, mr {merge request} cr {change request} other {pull request}} link to the clipboard.",
         { term: changeRequestTermKind(terminology) },
       ),
-    }).then(undefined, (error) => {
-      toastManager.add({
-        type: "error",
-        title: m(
-          msg("Failed to copy {term, select, mr {MR} cr {change request} other {PR}} link", {
-            term: changeRequestTermKind(terminology),
-          }),
-        ),
-        description: thrownErrorMessage(error, m) ?? m(msg("An error occurred.")),
-      });
-    });
+    }).then(
+      () => showCopiedToast(),
+      (error) => {
+        toastManager.add({
+          type: "error",
+          title: m(
+            msg("Failed to copy {term, select, mr {MR} cr {change request} other {PR}} link", {
+              term: changeRequestTermKind(terminology),
+            }),
+          ),
+          description: thrownErrorMessage(error, m) ?? m(msg("An error occurred.")),
+        });
+      },
+    );
   });
   const closeActiveSurfaceFromShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (activePullRequestSurface === null) return;

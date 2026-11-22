@@ -5,10 +5,8 @@ import {
 import { msg } from "gt-react";
 import { MessageSquareIcon } from "lucide-react";
 
-import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { m, type MessageResolver } from "../../i18n/messages";
-import { Button } from "../ui/button";
-import { toastManager } from "../ui/toast";
+import { CopyLabelButton } from "../ui/copy-button";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 
 export function feedbackBannerItem(
@@ -26,27 +24,20 @@ export function feedbackBannerItem(
     ...notice,
     actions:
       submission.status === "sent" ? (
-        <Button
+        <CopyLabelButton
+          value={submission.feedbackId}
+          label={resolve(msg("Copy ID"))}
+          showIcon={false}
           size="xs"
           variant="ghost"
-          onClick={() => {
-            void writeTextToClipboard(submission.feedbackId, {
-              target: "Codex feedback thread ID",
-              unavailableMessage: msg(
-                "Clipboard API is unavailable while copying Codex feedback thread ID.",
-              ),
-              failureMessage: msg("Failed to copy Codex feedback thread ID to the clipboard."),
-            }).catch((error: unknown) => {
-              toastManager.add({
-                type: "error",
-                title: m(msg("Could not copy thread ID")),
-                description: error instanceof Error ? error.message : m(msg("An error occurred.")),
-              });
-            });
+          target={{
+            target: "Codex feedback thread ID",
+            unavailableMessage: msg(
+              "Clipboard API is unavailable while copying Codex feedback thread ID.",
+            ),
+            failureMessage: msg("Failed to copy Codex feedback thread ID to the clipboard."),
           }}
-        >
-          {resolve(msg("Copy ID"))}
-        </Button>
+        />
       ) : undefined,
     ...(submission.status !== "uploading"
       ? { dismissLabel: resolve(msg("Dismiss feedback notice")), onDismiss }

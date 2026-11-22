@@ -26,6 +26,7 @@ import {
 import { titleRegenerationToast } from "../components/threadTitleRegenerationToast";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { copyThreadReference } from "../lib/copyThreadReference";
+import { showCopiedToast } from "../components/ui/copyFeedback";
 import { m } from "../i18n/messages";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { threadEnvironment } from "../state/threads";
@@ -100,6 +101,7 @@ export function useThreadActionMenu(input: {
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
+    onCopy: () => showCopiedToast(),
     onError: (error) => failureToast(m(msg("Failed to copy path")), error),
   });
   const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
@@ -108,9 +110,11 @@ export function useThreadActionMenu(input: {
       unavailableMessage: msg("Clipboard API is unavailable while copying branch name."),
       failureMessage: msg("Failed to copy branch name to the clipboard."),
     },
+    onCopy: () => showCopiedToast(),
     onError: (error) => failureToast(m(msg("Failed to copy branch")), error),
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
+    onCopy: () => showCopiedToast(),
     onError: (error) => failureToast(m(msg("Failed to copy thread ID")), error),
   });
 

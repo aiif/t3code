@@ -6,7 +6,6 @@ import { AsyncResult } from "effect/reactivity";
 import {
   ChevronDownIcon,
   Clock3Icon,
-  CopyIcon,
   InboxIcon,
   MessageSquareIcon,
   MoreHorizontalIcon,
@@ -61,7 +60,7 @@ import { usePrimaryCloudLinkState } from "../../cloud/cloudLinkState";
 import { requestConfirmDialog } from "../../confirmDialog";
 import { webhookAddress } from "@t3tools/client-runtime/webhook-address";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { CopyLabelButton } from "../ui/copy-button";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import {
   useEnvironment,
@@ -1155,13 +1154,6 @@ function WebhookEndpointField({
     serverEnvironment.rotateScheduledTaskWebhookToken.permissionAtom(environmentId),
   );
   const httpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
-  const { copyToClipboard, isCopied } = useCopyToClipboard({
-    target: {
-      target: "webhook URL",
-      unavailableMessage: msg("Clipboard API is unavailable while copying webhook URL."),
-      failureMessage: msg("Failed to copy webhook URL to the clipboard."),
-    },
-  });
   const rotate = useAtomCommand(serverEnvironment.rotateScheduledTaskWebhookToken, {
     label: "scheduled task rotate webhook token",
   });
@@ -1206,16 +1198,18 @@ function WebhookEndpointField({
           value={url}
           onFocus={(event) => event.currentTarget.select()}
         />
-        <Button
+        <CopyLabelButton
+          value={url}
+          label={gt("Copy")}
+          target={{
+            target: "webhook URL",
+            unavailableMessage: msg("Clipboard API is unavailable while copying webhook URL."),
+            failureMessage: msg("Failed to copy webhook URL to the clipboard."),
+          }}
           size="sm"
           variant="outline"
-          type="button"
           disabled={!copyable}
-          onClick={() => copyToClipboard(url, undefined)}
-        >
-          <CopyIcon />
-          {isCopied ? gt("Copied") : gt("Copy")}
-        </Button>
+        />
         <Button
           size="sm"
           variant="outline"

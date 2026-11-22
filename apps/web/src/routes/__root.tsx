@@ -11,7 +11,6 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { msg, T, useGT, Var } from "gt-react";
-import { CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
@@ -38,8 +37,8 @@ import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoo
 import { ConnectDeviceApprovalCoordinator } from "../components/ConnectDeviceApprovalCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
-import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { Button } from "../components/ui/button";
+import { CopyLabelButton } from "../components/ui/copy-button";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { isElectron } from "../env";
@@ -294,20 +293,20 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
 }
 
 function CopyErrorButton({ report }: { report: string }) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard({
-    target: {
-      target: "error-report",
-      unavailableMessage: msg("Clipboard API is unavailable while copying error-report."),
-      failureMessage: msg("Failed to copy error-report to the clipboard."),
-    },
-  });
   const gt = useGT();
 
   return (
-    <Button size="sm" variant="outline" onClick={() => copyToClipboard(report)}>
-      {isCopied ? <CheckIcon className="text-success" /> : <CopyIcon />}
-      {isCopied ? gt("Copied") : gt("Copy error")}
-    </Button>
+    <CopyLabelButton
+      value={report}
+      label={gt("Copy error")}
+      target={{
+        target: "error-report",
+        unavailableMessage: msg("Clipboard API is unavailable while copying error-report."),
+        failureMessage: msg("Failed to copy error-report to the clipboard."),
+      }}
+      size="sm"
+      variant="outline"
+    />
   );
 }
 

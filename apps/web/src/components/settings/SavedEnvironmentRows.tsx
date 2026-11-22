@@ -27,6 +27,7 @@ import { msg, T, useGT, useMessages } from "gt-react";
 import { m, type MessageResolver } from "../../i18n/messages";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { showCopiedToast } from "../ui/copyFeedback";
 import { cn } from "../../lib/utils";
 import { SettingsRow } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
@@ -150,6 +151,7 @@ export function SavedBackendListRow({
       unavailableMessage: msg("Clipboard API is unavailable while copying trace ID."),
       failureMessage: msg("Failed to copy trace ID to the clipboard."),
     },
+    onCopy: () => showCopiedToast(),
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({

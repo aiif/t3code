@@ -3472,7 +3472,6 @@
   "517cfb8f24123f5b": "Aucun fournisseur disponible",
   "7ff1a0ef1490668d": "L’API Presse-papiers n’est pas disponible pour copier l’ID du fil de feedback Codex.",
   "1967731535386826": "Impossible de copier l’ID du fil de feedback Codex dans le presse-papiers.",
-  "9c5afbfbbe8b305d": "Impossible de copier l’ID du fil",
   "7c1fee250333bb01": "Copier l’ID",
   "73af9dd121cb467b": "Ignorer l’avis de commentaires",
   "309748eb67307e18": "Autorisations : {mode}. {description}",
@@ -3621,8 +3620,6 @@
   "43a6b223ae5160ed": "Associer au fil",
   "986951276ab5723d": "Dissocier du fil",
   "911464a3d04a2927": "(invité)",
-  "262955d6eb632f9b": "L’API Presse-papiers n’est pas disponible pour copier le lien invité.",
-  "f1a4f2b04cdbb4ef": "Impossible de copier le lien invité dans le presse-papiers.",
   "cf3490a604e44d31": "Impossible de créer un lien invité.",
   "0c7f0973f205c143": "Lien invité",
   "d26395a743d1d094": "Copier",
@@ -3953,7 +3950,6 @@
   "7d49da3c635828ce": "L’API Presse-papiers n’est pas disponible pour copier le plan.",
   "ef0e4fcee07194f4": "Impossible de copier le plan dans le presse-papiers.",
   "7e2c4488f8ea9b23": "Impossible de copier le plan",
-  "153d830090848f92": "Une erreur s’est produite lors de la copie.",
   "5469bba2f5569925": "Plan proposé",
   "aa008ea6bf164d63": "Le chemin de l’espace de travail est indisponible",
   "b1c1e4712776088c": "Ce fil n’a pas de chemin d’espace de travail où enregistrer.",
@@ -4598,7 +4594,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Copier la commande, pour un terminal",
   "ad65d733fa96f01a": "Modification de {label}",
   "329ae56f86cc3cef": "Recherche web de {label}",
   "c63f0fdfb05dc589": "Recherche de {label}",
@@ -7295,12 +7290,8 @@
   "f7cc78806ceb0fc1": "Tapez pour rechercher dans tout votre projet.",
   "87cdf1594c1d940e": "Recherche…",
   "131f2af2717d2232": "Expression régulière non valide",
-  "c9f4f66bd6337fb4": "L’API Presse-papiers n’est pas disponible pour copier la version.",
-  "60b53cc903821cbb": "Impossible de copier la version dans le presse-papiers.",
-  "0cb463936215a3cc": "Impossible de copier la version",
   "6d521d61ed177169": "Copier la version {version}",
   "18040c4f55f3b533": "Version",
-  "fd1d2853467e6195": "Copier la version",
   "5498f2f33907b02c": "L’ACP n’a pas pu être préparé.",
   "2f96ca67420e3662": "Rechercher dans l’ACP Registry",
   "052f046c20a6645f": "Rechercher des agents…",
@@ -8106,7 +8097,6 @@
   "6037689df15a6b29": "Impossible de copier les diagnostics de connexion dans le presse-papiers.",
   "abfda0c0003e3517": "nouvelle tentative",
   "e8308fe8ef23999d": "nouvelle tentative dans {seconds} s",
-  "8c8c2b1fdea8815e": "Impossible de copier les diagnostics",
   "d3b1ed5b53b653ad": [
     "tentative ",
     {
@@ -9383,7 +9373,6 @@
   ],
   "f507d41f66760d83": "Valeur par défaut du fournisseur",
   "366e370da9d8b04c": "Ouvrir le navigateur",
-  "50c877d9fa8db3ec": "Copier le lien de connexion",
   "663df6ba60de573b": "Ouvrir la documentation",
   "78a1a02732fc74e8": "Se déconnecter",
   "e53ca6f665197e44": [

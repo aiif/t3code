@@ -55,6 +55,7 @@ import { type PullRequestDetailTab, useRightPanelStore } from "~/rightPanelStore
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { showCopiedToast } from "../ui/copyFeedback";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { resolveShortcutCommand, type ShortcutMatchContext } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
@@ -609,6 +610,7 @@ export function PullRequestDetailPanel({
         { term: changeRequestTermKind(terminology) },
       ),
     },
+    onCopy: () => showCopiedToast(),
     onError: (error, failureTitle) =>
       toastManager.add({
         type: "error",

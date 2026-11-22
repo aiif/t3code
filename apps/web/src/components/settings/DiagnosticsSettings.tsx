@@ -9,7 +9,6 @@ import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   AlertTriangleIcon,
-  CopyIcon,
   FolderOpenIcon,
   InfoIcon,
   ChevronDownIcon,
@@ -37,7 +36,7 @@ import { useOpenInPreferredEditor } from "../../editorPreferences";
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { CopyButton } from "../ui/copy-button";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
@@ -198,14 +197,6 @@ function DiagnosticsTable({
 
 function TraceIdCell({ traceId }: { traceId: string }) {
   const gt = useGT();
-  const { copyToClipboard, isCopied: copied } = useCopyToClipboard({
-    target: {
-      target: "trace ID",
-      unavailableMessage: msg("Clipboard API is unavailable while copying trace ID."),
-      failureMessage: msg("Failed to copy trace ID to the clipboard."),
-    },
-    timeout: 1_200,
-  });
 
   return (
     <div className="flex w-full min-w-0 max-w-full items-center gap-2">
@@ -221,21 +212,19 @@ function TraceIdCell({ traceId }: { traceId: string }) {
           {traceId}
         </TooltipPopup>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              size="icon-micro"
-              variant="ghost-muted"
-              aria-label={copied ? gt("Copied trace ID") : gt("Copy trace ID")}
-              onClick={() => copyToClipboard(traceId)}
-            >
-              <CopyIcon className="size-3" />
-            </Button>
-          }
-        />
-        <TooltipPopup side="top">{copied ? gt("Copied") : gt("Copy full trace ID")}</TooltipPopup>
-      </Tooltip>
+      <CopyButton
+        value={traceId}
+        label={gt("Copy full trace ID")}
+        copiedLabel={gt("Copied trace ID")}
+        target={{
+          target: "trace ID",
+          unavailableMessage: msg("Clipboard API is unavailable while copying trace ID."),
+          failureMessage: msg("Failed to copy trace ID to the clipboard."),
+        }}
+        size="icon-micro"
+        variant="ghost-muted"
+        iconClassName="size-3"
+      />
     </div>
   );
 }

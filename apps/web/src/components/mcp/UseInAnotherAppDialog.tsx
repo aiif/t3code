@@ -16,7 +16,7 @@ import {
   sessionGrantsScope,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { CopyButton } from "../ui/copy-button";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import * as Result from "effect/Result";
@@ -32,11 +32,7 @@ import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useT3ConnectTurnOn } from "~/cloud/useT3ConnectTurnOn";
-import {
-  namedClipboardTarget,
-  useCopyToClipboard,
-  writeTextToClipboard,
-} from "~/hooks/useCopyToClipboard";
+import { namedClipboardTarget, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useNowSecond } from "~/hooks/useNowSecond";
 import { readLocalApi } from "~/localApi";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -854,23 +850,19 @@ function ApprovalCode({
 }
 
 function CopyRow({ label, value }: { readonly label: string; readonly value: string }) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard({
-    timeout: 1500,
-    target: namedClipboardTarget(label),
-  });
   const gt = useGT();
   return (
     <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 truncate font-mono text-sm">{value}</span>
-      <Button
+      <CopyButton
+        value={value}
+        label={gt("Copy {label}", { label })}
+        target={namedClipboardTarget(label)}
         size="icon-xs"
         variant="ghost"
-        aria-label={gt("Copy {label}", { label })}
-        onClick={() => copyToClipboard(value, undefined)}
-      >
-        {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
-      </Button>
+        iconClassName="size-3.5"
+      />
     </div>
   );
 }

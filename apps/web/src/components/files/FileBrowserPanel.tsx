@@ -21,6 +21,7 @@ import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { showCopiedToast } from "../ui/copyFeedback";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
@@ -240,6 +241,7 @@ export default function FileBrowserPanel({
         if (clicked === "copy-mention") {
           try {
             await writeTextToClipboard(mention);
+            showCopiedToast();
           } catch (error) {
             toastManager.add({
               type: "error",

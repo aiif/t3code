@@ -3472,7 +3472,6 @@
   "517cfb8f24123f5b": "Ingen leverantör tillgänglig",
   "7ff1a0ef1490668d": "Urklipps-API:t är inte tillgängligt vid kopiering av tråd-ID:t för Codex-feedback.",
   "1967731535386826": "Kunde inte kopiera tråd-ID:t för Codex-feedback till urklipp.",
-  "9c5afbfbbe8b305d": "Kunde inte kopiera tråd-ID",
   "7c1fee250333bb01": "Kopiera ID",
   "73af9dd121cb467b": "Stäng feedbackmeddelandet",
   "309748eb67307e18": "Behörigheter: {mode}. {description}",
@@ -3621,8 +3620,6 @@
   "43a6b223ae5160ed": "Länka till tråd",
   "986951276ab5723d": "Ta bort länk från tråd",
   "911464a3d04a2927": "(gäst)",
-  "262955d6eb632f9b": "Urklipps-API:t är inte tillgängligt vid kopiering av gästlänken.",
-  "f1a4f2b04cdbb4ef": "Kunde inte kopiera gästlänken till urklipp.",
   "cf3490a604e44d31": "Kunde inte skapa en gästlänk.",
   "0c7f0973f205c143": "Gästlänk",
   "d26395a743d1d094": "Kopiera",
@@ -3953,7 +3950,6 @@
   "7d49da3c635828ce": "Urklipps-API:t är inte tillgängligt vid kopiering av planen.",
   "ef0e4fcee07194f4": "Kunde inte kopiera planen till urklipp.",
   "7e2c4488f8ea9b23": "Kunde inte kopiera planen",
-  "153d830090848f92": "Ett fel uppstod vid kopieringen.",
   "5469bba2f5569925": "Föreslagen plan",
   "aa008ea6bf164d63": "Arbetsytans sökväg är inte tillgänglig",
   "b1c1e4712776088c": "Den här tråden har ingen sökväg till arbetsytan att spara i.",
@@ -4598,7 +4594,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Kopiera kommando, för en terminal",
   "ad65d733fa96f01a": "Redigerar {label}",
   "329ae56f86cc3cef": "Söker på webben efter {label}",
   "c63f0fdfb05dc589": "Söker efter {label}",
@@ -7300,12 +7295,8 @@
   "f7cc78806ceb0fc1": "Skriv för att söka i hela projektet.",
   "87cdf1594c1d940e": "Söker…",
   "131f2af2717d2232": "Ogiltigt reguljärt uttryck",
-  "c9f4f66bd6337fb4": "Urklipps-API:t är inte tillgängligt vid kopiering av versionen.",
-  "60b53cc903821cbb": "Kunde inte kopiera versionen till urklipp.",
-  "0cb463936215a3cc": "Kunde inte kopiera versionen",
   "6d521d61ed177169": "Kopiera version {version}",
   "18040c4f55f3b533": "Version",
-  "fd1d2853467e6195": "Kopiera version",
   "5498f2f33907b02c": "ACP:n kunde inte förberedas.",
   "2f96ca67420e3662": "Sök i ACP Registry",
   "052f046c20a6645f": "Sök agenter…",
@@ -8111,7 +8102,6 @@
   "6037689df15a6b29": "Kunde inte kopiera anslutningsdiagnostiken till urklipp.",
   "abfda0c0003e3517": "försöker igen",
   "e8308fe8ef23999d": "försöker igen om {seconds} s",
-  "8c8c2b1fdea8815e": "Kunde inte kopiera diagnostiken",
   "d3b1ed5b53b653ad": [
     "försök ",
     {
@@ -9389,7 +9379,6 @@
   ],
   "f507d41f66760d83": "Leverantörens standard",
   "366e370da9d8b04c": "Öppna webbläsare",
-  "50c877d9fa8db3ec": "Kopiera inloggningslänk",
   "663df6ba60de573b": "Öppna dokumentation",
   "78a1a02732fc74e8": "Logga ut",
   "e53ca6f665197e44": [

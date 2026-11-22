@@ -9,6 +9,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { msg } from "gt-react";
 
+import { showCopiedToast } from "~/components/ui/copyFeedback";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { currentClientMetadata } from "~/connection/platform";
 import { m } from "~/i18n/messages";
@@ -26,11 +27,13 @@ const copyTriageCliCommand = () =>
     target: "command",
     unavailableMessage: msg("Clipboard API is unavailable while copying command."),
     failureMessage: msg("Failed to copy command to the clipboard."),
-  }).catch(() =>
-    toastManager.add({
-      type: "error",
-      title: m(msg("Could not copy. Type {command} instead.", { command: TRIAGE_CLI_COMMAND })),
-    }),
+  }).then(
+    () => showCopiedToast(),
+    () =>
+      toastManager.add({
+        type: "error",
+        title: m(msg("Could not copy. Type {command} instead.", { command: TRIAGE_CLI_COMMAND })),
+      }),
   );
 
 /**

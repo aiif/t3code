@@ -31,6 +31,8 @@ import { useAssetUrlRefresh } from "~/assets/assetUrls";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { maskMarkdownFrontmatter } from "@t3tools/shared/markdownFrontmatter";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { COPY_FEEDBACK_TIMEOUT_MS } from "~/components/ui/copy-button";
+import { CopyAnnouncement } from "~/components/ui/copyAnnouncement";
 import { toastManager } from "~/components/ui/toast";
 import { namedClipboardTarget, useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -132,6 +134,7 @@ export function AttachmentFilePreview(props: {
   const gt = useGT();
   const messages = useMessages();
   const { copyToClipboard, isCopied } = useCopyToClipboard({
+    timeout: COPY_FEEDBACK_TIMEOUT_MS,
     target: namedClipboardTarget(props.name),
   });
   // useAssetUrlRefresh keys its callback on these objects, so they must stay cached. Parents
@@ -485,6 +488,7 @@ export function AttachmentFilePreview(props: {
             {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
           </FileSurfaceAction>
         ) : null}
+        <CopyAnnouncement copied={isCopied} label={gt("Copied")} />
         {url ? (
           <FileSurfaceAction
             label={saving ? gt("Preparing file…") : gt("Save file")}

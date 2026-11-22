@@ -3472,7 +3472,6 @@
   "517cfb8f24123f5b": "No hay ningún proveedor disponible",
   "7ff1a0ef1490668d": "La API del portapapeles no está disponible al copiar el ID del hilo de comentarios de Codex.",
   "1967731535386826": "No se pudo copiar el ID del hilo de comentarios de Codex al portapapeles.",
-  "9c5afbfbbe8b305d": "No se pudo copiar el ID del hilo",
   "7c1fee250333bb01": "Copiar ID",
   "73af9dd121cb467b": "Descartar aviso de comentarios",
   "309748eb67307e18": "Permisos: {mode}. {description}",
@@ -3621,8 +3620,6 @@
   "43a6b223ae5160ed": "Vincular al hilo",
   "986951276ab5723d": "Desvincular del hilo",
   "911464a3d04a2927": "(invitado)",
-  "262955d6eb632f9b": "La API del portapapeles no está disponible al copiar el enlace de invitado.",
-  "f1a4f2b04cdbb4ef": "No se pudo copiar el enlace de invitado al portapapeles.",
   "cf3490a604e44d31": "No se pudo crear un enlace de invitado.",
   "0c7f0973f205c143": "Enlace de invitado",
   "d26395a743d1d094": "Copiar",
@@ -3952,7 +3949,6 @@
   "7d49da3c635828ce": "La API del portapapeles no está disponible al copiar el plan.",
   "ef0e4fcee07194f4": "No se pudo copiar el plan al portapapeles.",
   "7e2c4488f8ea9b23": "No se pudo copiar el plan",
-  "153d830090848f92": "Se produjo un error al copiar.",
   "5469bba2f5569925": "Plan propuesto",
   "aa008ea6bf164d63": "La ruta del espacio de trabajo no está disponible",
   "b1c1e4712776088c": "Este hilo no tiene una ruta de espacio de trabajo en la que guardar.",
@@ -4597,7 +4593,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Copiar comando, para una terminal",
   "ad65d733fa96f01a": "Editando {label}",
   "329ae56f86cc3cef": "Buscando {label} en la web",
   "c63f0fdfb05dc589": "Buscando {label}",
@@ -7294,12 +7289,8 @@
   "f7cc78806ceb0fc1": "Escribe para buscar en tu proyecto.",
   "87cdf1594c1d940e": "Buscando…",
   "131f2af2717d2232": "Expresión regular no válida",
-  "c9f4f66bd6337fb4": "La API del portapapeles no está disponible al copiar la versión.",
-  "60b53cc903821cbb": "No se pudo copiar la versión al portapapeles.",
-  "0cb463936215a3cc": "No se pudo copiar la versión",
   "6d521d61ed177169": "Copiar la versión {version}",
   "18040c4f55f3b533": "Versión",
-  "fd1d2853467e6195": "Copiar versión",
   "5498f2f33907b02c": "No se pudo preparar el ACP.",
   "2f96ca67420e3662": "Buscar en el ACP Registry",
   "052f046c20a6645f": "Buscar agentes…",
@@ -8105,7 +8096,6 @@
   "6037689df15a6b29": "No se pudo copiar el diagnóstico de la conexión al portapapeles.",
   "abfda0c0003e3517": "reintentando",
   "e8308fe8ef23999d": "reintentando en {seconds} s",
-  "8c8c2b1fdea8815e": "No se pudo copiar el diagnóstico",
   "d3b1ed5b53b653ad": [
     "intento ",
     {
@@ -9381,7 +9371,6 @@
   ],
   "f507d41f66760d83": "Predeterminado del proveedor",
   "366e370da9d8b04c": "Abrir navegador",
-  "50c877d9fa8db3ec": "Copiar enlace de inicio de sesión",
   "663df6ba60de573b": "Abrir documentación",
   "78a1a02732fc74e8": "Cerrar sesión",
   "e53ca6f665197e44": [

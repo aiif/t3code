@@ -3,6 +3,8 @@ import { DownloadIcon, CopyIcon, CheckIcon, Code2Icon, EyeIcon, Table2Icon } fro
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { m, type MessageResolver } from "~/i18n/messages";
 import { namedClipboardTarget, useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { COPY_FEEDBACK_TIMEOUT_MS } from "../ui/copy-button";
+import { CopyAnnouncement } from "../ui/copyAnnouncement";
 import { Spinner } from "~/components/ui/spinner";
 import {
   type AssetResource,
@@ -1439,6 +1441,7 @@ export default function FilePreviewPanel({
       ? file.data.contents
       : null;
   const { copyToClipboard, isCopied } = useCopyToClipboard({
+    timeout: COPY_FEEDBACK_TIMEOUT_MS,
     target: namedClipboardTarget(previewPath ?? ""),
     onError: (error) =>
       toastManager.add({
@@ -1679,6 +1682,7 @@ export default function FilePreviewPanel({
               {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
             </FileSurfaceAction>
           ) : null}
+          <CopyAnnouncement copied={isCopied} label={gt("Copied")} />
           {canOpenInBrowser ? (
             <FileSurfaceAction
               label={gt("Open file in preview browser")}
@@ -1974,6 +1978,7 @@ export function WorkspaceLargeTextPreview(props: {
   const gt = useGT();
   const copyContents = useRef<(() => Promise<string>) | null>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard({
+    timeout: COPY_FEEDBACK_TIMEOUT_MS,
     target: namedClipboardTarget(props.name),
   });
   const [saving, setSaving] = useState(false);
@@ -2037,6 +2042,7 @@ export function WorkspaceLargeTextPreview(props: {
         >
           {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
         </FileSurfaceAction>
+        <CopyAnnouncement copied={isCopied} label={gt("Copied")} />
         <FileSurfaceAction
           label={saving ? gt("Preparing file…") : gt("Save file")}
           disabled={saving}

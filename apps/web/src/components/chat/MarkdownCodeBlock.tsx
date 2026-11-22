@@ -1,9 +1,8 @@
 import { T, useGT } from "gt-react";
-import { PlayIcon, WrapTextIcon, CheckIcon, CopyIcon } from "lucide-react";
+import { PlayIcon, WrapTextIcon } from "lucide-react";
 import { toHtml } from "hast-util-to-html";
 import React, { use, useEffect, useState, type ReactNode } from "react";
 
-import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useClientSettings } from "../../hooks/useSettings";
 import type { DiffThemeName } from "../../lib/diffRendering";
 import {
@@ -18,6 +17,7 @@ import {
   syntheticFileNameForLanguageId,
 } from "../../pierre-icons";
 import { Button } from "../ui/button";
+import { CopyButton } from "../ui/copy-button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { HighlightedCodeLines } from "./HighlightedCodeLines";
 import {
@@ -155,23 +155,10 @@ export function MarkdownCodeBlock({
   children: ReactNode;
 }) {
   const gt = useGT();
-  const { copyToClipboard, isCopied: copied } = useCopyToClipboard({
-    timeout: 1200,
-    onError: (cause) =>
-      reportMarkdownActionFailure(
-        {
-          operation: "copy-code-block",
-          language,
-          ...(fenceTitle ? { fenceTitle } : {}),
-        },
-        cause,
-      ),
-  });
   const defaultWrapped = useClientSettings((settings) => settings.wordWrap);
   const [wrapOverride, setWrapOverride] = useState<boolean | null>(null);
   const wrapped = wrapOverride ?? defaultWrapped;
   const wrapLabel = wrapped ? gt("Disable line wrap") : gt("Wrap lines");
-  const copyLabel = copied ? gt("Copied") : gt("Copy code");
   const command = code.trim();
   const canRun =
     onRunShellCommand !== undefined &&
@@ -184,25 +171,24 @@ export function MarkdownCodeBlock({
     // make the rendered command differ from what the terminal would receive.
     !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1));
 
-  const handleCopy = () => copyToClipboard(code.endsWith("\n") ? code.slice(0, -1) : code);
-
   const copyButton = (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            type="button"
-            variant="ghost-muted"
-            size="icon-xs"
-            onClick={handleCopy}
-            aria-label={copyLabel}
-          />
-        }
-      >
-        {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
-      </TooltipTrigger>
-      <TooltipPopup side="top">{copyLabel}</TooltipPopup>
-    </Tooltip>
+    <CopyButton
+      value={code.endsWith("\n") ? code.slice(0, -1) : code}
+      label={gt("Copy code")}
+      size="icon-xs"
+      variant="ghost-muted"
+      iconClassName="size-3"
+      onError={(cause) =>
+        reportMarkdownActionFailure(
+          {
+            operation: "copy-code-block",
+            language,
+            ...(fenceTitle ? { fenceTitle } : {}),
+          },
+          cause,
+        )
+      }
+    />
   );
 
   if (diagram) {

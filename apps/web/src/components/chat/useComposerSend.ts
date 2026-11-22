@@ -65,6 +65,7 @@ import {
 } from "../../composer-logic";
 import { type ChatMessage, DEFAULT_INTERACTION_MODE } from "../../types";
 import { recordPromptSent } from "../GitHubStarPrompt";
+import { showCopiedToast } from "../ui/copyFeedback";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { newMessageId, newThreadId } from "~/lib/utils";
@@ -1641,7 +1642,10 @@ export function useComposerSend(input: ComposerSendInput) {
                           "Clipboard API is unavailable while copying failed message.",
                         ),
                         failureMessage: msg("Failed to copy failed message to the clipboard."),
-                      }).catch(() => undefined);
+                      }).then(
+                        () => showCopiedToast(),
+                        () => undefined,
+                      );
                     },
                   },
                 }

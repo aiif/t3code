@@ -18,6 +18,7 @@ import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { configuredHostedAppUrl } from "~/hostedPairing";
 import { draftModelSelectionApplies } from "~/lib/chatThreadActions";
 
+import { showCopiedToast } from "../ui/copyFeedback";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { msg } from "gt-react";
 import { m } from "~/i18n/messages";
@@ -76,6 +77,7 @@ export function composerPromptLink(input: {
 export async function copyPromptLink(link: string): Promise<void> {
   try {
     await writeTextToClipboard(link);
+    showCopiedToast();
   } catch (error) {
     toastManager.add(
       stackedThreadToast({

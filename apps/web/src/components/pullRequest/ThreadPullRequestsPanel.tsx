@@ -26,7 +26,7 @@ import {
   COMPOSER_PULL_REQUEST_DRAG_TYPE,
   encodePullRequestDragPayload,
 } from "~/components/chat/composerMentionDrag";
-import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { copyWithFeedback } from "../ui/copyFeedback";
 import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
 import { pullRequestLinkPanelTarget, useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useClientSettings } from "~/hooks/useSettings";
@@ -358,10 +358,12 @@ function LinkRowImpl({
           >
             <MenuItem
               onClick={() =>
-                void writeTextToClipboard(link.url, {
-                  target: "link",
-                  unavailableMessage: msg("Clipboard API is unavailable while copying link."),
-                  failureMessage: msg("Failed to copy link to the clipboard."),
+                void copyWithFeedback(link.url, {
+                  target: {
+                    target: "link",
+                    unavailableMessage: msg("Clipboard API is unavailable while copying link."),
+                    failureMessage: msg("Failed to copy link to the clipboard."),
+                  },
                 })
               }
             >

@@ -8,9 +8,9 @@ import { PixelRatio, Platform, Pressable, StyleSheet, Text, View } from "react-n
 import { parse, Svg, SvgXml } from "react-native-svg";
 
 import { FilePreviewModal } from "../components/ui/FilePreviewModal";
-import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
 import { mermaidSvgForNative, withDiagramBackground } from "../lib/mermaidSvg";
 import { themeColorWithAlpha } from "../lib/mobileTheme";
+import { CodeBlockCopyButton } from "./CodeBlockCopyButton";
 import { CodeBlockFrame, CodeBlockHeaderButton } from "./CodeBlockFrame";
 import type { NativeMarkdownTextStyle } from "./SelectableMarkdownText.types";
 
@@ -215,12 +215,7 @@ function MermaidBlock(props: MermaidCodeBlockProps & { readonly diagram: Diagram
               onPress={() => setShowCode((value) => !value)}
             />
           ) : null}
-          <CodeBlockHeaderButton
-            icon="doc.on.doc"
-            label={gt("Copy code")}
-            textStyle={textStyle}
-            onPress={() => copyTextWithHaptic(code)}
-          />
+          <CodeBlockCopyButton code={code} textStyle={textStyle} />
         </>
       }
     >

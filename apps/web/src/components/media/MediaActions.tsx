@@ -23,6 +23,7 @@ import { useRef, useState, type ReactElement } from "react";
 
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { readLocalApi } from "../../localApi";
+import { showCopiedToast } from "../ui/copyFeedback";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { assetEnvironment } from "../../state/assets";
 import { useEnvironmentQuery } from "../../state/query";
@@ -214,6 +215,7 @@ export function MediaActions({
                 failureMessage: msg("Failed to copy URL to the clipboard."),
               },
         );
+        showCopiedToast();
       } else if (action === "open-file") {
         assertCanReadMedia();
         source.onOpenFile?.();
@@ -227,7 +229,12 @@ export function MediaActions({
                 : m(msg("Preparing video download…"))
               : m(msg("Copying image…")),
         });
-        await (action === "save" ? save() : copyImage());
+        if (action === "save") {
+          await save();
+        } else {
+          await copyImage();
+          showCopiedToast();
+        }
         toastManager.close(progressToast);
       }
     });

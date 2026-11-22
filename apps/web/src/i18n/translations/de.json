@@ -3473,7 +3473,6 @@
   "517cfb8f24123f5b": "Kein Anbieter verfügbar",
   "7ff1a0ef1490668d": "Die Zwischenablage-API ist beim Kopieren der Codex-Feedback-Thread-ID nicht verfügbar.",
   "1967731535386826": "Die Codex-Feedback-Thread-ID konnte nicht in die Zwischenablage kopiert werden.",
-  "9c5afbfbbe8b305d": "Thread-ID konnte nicht kopiert werden",
   "7c1fee250333bb01": "ID kopieren",
   "73af9dd121cb467b": "Feedback-Hinweis schließen",
   "309748eb67307e18": "Berechtigungen: {mode}. {description}",
@@ -3622,8 +3621,6 @@
   "43a6b223ae5160ed": "Mit Thread verknüpfen",
   "986951276ab5723d": "Verknüpfung mit Thread lösen",
   "911464a3d04a2927": "(Gast)",
-  "262955d6eb632f9b": "Die Zwischenablage-API ist beim Kopieren des Gast-Links nicht verfügbar.",
-  "f1a4f2b04cdbb4ef": "Der Gast-Link konnte nicht in die Zwischenablage kopiert werden.",
   "cf3490a604e44d31": "Gastlink konnte nicht erstellt werden.",
   "0c7f0973f205c143": "Gastlink",
   "d26395a743d1d094": "Kopieren",
@@ -3956,7 +3953,6 @@
   "7d49da3c635828ce": "Die Zwischenablage-API ist beim Kopieren des Plans nicht verfügbar.",
   "ef0e4fcee07194f4": "Der Plan konnte nicht in die Zwischenablage kopiert werden.",
   "7e2c4488f8ea9b23": "Plan konnte nicht kopiert werden",
-  "153d830090848f92": "Beim Kopieren ist ein Fehler aufgetreten.",
   "5469bba2f5569925": "Vorgeschlagener Plan",
   "aa008ea6bf164d63": "Arbeitsbereichspfad ist nicht verfügbar",
   "b1c1e4712776088c": "Dieser Thread hat keinen Arbeitsbereichspfad zum Speichern.",
@@ -4600,7 +4596,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Befehl für ein Terminal kopieren",
   "ad65d733fa96f01a": "Bearbeitet {label}",
   "329ae56f86cc3cef": "Sucht im Web nach {label}",
   "c63f0fdfb05dc589": "Sucht nach {label}",
@@ -7293,12 +7288,8 @@
   "f7cc78806ceb0fc1": "Tippe, um dein Projekt zu durchsuchen.",
   "87cdf1594c1d940e": "Wird gesucht…",
   "131f2af2717d2232": "Ungültiger regulärer Ausdruck",
-  "c9f4f66bd6337fb4": "Die Zwischenablage-API ist beim Kopieren der Version nicht verfügbar.",
-  "60b53cc903821cbb": "Die Version konnte nicht in die Zwischenablage kopiert werden.",
-  "0cb463936215a3cc": "Version konnte nicht kopiert werden",
   "6d521d61ed177169": "Version {version} kopieren",
   "18040c4f55f3b533": "Version",
-  "fd1d2853467e6195": "Version kopieren",
   "5498f2f33907b02c": "Der ACP konnte nicht vorbereitet werden.",
   "2f96ca67420e3662": "ACP Registry durchsuchen",
   "052f046c20a6645f": "Agenten durchsuchen…",
@@ -8106,7 +8097,6 @@
   "6037689df15a6b29": "Die Verbindungsdiagnose konnte nicht in die Zwischenablage kopiert werden.",
   "abfda0c0003e3517": "neuer Versuch",
   "e8308fe8ef23999d": "neuer Versuch in {seconds} s",
-  "8c8c2b1fdea8815e": "Diagnosedaten konnten nicht kopiert werden",
   "d3b1ed5b53b653ad": [
     "Versuch ",
     {
@@ -9383,7 +9373,6 @@
   ],
   "f507d41f66760d83": "Anbieterstandard",
   "366e370da9d8b04c": "Browser öffnen",
-  "50c877d9fa8db3ec": "Anmeldelink kopieren",
   "663df6ba60de573b": "Dokumentation öffnen",
   "78a1a02732fc74e8": "Abmelden",
   "e53ca6f665197e44": [

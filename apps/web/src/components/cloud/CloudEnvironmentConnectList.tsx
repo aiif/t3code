@@ -41,6 +41,7 @@ import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "../settings/itemRows";
 import { Checkbox } from "../ui/checkbox";
 import { Button } from "../ui/button";
+import { copyWithFeedback } from "../ui/copyFeedback";
 import { Skeleton } from "../ui/skeleton";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
@@ -206,7 +207,7 @@ export function CloudEnvironmentConnectRows({
         ? {
             secondaryActionProps: {
               children: gt("Copy trace ID"),
-              onClick: () => void navigator.clipboard?.writeText(traceId),
+              onClick: () => void copyWithFeedback(traceId),
             },
           }
         : undefined,

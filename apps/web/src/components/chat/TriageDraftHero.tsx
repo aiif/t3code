@@ -1,8 +1,7 @@
-import { msg, T, Var } from "gt-react";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { T, Var, useGT } from "gt-react";
 import { TRIAGE_CLI_COMMAND } from "~/hooks/useStartTriage";
 
-import { InlineButton } from "../ui/button";
+import { CopyInlineButton } from "../ui/copy-button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
@@ -13,14 +12,7 @@ export function TriageDraftHero(props: {
   readonly machineLabel: string | null;
   readonly serverVersion: string | null;
 }) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard({
-    timeout: 1500,
-    target: {
-      target: "command",
-      unavailableMessage: msg("Clipboard API is unavailable while copying command."),
-      failureMessage: msg("Failed to copy command to the clipboard."),
-    },
-  });
+  const gt = useGT();
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
       <h1 className="w-full text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl">
@@ -48,31 +40,21 @@ export function TriageDraftHero(props: {
         <span aria-hidden className="text-muted-foreground">
           ·
         </span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <InlineButton
-                tone="muted"
-                className="pointer-events-auto"
-                onClick={() => copyToClipboard(TRIAGE_CLI_COMMAND, undefined)}
-              />
-            }
-          >
-            {isCopied ? (
-              <T>Copied</T>
-            ) : (
-              <T>
-                or run
-                <code className="ml-1 font-mono text-xs">
-                  <Var>{TRIAGE_CLI_COMMAND}</Var>
-                </code>
-              </T>
-            )}
-          </TooltipTrigger>
-          <TooltipPopup side="bottom">
-            <T>Copy command, for a terminal</T>
-          </TooltipPopup>
-        </Tooltip>
+        <CopyInlineButton
+          value={TRIAGE_CLI_COMMAND}
+          label={gt("Copy command")}
+          tooltipLabel={gt("Copy command")}
+          showTooltip
+          tone="muted"
+          className="pointer-events-auto"
+        >
+          <T>
+            or run
+            <code className="ml-1 font-mono text-xs">
+              <Var>{TRIAGE_CLI_COMMAND}</Var>
+            </code>
+          </T>
+        </CopyInlineButton>
       </p>
     </div>
   );

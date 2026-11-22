@@ -3472,7 +3472,6 @@
   "517cfb8f24123f5b": "No provider available",
   "7ff1a0ef1490668d": "Clipboard API is unavailable while copying Codex feedback thread ID.",
   "1967731535386826": "Failed to copy Codex feedback thread ID to the clipboard.",
-  "9c5afbfbbe8b305d": "Could not copy thread ID",
   "7c1fee250333bb01": "Copy ID",
   "73af9dd121cb467b": "Dismiss feedback notice",
   "309748eb67307e18": "Permissions: {mode}. {description}",
@@ -3621,8 +3620,6 @@
   "43a6b223ae5160ed": "Link to thread",
   "986951276ab5723d": "Unlink from thread",
   "911464a3d04a2927": "(guest)",
-  "262955d6eb632f9b": "Clipboard API is unavailable while copying guest link.",
-  "f1a4f2b04cdbb4ef": "Failed to copy guest link to the clipboard.",
   "cf3490a604e44d31": "Could not create a guest link.",
   "0c7f0973f205c143": "Guest link",
   "d26395a743d1d094": "Copy",
@@ -3954,7 +3951,6 @@
   "7d49da3c635828ce": "Clipboard API is unavailable while copying plan.",
   "ef0e4fcee07194f4": "Failed to copy plan to the clipboard.",
   "7e2c4488f8ea9b23": "Could not copy plan",
-  "153d830090848f92": "An error occurred while copying.",
   "5469bba2f5569925": "Proposed plan",
   "aa008ea6bf164d63": "Workspace path is unavailable",
   "b1c1e4712776088c": "This thread does not have a workspace path to save into.",
@@ -4599,7 +4595,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Copy command, for a terminal",
   "ad65d733fa96f01a": "Editing {label}",
   "329ae56f86cc3cef": "Searching the web for {label}",
   "c63f0fdfb05dc589": "Searching for {label}",
@@ -7301,12 +7296,8 @@
   "f7cc78806ceb0fc1": "Type to search across your project.",
   "87cdf1594c1d940e": "Searching…",
   "131f2af2717d2232": "Invalid regular expression",
-  "c9f4f66bd6337fb4": "Clipboard API is unavailable while copying version.",
-  "60b53cc903821cbb": "Failed to copy version to the clipboard.",
-  "0cb463936215a3cc": "Could not copy version",
   "6d521d61ed177169": "Copy version {version}",
   "18040c4f55f3b533": "Version",
-  "fd1d2853467e6195": "Copy version",
   "5498f2f33907b02c": "The ACP could not be prepared.",
   "2f96ca67420e3662": "Search ACP Registry",
   "052f046c20a6645f": "Search agents…",
@@ -8113,7 +8104,6 @@
   "6037689df15a6b29": "Failed to copy connection diagnostics to the clipboard.",
   "abfda0c0003e3517": "retrying",
   "e8308fe8ef23999d": "retrying in {seconds}s",
-  "8c8c2b1fdea8815e": "Could not copy diagnostics",
   "d3b1ed5b53b653ad": [
     "attempt ",
     {
@@ -9391,7 +9381,6 @@
   ],
   "f507d41f66760d83": "Provider default",
   "366e370da9d8b04c": "Open browser",
-  "50c877d9fa8db3ec": "Copy sign-in link",
   "663df6ba60de573b": "Open docs",
   "78a1a02732fc74e8": "Sign out",
   "e53ca6f665197e44": [

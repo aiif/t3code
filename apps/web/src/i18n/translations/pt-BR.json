@@ -3472,7 +3472,6 @@
   "517cfb8f24123f5b": "Nenhum provedor disponível",
   "7ff1a0ef1490668d": "A API da área de transferência não está disponível ao copiar o ID da thread de feedback do Codex.",
   "1967731535386826": "Falha ao copiar o ID da thread de feedback do Codex para a área de transferência.",
-  "9c5afbfbbe8b305d": "Não foi possível copiar o ID da thread",
   "7c1fee250333bb01": "Copiar ID",
   "73af9dd121cb467b": "Dispensar aviso de feedback",
   "309748eb67307e18": "Permissões: {mode}. {description}",
@@ -3621,8 +3620,6 @@
   "43a6b223ae5160ed": "Vincular à thread",
   "986951276ab5723d": "Desvincular da thread",
   "911464a3d04a2927": "(convidado)",
-  "262955d6eb632f9b": "A API da área de transferência não está disponível ao copiar o link de convidado.",
-  "f1a4f2b04cdbb4ef": "Falha ao copiar o link de convidado para a área de transferência.",
   "cf3490a604e44d31": "Não foi possível criar um link de convidado.",
   "0c7f0973f205c143": "Link de convidado",
   "d26395a743d1d094": "Copiar",
@@ -3953,7 +3950,6 @@
   "7d49da3c635828ce": "A API da área de transferência não está disponível ao copiar o plano.",
   "ef0e4fcee07194f4": "Falha ao copiar o plano para a área de transferência.",
   "7e2c4488f8ea9b23": "Não foi possível copiar o plano",
-  "153d830090848f92": "Ocorreu um erro ao copiar.",
   "5469bba2f5569925": "Plano proposto",
   "aa008ea6bf164d63": "O caminho do workspace não está disponível",
   "b1c1e4712776088c": "Esta thread não tem um caminho de workspace onde salvar.",
@@ -4597,7 +4593,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Copiar comando para um terminal",
   "ad65d733fa96f01a": "Editando {label}",
   "329ae56f86cc3cef": "Pesquisando {label} na web",
   "c63f0fdfb05dc589": "Pesquisando {label}",
@@ -7294,12 +7289,8 @@
   "f7cc78806ceb0fc1": "Digite para pesquisar em todo o projeto.",
   "87cdf1594c1d940e": "Pesquisando…",
   "131f2af2717d2232": "Expressão regular inválida",
-  "c9f4f66bd6337fb4": "A API da área de transferência não está disponível ao copiar a versão.",
-  "60b53cc903821cbb": "Falha ao copiar a versão para a área de transferência.",
-  "0cb463936215a3cc": "Não foi possível copiar a versão",
   "6d521d61ed177169": "Copiar versão {version}",
   "18040c4f55f3b533": "Versão",
-  "fd1d2853467e6195": "Copiar versão",
   "5498f2f33907b02c": "Não foi possível preparar o ACP.",
   "2f96ca67420e3662": "Pesquisar no ACP Registry",
   "052f046c20a6645f": "Pesquisar agentes…",
@@ -8105,7 +8096,6 @@
   "6037689df15a6b29": "Falha ao copiar o diagnóstico da conexão para a área de transferência.",
   "abfda0c0003e3517": "tentando novamente",
   "e8308fe8ef23999d": "tentando novamente em {seconds}s",
-  "8c8c2b1fdea8815e": "Não foi possível copiar o diagnóstico",
   "d3b1ed5b53b653ad": [
     "tentativa ",
     {
@@ -9383,7 +9373,6 @@
   ],
   "f507d41f66760d83": "Padrão do provedor",
   "366e370da9d8b04c": "Abrir navegador",
-  "50c877d9fa8db3ec": "Copiar link de login",
   "663df6ba60de573b": "Abrir documentação",
   "78a1a02732fc74e8": "Sair",
   "e53ca6f665197e44": [

@@ -1,5 +1,5 @@
 import { msg } from "gt-react";
-import { errorDisplayMessage, thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -34,6 +34,7 @@ import { floatDeviceSurface } from "../preview/agentOpenedPreviews";
 import { browserMiniPlayerSource, usePreviewMiniPlayerStore } from "../../previewMiniPlayerStore";
 import type { threadPullRequestPanelTarget } from "../pullRequest/pullRequestDetail.logic";
 import type { useDeviceState } from "../../state/device";
+import { copyWithFeedback } from "../ui/copyFeedback";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { openDeviceSetupDialog } from "./ChatOverlayHosts";
 import { previewEnvironment } from "../../state/preview";
@@ -275,29 +276,12 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   };
   const moveRightPanelSurfaceStable = useStableCallback(moveRightPanelSurface);
   const copyRightPanelFilePath = (relativePath: string) => {
-    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: m(msg("Failed to copy path")),
-          description: m(msg("Clipboard API unavailable.")),
-        }),
-      );
-      return;
-    }
-
     const clipboardPath = formatFilePathForClipboard(
       relativePath,
       resolvePathLinkTarget(relativePath, gitCwd ?? activeProjectCwd ?? ""),
     );
-    void navigator.clipboard.writeText(clipboardPath).then(undefined, (error) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: m(msg("Failed to copy path")),
-          description: thrownErrorMessage(error, m) ?? m(msg("An error occurred.")),
-        }),
-      );
+    void copyWithFeedback(clipboardPath, {
+      failureTitle: m(msg("Failed to copy path")),
     });
   };
   const copyRightPanelFilePathStable = useStableCallback(copyRightPanelFilePath);

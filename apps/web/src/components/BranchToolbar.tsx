@@ -7,6 +7,7 @@ import {
 import * as Schema from "effect/Schema";
 import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-actions";
 import { readLocalApi } from "../localApi";
+import { showCopiedToast } from "./ui/copyFeedback";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -137,20 +138,23 @@ function showWorkspaceContextMenu(event: ReactMouseEvent, workspacePath: string)
         target: "workspace path",
         unavailableMessage: msg("Clipboard API is unavailable while copying workspace path."),
         failureMessage: msg("Failed to copy workspace path to the clipboard."),
-      }).then(undefined, (error: unknown) => {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: resolveMessage(msg("Failed to copy path")),
-            description: isClipboardApiUnavailableError(error)
-              ? resolveMessage(msg("Clipboard API is unavailable while copying workspace path."))
-              : isClipboardWriteError(error)
-                ? resolveMessage(msg("Failed to copy workspace path to the clipboard."))
-                : (thrownErrorMessage(error, resolveMessage) ??
-                  resolveMessage(msg("An error occurred."))),
-          }),
-        );
-      });
+      }).then(
+        () => showCopiedToast(),
+        (error: unknown) => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: resolveMessage(msg("Failed to copy path")),
+              description: isClipboardApiUnavailableError(error)
+                ? resolveMessage(msg("Clipboard API is unavailable while copying workspace path."))
+                : isClipboardWriteError(error)
+                  ? resolveMessage(msg("Failed to copy workspace path to the clipboard."))
+                  : (thrownErrorMessage(error, resolveMessage) ??
+                    resolveMessage(msg("An error occurred."))),
+            }),
+          );
+        },
+      );
     });
 }
 

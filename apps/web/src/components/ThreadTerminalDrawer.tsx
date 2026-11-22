@@ -52,6 +52,7 @@ import { Button } from "~/components/ui/button";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { showCopiedToast } from "./ui/copyFeedback";
 import { cn } from "~/lib/utils";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
 import {
@@ -872,6 +873,7 @@ function TerminalSessionViewport({
             ),
             failureMessage: msg("Failed to copy terminal selection to the clipboard."),
           });
+          showCopiedToast();
         } catch (error) {
           reportIfCurrent(requestId, error, m(msg("Unable to copy terminal selection")));
         }

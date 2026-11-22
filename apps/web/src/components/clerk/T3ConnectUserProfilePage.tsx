@@ -18,6 +18,7 @@ import { relayFailureReason } from "../../cloud/relayFailureReason";
 import { relayEnvironmentDiscovery } from "../../state/relay";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { T3CHAT_SUBSCRIPTION_URL, TunnelUsageMeter, tunnelUpgradeCopy } from "../cloud/TunnelUsage";
+import { copyWithFeedback } from "../ui/copyFeedback";
 import { Button, InlineButton } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
@@ -249,7 +250,7 @@ export function T3ConnectUserProfilePage() {
           ? {
               actionProps: {
                 children: gt("Copy trace ID"),
-                onClick: () => void navigator.clipboard?.writeText(traceId),
+                onClick: () => void copyWithFeedback(traceId),
               },
               actionVariant: "outline",
             }

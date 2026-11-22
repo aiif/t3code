@@ -200,7 +200,7 @@ import { sourceControlClients } from "@t3tools/client-runtime/source-control-cli
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { textDirection } from "~/textDirection";
 import { useOpenLink } from "../browser/useOpenLink";
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { copyWithFeedback } from "./ui/copyFeedback";
 import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import {
   isBrowserPreviewFile,
@@ -1420,12 +1420,18 @@ const CHAT_MARKDOWN_COMPONENTS = {
                 }
               },
               openExternal: (target) => api.shell.openExternal(target),
-              copyLink: (target) =>
-                writeTextToClipboard(target, {
-                  target: "link",
-                  unavailableMessage: msg("Clipboard API is unavailable while copying link."),
-                  failureMessage: msg("Failed to copy link to the clipboard."),
-                }),
+              copyLink: async (target) => {
+                await copyWithFeedback(target, {
+                  target: {
+                    target: "link",
+                    unavailableMessage: msg("Clipboard API is unavailable while copying link."),
+                    failureMessage: msg("Failed to copy link to the clipboard."),
+                  },
+                  failureTitle: m(msg("Failed to copy")),
+                  onError: (error) =>
+                    reportMarkdownActionFailure({ operation: "copy-link", target }, error),
+                });
+              },
               updateThreadLink: updateThreadPullRequestLink,
               reportFailure: (operation, cause) => {
                 reportMarkdownActionFailure({ operation, target: href }, cause);

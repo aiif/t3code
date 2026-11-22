@@ -10,11 +10,10 @@ import {
   type ScopedThreadRef,
   type ThreadGuestShare,
 } from "@t3tools/contracts";
-import { msg, T, useGT } from "gt-react";
-import { CheckIcon, CopyIcon, UserIcon } from "lucide-react";
+import { T, useGT } from "gt-react";
+import { UserIcon } from "lucide-react";
 import { useState } from "react";
 
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useDeadlinePassed } from "~/hooks/useDeadline";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useQuietThreadProjection } from "~/state/entities";
@@ -25,6 +24,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { cn } from "~/lib/utils";
 import { useOrchestrationCommand } from "~/state/use-orchestration-command";
 import { Button } from "../ui/button";
+import { CopyLabelButton } from "../ui/copy-button";
 import {
   Dialog,
   DialogDescription,
@@ -79,13 +79,6 @@ function GuestShareDialog({
   const createGuestShare = useAtomCommand(serverEnvironment.createGuestShare, {
     reportFailure: false,
   });
-  const { copyToClipboard, isCopied } = useCopyToClipboard({
-    target: {
-      target: "guest link",
-      unavailableMessage: msg("Clipboard API is unavailable while copying guest link."),
-      failureMessage: msg("Failed to copy guest link to the clipboard."),
-    },
-  });
   const [state, setState] = useState<CreateState>({ status: "idle" });
 
   const create = async () => {
@@ -137,10 +130,12 @@ function GuestShareDialog({
                 value={state.url}
                 onFocus={(event) => event.currentTarget.select()}
               />
-              <Button size="sm" variant="outline" onClick={() => copyToClipboard(state.url)}>
-                {isCopied ? <CheckIcon /> : <CopyIcon />}
-                {isCopied ? gt("Copied") : gt("Copy", { $context: "verb, copy the link" })}
-              </Button>
+              <CopyLabelButton
+                value={state.url}
+                label={gt("Copy", { $context: "verb, copy the link" })}
+                size="sm"
+                variant="outline"
+              />
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">

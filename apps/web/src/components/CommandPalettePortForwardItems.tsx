@@ -8,7 +8,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useGT } from "gt-react";
 import { CableIcon, ClipboardCopyIcon, ExternalLinkIcon, SquareIcon } from "lucide-react";
 
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { copyWithFeedback } from "./ui/copyFeedback";
 import { readLocalApi } from "../localApi";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
 import { useEnvironments } from "../state/environments";
@@ -122,7 +122,7 @@ export function useCommandPalettePortForwardItem(input: {
               searchTerms: ["copy", "address", "url"],
               icon: <ClipboardCopyIcon className={ITEM_ICON_CLASS} />,
               run: async () => {
-                await writeTextToClipboard(forwardedUrl(forward));
+                await copyWithFeedback(forwardedUrl(forward));
               },
             },
             {

@@ -7,6 +7,7 @@ import { Menu } from "../components/ui/Menu";
 import { useMarkdownCodeHighlight } from "../features/threads/markdownCodeHighlightState";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
 import type { HighlightScheme } from "../lib/highlights";
+import { CodeBlockCopyButton } from "./CodeBlockCopyButton";
 import { CodeBlockFrame, CodeBlockHeaderButton } from "./CodeBlockFrame";
 import { fencedCodeMarkdown } from "./codeBlockMarkdown";
 import type { NativeMarkdownTextStyle } from "./SelectableMarkdownText.types";
@@ -118,12 +119,7 @@ export function HighlightedCodeBlock(props: {
             active={wrapped}
             onPress={() => setWrapped((value) => !value)}
           />
-          <CodeBlockHeaderButton
-            icon="doc.on.doc"
-            label={gt("Copy code")}
-            textStyle={textStyle}
-            onPress={() => copyTextWithHaptic(code)}
-          />
+          <CodeBlockCopyButton code={code} textStyle={textStyle} />
         </>
       }
     >

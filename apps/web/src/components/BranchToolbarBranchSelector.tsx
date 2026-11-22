@@ -31,6 +31,7 @@ import {
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { readLocalApi } from "../localApi";
+import { showCopiedToast } from "./ui/copyFeedback";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { usePaginatedBranches } from "../state/queries";
 import { useProjectClone } from "../state/projectClones";
@@ -395,15 +396,18 @@ export function BranchToolbarBranchSelector({
       target: "branch name",
       unavailableMessage: msg("Clipboard API is unavailable while copying branch name."),
       failureMessage: msg("Failed to copy branch name to the clipboard."),
-    }).then(undefined, (error: unknown) => {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: gt("Failed to copy branch name"),
-          description: toBranchActionErrorMessage(error),
-        }),
-      );
-    });
+    }).then(
+      () => showCopiedToast(),
+      (error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Failed to copy branch name"),
+            description: toBranchActionErrorMessage(error),
+          }),
+        );
+      },
+    );
   };
 
   const handleBranchContextMenu = (event: ReactMouseEvent, branchName: string | null) => {

@@ -9,6 +9,8 @@ import {
   serializeTableElementToMarkdown,
 } from "../../markdown-clipboard";
 import { Button } from "../ui/button";
+import { COPY_FEEDBACK_TIMEOUT_MS } from "../ui/copy-button";
+import { CopyAnnouncement } from "../ui/copyAnnouncement";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -24,7 +26,7 @@ export function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
   const gt = useGT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { copyToClipboard, isCopied: copied } = useCopyToClipboard<TableCopyFormat>({
-    timeout: 1200,
+    timeout: COPY_FEEDBACK_TIMEOUT_MS,
     onError: (cause, format) =>
       reportMarkdownActionFailure({ operation: "copy-table", format }, cause),
   });
@@ -82,6 +84,7 @@ export function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
             </MenuItem>
           </MenuPopup>
         </Menu>
+        <CopyAnnouncement copied={copied} label={gt("Copied")} />
       </div>
     </div>
   );

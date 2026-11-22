@@ -7,6 +7,7 @@ import {
 import { msg } from "gt-react";
 
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { showCopiedToast } from "../ui/copyFeedback";
 import { m, type MessageResolver } from "~/i18n/messages";
 import { readLocalApi } from "~/localApi";
 
@@ -55,6 +56,7 @@ export async function showPullRequestLinkContextMenu({
         unavailableMessage: msg("Clipboard API is unavailable while copying link."),
         failureMessage: msg("Failed to copy link to the clipboard."),
       });
+    if (action === "copy-link") showCopiedToast();
     else if (action === "open-external") await api.shell.openExternal(url);
   } catch {
     toastManager.add({

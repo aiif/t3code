@@ -138,6 +138,7 @@ import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
+import { showCopiedToast } from "./ui/copyFeedback";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import {
@@ -954,6 +955,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     reportFailure: false,
   });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
+    onCopy: () => showCopiedToast(),
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
@@ -970,6 +972,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       unavailableMessage: msg("Clipboard API is unavailable while copying branch name."),
       failureMessage: msg("Failed to copy branch name to the clipboard."),
     },
+    onCopy: () => showCopiedToast(),
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
@@ -981,6 +984,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
+    onCopy: () => showCopiedToast(),
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({

@@ -1,10 +1,8 @@
 import { msg, useGT } from "gt-react";
-import { CheckIcon, CopyIcon } from "lucide-react";
 
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 
-import { Button } from "./ui/button";
+import { CopyButton } from "./ui/copy-button";
 
 export function CommandBlock({
   command,
@@ -16,14 +14,6 @@ export function CommandBlock({
   readonly prominent?: boolean;
 }) {
   const gt = useGT();
-  const { copyToClipboard, isCopied } = useCopyToClipboard({
-    timeout: 1500,
-    target: {
-      target: "command",
-      unavailableMessage: msg("Clipboard API is unavailable while copying command."),
-      failureMessage: msg("Failed to copy command to the clipboard."),
-    },
-  });
   return (
     <div
       className={cn(
@@ -36,14 +26,18 @@ export function CommandBlock({
         <span className="mr-2 text-muted-foreground">$</span>
         {command}
       </span>
-      <Button
+      <CopyButton
+        value={command}
+        label={gt("Copy command")}
+        target={{
+          target: "command",
+          unavailableMessage: msg("Clipboard API is unavailable while copying command."),
+          failureMessage: msg("Failed to copy command to the clipboard."),
+        }}
         size="icon-xs"
         variant="ghost"
-        aria-label={gt("Copy command")}
-        onClick={() => copyToClipboard(command, undefined)}
-      >
-        {isCopied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
-      </Button>
+        iconClassName="size-3.5"
+      />
     </div>
   );
 }

@@ -25,6 +25,7 @@ import {
 
 import { cn } from "~/lib/utils";
 import { Button, buttonVariants } from "~/components/ui/button";
+import { CopyAnnouncement } from "./copyAnnouncement";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import {
@@ -155,22 +156,29 @@ function CopyErrorButton({ text }: { text: string }) {
   const label = isCopied ? gt("Copied error") : gt("Copy error");
 
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            size="icon-micro"
-            variant="ghost-muted"
-            aria-label={label}
-            className="[--control-icon-color:currentColor] rounded-md text-muted-foreground/80 hover:bg-transparent hover:text-muted-foreground"
-            onClick={() => copyToClipboard(text)}
-          />
-        }
-      >
-        {isCopied ? <CheckIcon className="size-3 text-success" /> : <CopyIcon className="size-3" />}
-      </TooltipTrigger>
-      <TooltipPopup side="top">{label}</TooltipPopup>
-    </Tooltip>
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="icon-micro"
+              variant="ghost-muted"
+              aria-label={label}
+              className="[--control-icon-color:currentColor] rounded-md text-muted-foreground/80 hover:bg-transparent hover:text-muted-foreground"
+              onClick={() => copyToClipboard(text)}
+            />
+          }
+        >
+          {isCopied ? (
+            <CheckIcon className="size-3 text-success" />
+          ) : (
+            <CopyIcon className="size-3" />
+          )}
+        </TooltipTrigger>
+        <TooltipPopup side="top">{label}</TooltipPopup>
+      </Tooltip>
+      <CopyAnnouncement copied={isCopied} label={label} />
+    </>
   );
 }
 
