@@ -204,15 +204,16 @@ project content, prompts, command output, or file data reaches the registry.
 
 ## Known failure modes
 
-| Symptom                              | Check                                                                                               |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Host subdomain returns 502           | `frpc` is not connected: host relay status, `docker compose logs frps` or `journalctl -u frps`      |
-| Host subdomain returns 404 from frps | `customDomains` does not match the host id                                                          |
-| Admin console lists no hosts         | Hosts have not registered yet, or the admin key is wrong                                            |
-| Guest resolve returns 401            | The host key is invalid or rotated                                                                  |
-| Host register returns 410            | The environment was removed in the admin console; restore it there                                  |
-| Guest resolve says offline/paused    | Sharing is off, paused, the app quit, or `frpc` is down                                             |
-| Guest pairing fails                  | Host rejected the key: confirm the host state file has the key and sharing is enabled               |
-| Guests cannot approve                | Check the session has `orchestration:operate`; the guest allowlist covers `runtime-request.respond` |
-| Notifications stop                   | Re-subscribe; confirm the portal's VAPID key matches the registry                                   |
-| Other domain broke                   | `openresty -t` and the include file; the relay needs its own `server` blocks, not a default change  |
+| Symptom                              | Check                                                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host subdomain returns 502           | `frpc` is not connected: host relay status, `docker compose logs frps` or `journalctl -u frps`                                                          |
+| Host subdomain returns 404 from frps | `customDomains` does not match the host id                                                                                                              |
+| Admin console lists no hosts         | Hosts have not registered yet, or the admin key is wrong                                                                                                |
+| Guest resolve returns 401            | The host key is invalid or rotated                                                                                                                      |
+| Host register returns 410            | The environment was removed in the admin console; restore it there                                                                                      |
+| Guest resolve says offline/paused    | Sharing is off, paused, the app quit, or `frpc` is down                                                                                                 |
+| Guest pairing fails                  | Host rejected the key: confirm the host state file has the key and sharing is enabled                                                                   |
+| Mobile pairing rejects a valid key   | The host checks DPoP against `http://` behind frps; update the host connector or add `requestHeaders.set.X-Forwarded-Proto = "https"` to its frpc proxy |
+| Guests cannot approve                | Check the session has `orchestration:operate`; the guest allowlist covers `runtime-request.respond`                                                     |
+| Notifications stop                   | Re-subscribe; confirm the portal's VAPID key matches the registry                                                                                       |
+| Other domain broke                   | `openresty -t` and the include file; the relay needs its own `server` blocks, not a default change                                                      |

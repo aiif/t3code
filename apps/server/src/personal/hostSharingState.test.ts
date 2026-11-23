@@ -151,4 +151,5 @@ it("renders one frp proxy for the host subdomain", () => {
   expect(config).toContain("localPort = 3773");
   expect(config).toContain('customDomains = ["abcdef123456.t3.example.test"]');
   expect(config).toContain('name = "t3-abcdef123456"');
+  expect(config).toContain("requestHeaders.set.X-Forwarded-Proto");
 });

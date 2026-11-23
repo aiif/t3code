@@ -313,6 +313,8 @@ type = "http"
 localIP = "127.0.0.1"
 localPort = ${input.localPort}
 customDomains = ["${input.domain}"]
+# The relay terminates TLS; tell the host server so DPoP proofs and cookies use https.
+requestHeaders.set.X-Forwarded-Proto = "https"
 `;
 }
 
