@@ -16,6 +16,7 @@ import { useRetryEnvironment } from "../features/connection/useRetryEnvironment"
 import { environmentPresentations } from "./presentation";
 import { useWorkspaceConnectionState, useWorkspaceEnvironments } from "./workspace";
 import type { SavedRemoteConnection } from "../lib/connection";
+import { removePersonalNetworkComputer } from "../features/personal/personalNetwork";
 import { appAtomRegistry } from "./atom-registry";
 import type { ConnectedEnvironmentSummary, EnvironmentRuntimeState } from "./remote-runtime-types";
 import { environmentSession } from "./session";
@@ -193,7 +194,9 @@ export function useRemoteConnections() {
       text: m(msg("Remove")),
       style: "destructive",
       onPress: () => {
-        void controller.removeEnvironment(environmentId);
+        void controller.removeEnvironment(environmentId).then((result) => {
+          if (AsyncResult.isSuccess(result)) removePersonalNetworkComputer(environmentId);
+        });
       },
     } as const;
     if (environment.isRelayManaged) {

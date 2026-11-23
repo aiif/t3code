@@ -205,7 +205,7 @@ receive it automatically the next time they sync with the host.
 | Host is offline or paused                            | Resume sharing, make sure the app is running, and check the panel for a connector error. Guests cannot reach a host while its tunnel is down.  |
 | Connector will not start                             | `cloudflared` is missing or crashed. Windows and macOS release builds include it; on a CLI host, install it or set `T3CODE_CLOUDFLARED_PATH`.  |
 | The tunnel will not connect on a restrictive network | Allow outbound UDP 7844 for QUIC, or outbound TCP 443 so `cloudflared` can fall back to HTTP/2. A network that blocks both cannot tunnel.      |
-| A quick address stopped working                      | The tunnel restarted. **Refresh** the host in the guest's Personal network list; the host key is unchanged.                                    |
+| A quick address stopped working                      | The tunnel restarted. The host key is unchanged; add the computer again with the same key to resolve the new address.                          |
 | A long request fails with 524                        | The request passed Cloudflare's ~100-second HTTP timeout. Retry, or split the file. WebSocket sessions are not affected.                       |
 | No notifications from a Cloudflare host              | Relay push is not part of this version. The desktop app still shows activity in the thread.                                                    |
 
@@ -235,9 +235,9 @@ same time; there is no single active host. The existing Connections list shows
 their online state and lets you remove one.
 
 On Android, open **Add environment → Personal network**, enter the relay URL and
-the host key, then **Add computer**. That list keeps one row per computer,
-through the relay it currently answers on; it supports several hosts, refresh,
-and a remove that forgets every key for that computer.
+the host key, then **Add computer**. The form stays focused on adding: it does
+not list existing computers. Manage them from **Settings → Environments**;
+removing one there also forgets its saved host keys.
 
 ## What a guest can do
 

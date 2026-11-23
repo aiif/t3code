@@ -15,7 +15,6 @@ import {
 import {
   addPersonalNetworkHost,
   currentPersonalNetworkRelayUrl,
-  personalNetworkComputers,
   personalNetworkStorage,
   readPersonalNetworkHosts,
   refreshPersonalNetworkHosts,
@@ -114,36 +113,18 @@ describe("a computer that switched relays", () => {
   };
   const liveNew = hostRecord({ relayUrl: NEW_RELAY, hostKey: `${HOST_KEY}-new` });
 
-  it("shows one row through the live route, not the dead old relay", () => {
-    const computers = personalNetworkComputers([deadOld, liveNew]);
-    expect(computers).toHaveLength(1);
-    expect(computers[0]).toMatchObject({ relayUrl: NEW_RELAY, online: true, lastError: null });
+  it("defaults the relay field to the live route, not the dead old relay", () => {
     expect(currentPersonalNetworkRelayUrl([deadOld, liveNew])).toBe(NEW_RELAY);
-  });
-
-  it("keeps other computers in their own rows", () => {
-    const other = hostRecord({
-      relayUrl: NEW_RELAY,
-      hostKey: `${HOST_KEY}-work`,
-      environmentId: "env-work",
-    });
-    expect(
-      personalNetworkComputers([deadOld, liveNew, other]).map((host) => host.environmentId),
-    ).toEqual(["env-home", "env-work"]);
-  });
-
-  it("speaks through the newest route when every relay is dead", () => {
-    const deadNew = { ...liveNew, online: false, lastError: "Could not reach the relay." };
-    expect(personalNetworkComputers([deadOld, deadNew])).toMatchObject([
-      { relayUrl: NEW_RELAY, online: false },
-    ]);
   });
 
   it("prefers a paused route over a dead one", () => {
     const pausedNew = { ...liveNew, online: false, paused: true };
-    expect(personalNetworkComputers([deadOld, pausedNew])).toMatchObject([
-      { relayUrl: NEW_RELAY, paused: true },
-    ]);
+    expect(currentPersonalNetworkRelayUrl([deadOld, pausedNew])).toBe(NEW_RELAY);
+  });
+
+  it("uses the newest route when every relay is dead", () => {
+    const deadNew = { ...liveNew, online: false, lastError: "Could not reach the relay." };
+    expect(currentPersonalNetworkRelayUrl([deadOld, deadNew])).toBe(NEW_RELAY);
   });
 
   it("forgetting a computer drops all its relay routes", () => {

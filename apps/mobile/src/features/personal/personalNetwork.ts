@@ -92,21 +92,6 @@ function betterRoute(
   return current === null || routeRank(candidate) >= routeRank(current) ? candidate : current;
 }
 
-/**
- * One row per computer: its best live route speaks for it, so a host that
- * switched relays never displays its dead route's relay or offline state.
- */
-export function personalNetworkComputers(
-  hosts: ReadonlyArray<PersonalHostRecord>,
-): ReadonlyArray<PersonalHostRecord> {
-  const byEnvironment = new Map<string, PersonalHostRecord>();
-  for (const host of hosts) {
-    const current = byEnvironment.get(host.environmentId) ?? null;
-    byEnvironment.set(host.environmentId, betterRoute(host, current));
-  }
-  return [...byEnvironment.values()];
-}
-
 /** The relay an existing computer actually answers on, for the add-host form's default. */
 export function currentPersonalNetworkRelayUrl(
   hosts: ReadonlyArray<PersonalHostRecord>,
@@ -118,7 +103,7 @@ export function currentPersonalNetworkRelayUrl(
   return best?.relayUrl ?? null;
 }
 
-/** Forgets every key that reaches one computer; a row removal must not resurrect a dead route. */
+/** Forgets every key that reaches one computer, so no route outlives its environment. */
 export function removePersonalNetworkComputer(
   environmentId: string,
 ): ReadonlyArray<PersonalHostRecord> {
