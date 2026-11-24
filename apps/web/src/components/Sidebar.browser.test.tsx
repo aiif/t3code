@@ -462,3 +462,76 @@ describe("sidebar settled pagination", () => {
     expect(screen.container.querySelectorAll("[data-thread-item]")).toHaveLength(loadedRows);
   });
 });
+
+describe("sidebar settled shelf expansion", () => {
+  it("starts collapsed even when a previous session left it expanded", async () => {
+    using stack = new DisposableStack();
+    const expandedKey = "t3code:sidebar:settled-expanded";
+    const previousExpanded = window.localStorage.getItem(expandedKey);
+    window.localStorage.setItem(expandedKey, "true");
+    stack.defer(() => {
+      if (previousExpanded === null) window.localStorage.removeItem(expandedKey);
+      else window.localStorage.setItem(expandedKey, previousExpanded);
+    });
+    const activeProject = project("active");
+    const activeThread = threadShell(activeProject.id, 0);
+    const settledThreads = [1, 2].map((index) =>
+      makeThreadFixture({
+        environmentId: activeProject.environmentId,
+        projectId: activeProject.id,
+        id: ThreadId.make(`settled-${index}`),
+        title: `Settled thread ${index}`,
+        settledOverride: "settled",
+        settledAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    const routeThreadRef: ScopedThreadRef = {
+      environmentId: activeProject.environmentId,
+      threadId: activeThread.id,
+    };
+    vi.mocked(useProjects).mockReturnValue([activeProject]);
+    vi.mocked(useQuietThreadShells).mockReturnValue([activeThread, ...settledThreads]);
+    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: routeThreadRef });
+    vi.mocked(useHandleNewThread).mockReturnValue({
+      activeDraftThread: null,
+      activeThread: null,
+      defaultProjectRef: {
+        environmentId: activeProject.environmentId,
+        projectId: activeProject.id,
+      },
+      defaultProjectFallbackReady: true,
+      handleNewThread: vi.fn().mockResolvedValue(null),
+      routeDraftId: null,
+      routeThreadRef,
+    });
+    vi.mocked(useServerConfigs).mockReturnValue(
+      new Map([
+        [
+          activeProject.environmentId,
+          {
+            scratchWorkspaceRoot: null,
+            shellThreadFamilies: false,
+          } as unknown as EnvironmentServerConfig,
+        ],
+      ]),
+    );
+
+    await using screen = await render(
+      <SidebarProvider style={{ height: 400, minHeight: 400 }}>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+    const shelf = screen.container.querySelector<HTMLElement>(
+      '[data-sidebar-row="shelf:settled"]',
+    )!;
+    expect(shelf.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.container.textContent).not.toContain("Settled thread 1");
+
+    await act(() => shelf.click());
+
+    expect(shelf.getAttribute("aria-expanded")).toBe("true");
+    await expect.element(screen.getByText("Settled thread 1")).toBeInTheDocument();
+    // Expansion is session-only, so the old stored value is neither read nor rewritten.
+    expect(window.localStorage.getItem(expandedKey)).toBe("true");
+  });
+});
