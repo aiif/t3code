@@ -184,13 +184,16 @@ export const AuthAdministrativeClientScopes = [
 
 /**
  * A personal-key session may drive work but not administer the host: no
- * settings, providers, access, terminal, preview, diagnostics, Git writes,
- * filesystem writes, relay management, or project lifecycle.
+ * settings, providers, access, preview, diagnostics, Git writes, filesystem
+ * writes, relay management, or project lifecycle. Its terminal runs as the
+ * server's user, so it can still change files there without `filesystem:write`.
  */
 export const AuthPersonalGuestScopes = [
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
   AuthFilesystemReadScope,
+  AuthTerminalReadScope,
+  AuthTerminalOperateScope,
 ] as const satisfies ReadonlyArray<AuthEnvironmentScope>;
 
 export const AuthTokenExchangeGrantType =

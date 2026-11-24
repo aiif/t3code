@@ -691,7 +691,11 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
 
   const distroArgs = distroForConfig ? ["-d", distroForConfig] : [];
   const forwardedEnv: Record<string, string> = { [DESKTOP_HOST_SCOPE_ENV]: input.hostScope };
-  const forwardedEnvNames: string[] = [DESKTOP_HOST_SCOPE_ENV];
+  const forwardedEnvNames: string[] = [
+    DESKTOP_HOST_SCOPE_ENV,
+    // WSL imports only names listed in WSLENV, and the values come from the child env below.
+    ...(environment.personalOnly ? ["T3CODE_PERSONAL_ONLY", "T3CODE_PERSONAL_MODE"] : []),
+  ];
   for (const name of WSL_FORWARDED_ENV_NAMES) {
     const value = env[name];
     if (value !== undefined && value.length > 0) {

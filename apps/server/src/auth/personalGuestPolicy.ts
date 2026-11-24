@@ -38,6 +38,16 @@ const PERSONAL_GUEST_RPC_METHODS: ReadonlySet<string> = new Set<string>([
   WS_METHODS.attachmentsDelete,
   WS_METHODS.secretsAnswerRequest,
 
+  // The host key is the owner's own credential, so its guest owns the shell too.
+  WS_METHODS.terminalOpen,
+  WS_METHODS.terminalAttach,
+  WS_METHODS.terminalObserve,
+  WS_METHODS.terminalWrite,
+  WS_METHODS.terminalResize,
+  WS_METHODS.terminalClear,
+  WS_METHODS.terminalClose,
+  WS_METHODS.subscribeTerminalMetadata,
+
   WS_METHODS.subscribeWorktreeSetup,
   WS_METHODS.worktreeSetupCancel,
 

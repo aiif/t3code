@@ -28,6 +28,8 @@ export interface MakeDesktopEnvironmentInput {
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
+  /** Tests set this without a packaged personal build; production resolves the build flag. */
+  readonly personalOnly?: boolean;
 }
 
 export class DesktopEnvironment extends Context.Service<
@@ -202,7 +204,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     processArch: input.processArch,
     isPackaged: input.isPackaged,
     isDevelopment,
-    personalOnly: resolvePersonalOnly(),
+    personalOnly: input.personalOnly ?? resolvePersonalOnly(),
     appVersion: input.appVersion,
     appPath: input.appPath,
     resourcesPath,

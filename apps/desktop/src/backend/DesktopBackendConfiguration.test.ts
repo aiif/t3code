@@ -65,6 +65,7 @@ function layerEnvironment(
     readonly resourcesPath?: string;
     readonly appVersion?: string;
     readonly processArch?: NodeJS.Architecture;
+    readonly personalOnly?: boolean;
     readonly otlpTracesUrl?: string;
     readonly otlpMetricsUrl?: string;
     readonly otlpLogsUrl?: string;
@@ -80,6 +81,7 @@ function layerEnvironment(
     isPackaged: options?.isPackaged ?? true,
     resourcesPath: options?.resourcesPath ?? "/missing/resources",
     runningUnderArm64Translation: false,
+    ...(options?.personalOnly === undefined ? {} : { personalOnly: options.personalOnly }),
   }).pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -826,6 +828,45 @@ describe("DesktopBackendConfiguration", () => {
           T3CODE_OTLP_HEADERS: 'authorization="Bearer%20my-token"',
           T3CODE_OTLP_PROTOCOL: "http/protobuf",
         }),
+      );
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect("resolveWsl forwards the personal-mode flags into WSL", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-backend-config-test-",
+      });
+
+      yield* Effect.gen(function* () {
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const config = yield* configuration.resolveWsl({ port: 5050, distro: null });
+        const wslEnv = (config.env.WSLENV ?? "").split(":");
+
+        assert.equal(config.env.T3CODE_PERSONAL_ONLY, "1");
+        assert.equal(config.env.T3CODE_PERSONAL_MODE, "1");
+        assert.include(wslEnv, "T3CODE_PERSONAL_ONLY");
+        assert.include(wslEnv, "T3CODE_PERSONAL_MODE");
+      }).pipe(
+        Effect.provide(
+          layerBackendConfiguration().pipe(
+            Layer.provideMerge(layerServerExposure),
+            Layer.provideMerge(DesktopAppSettings.layerTest()),
+            Layer.provideMerge(DesktopWslServerTree.layerTest()),
+            Layer.provideMerge(
+              DesktopWslEnvironment.layerTest({
+                isAvailable: true,
+                windowsToWslPath: () => Option.some("/mnt/c/repo/apps/server/src/index.ts"),
+                getDistroIp: () => Option.some("172.27.0.99"),
+              }),
+            ),
+            Layer.provideMerge(
+              layerEnvironment(baseDir, { platform: "win32", personalOnly: true }),
+            ),
+          ),
+        ),
+        Effect.provideService(HostProcess.Environment, {}),
       );
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );

@@ -248,15 +248,16 @@ A host-key session is a **guest** session. It can:
 - launch threads, send messages, queue and steer;
 - approve agent requests and answer questions;
 - stop or interrupt runs;
-- fork, archive, unarchive, settle, snooze, pin, and tag threads.
+- fork, archive, unarchive, settle, snooze, pin, and tag threads;
+- open terminals and run commands as the host's user, including from the phone.
 
 It cannot:
 
 - delete threads (owner-only safety default);
 - create, rename, or delete projects;
 - change server settings or manage providers and authentication;
-- open a terminal or write files;
-- use the direct Git UI, branch, push, or open pull requests;
+- edit files from the app's file browser (its terminal can still change them);
+- use the app's Git and pull-request controls;
 - manage access, pairing links, scheduled tasks, browser previews, or devices;
 - use `/mcp` or peer links.
 
@@ -299,8 +300,9 @@ thread.
 
 ## Security model
 
-- A host key is fully trusted for that one host, including every project on it.
-  Give it only to people who should operate that machine.
+- A host key is fully trusted for that one host, including every project on it
+  and a shell as its user. Give it only to people who should operate that
+  machine.
 - A paired guest can ask the host for its other saved relay keys. That only adds
   routes back to the same host, so it grants nothing the guest did not already
   have.

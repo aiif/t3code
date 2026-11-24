@@ -9,11 +9,13 @@ import { describe, expect, it } from "vite-plus/test";
 import { personalGuestMayCallRpc, personalGuestMayDispatch } from "./personalGuestPolicy.ts";
 
 describe("personal guest scopes", () => {
-  it("grants only orchestration and read-only filesystem access", () => {
+  it("grants orchestration, read-only filesystem, and terminal access", () => {
     expect(AuthPersonalGuestScopes).toEqual([
       "orchestration:read",
       "orchestration:operate",
       "filesystem:read",
+      "terminal:read",
+      "terminal:operate",
     ]);
   });
 });
@@ -44,14 +46,27 @@ describe("personal guest RPC allowlist", () => {
     }
   });
 
-  it("denies administration, terminals, previews, devices, project lifecycle, and Git writes", () => {
+  it("allows the host's terminal and its metadata stream", () => {
+    for (const method of [
+      WS_METHODS.terminalOpen,
+      WS_METHODS.terminalAttach,
+      WS_METHODS.terminalObserve,
+      WS_METHODS.terminalWrite,
+      WS_METHODS.terminalResize,
+      WS_METHODS.terminalClear,
+      WS_METHODS.terminalClose,
+      WS_METHODS.subscribeTerminalMetadata,
+    ]) {
+      expect(personalGuestMayCallRpc(method)).toBe(true);
+    }
+  });
+
+  it("denies administration, previews, devices, project lifecycle, and Git writes", () => {
     for (const method of [
       WS_METHODS.serverUpdateSettings,
       WS_METHODS.serverUpdateProvider,
       WS_METHODS.serverUpdateServer,
       WS_METHODS.subscribeAuthAccess,
-      WS_METHODS.terminalOpen,
-      WS_METHODS.terminalWrite,
       WS_METHODS.previewOpen,
       WS_METHODS.deviceOpen,
       WS_METHODS.projectsMutate,
