@@ -53,7 +53,7 @@ import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { readTextFromClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { showCopiedToast } from "./ui/copyFeedback";
-import { cn } from "~/lib/utils";
+import { cn, isWindowsPlatform } from "~/lib/utils";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
 import {
   GhosttyTerminalSurface,
@@ -439,6 +439,24 @@ function terminalContextMenuItems(options: {
     { id: "select-all", label: m(msg("Select all", { $context: "select all terminal text" })) },
     { id: "scroll-to-bottom", label: m(msg("Jump to latest")) },
   ];
+}
+
+/**
+ * Windows Terminal pastes on right-click unless text is selected or Shift asks for the menu.
+ * Other platforms keep right-click for the context menu.
+ */
+export function shouldPasteOnTerminalRightClick(options: {
+  platform: string;
+  shiftKey: boolean;
+  hasSelection: boolean;
+  canWrite: boolean;
+}): boolean {
+  return (
+    !options.shiftKey &&
+    !options.hasSelection &&
+    options.canWrite &&
+    isWindowsPlatform(options.platform)
+  );
 }
 
 /**
@@ -911,6 +929,17 @@ function TerminalSessionViewport({
         clearSelectionAction();
         const selectionAction = readSelectionAction();
         const requestId = selectionActionRequestIdRef.current;
+        if (
+          shouldPasteOnTerminalRightClick({
+            platform: navigator.platform,
+            shiftKey: event.shiftKey,
+            hasSelection: selectionAction !== null,
+            canWrite: hasTerminalWriteAccess(),
+          })
+        ) {
+          await pasteFromClipboard(requestId);
+          return;
+        }
         let clicked: TerminalContextMenuAction | null;
         try {
           clicked = await localApi.contextMenu.show(

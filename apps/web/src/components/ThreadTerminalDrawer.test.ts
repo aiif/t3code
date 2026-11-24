@@ -9,6 +9,7 @@ import {
 
 import {
   shouldHandleTerminalExit,
+  shouldPasteOnTerminalRightClick,
   synchronizeTerminalOutput,
   synchronizeTerminalSession,
 } from "./ThreadTerminalDrawer";
@@ -18,6 +19,23 @@ describe("terminal selection actions", () => {
     expect(shouldHandleTerminalExit("exited", "running", false, 1)).toBe(true);
     expect(shouldHandleTerminalExit("exited", "exited", false, 1)).toBe(false);
     expect(shouldHandleTerminalExit("closed", "running", true, 1)).toBe(false);
+  });
+
+  it("pastes on Windows right-click unless a selection or Shift asks for the menu", () => {
+    const rightClick = {
+      platform: "Win32",
+      shiftKey: false,
+      hasSelection: false,
+      canWrite: true,
+    };
+
+    expect(shouldPasteOnTerminalRightClick(rightClick)).toBe(true);
+    expect(shouldPasteOnTerminalRightClick({ ...rightClick, shiftKey: true })).toBe(false);
+    expect(shouldPasteOnTerminalRightClick({ ...rightClick, hasSelection: true })).toBe(false);
+    expect(shouldPasteOnTerminalRightClick({ ...rightClick, canWrite: false })).toBe(false);
+    expect(shouldPasteOnTerminalRightClick({ ...rightClick, platform: "Linux x86_64" })).toBe(
+      false,
+    );
   });
 });
 

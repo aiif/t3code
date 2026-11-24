@@ -49,6 +49,16 @@ Jump to latest in the context menu returns to the current output.
 On iPhone and iPad, long-press the terminal to paste or to choose Select Text.
 Select Text shows the visible output, where you can copy text or tap a link.
 
+## Copy and paste
+
+On Windows, Ctrl+V, Ctrl+Shift+V, and Shift+Insert paste. Right-click pastes
+when nothing is selected. Right-click a selection for Copy and Add to chat, or
+hold Shift and right-click to open the menu. On macOS, use Cmd+V. On Linux, use
+Ctrl+Shift+V, Shift+Insert, or a middle click.
+
+To copy, select text and press Ctrl+C (Cmd+C on macOS), Ctrl+Shift+C, or
+Ctrl+Insert. With nothing selected, Ctrl+C still interrupts the running command.
+
 ## fish
 
 T3 Code starts fish with `no-query-term`, avoiding startup waits for terminal

@@ -492,6 +492,31 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(harness.onData.mock.calls).toEqual([["echo hi"]]);
   });
 
+  it("pastes on plain Ctrl+V on Windows", async () => {
+    const harness = createHarness();
+    const read = Promise.resolve("echo hi");
+    vi.stubGlobal("navigator", {
+      platform: "Win32",
+      clipboard: { readText: () => read },
+    });
+    const surface = await harness.create({ beforeKey: () => true });
+
+    key(surface, "v", "KeyV", { ctrlKey: true });
+    await read;
+
+    expect(harness.onData.mock.calls).toEqual([["echo hi"]]);
+  });
+
+  it("leaves plain Ctrl+V to the shell outside Windows", async () => {
+    vi.stubGlobal("navigator", { platform: "Linux x86_64" });
+    const harness = createHarness();
+    const surface = await harness.create({ beforeKey: () => true });
+
+    key(surface, "v", "KeyV", { ctrlKey: true });
+
+    expect(harness.onData.mock.calls).toEqual([["\x16"]]);
+  });
+
   it.each(["V keyup", "blur", "Meta keyup without V keyup"])(
     "accepts a later identical menu paste after %s",
     async (end) => {
