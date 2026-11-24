@@ -1185,6 +1185,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         expect(access.personal_guest).toBe(true);
         expect(access.host_id).toBe(hostId);
         expect(access.token_type).toBe("Bearer");
+        expect(access.expires_in).toBeGreaterThan(60 * 60 * 24 * 365);
         expect(new Set(access.scope.split(" "))).toEqual(new Set(AuthPersonalGuestScopes));
 
         const session = yield* serverAuth.authenticateHttpRequest(

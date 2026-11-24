@@ -93,6 +93,8 @@ const PEER_LINK_RENEWAL_STEP = Duration.days(1);
 // the device stays signed in while used. One idle for the whole window pairs again.
 const RENEWABLE_ACCESS_TOKEN_TTL = Duration.hours(1);
 const RENEWABLE_SESSION_WINDOW = Duration.days(30);
+// A personal host key is the owner's credential; its guest session lives as long as the key.
+const PERSONAL_GUEST_SESSION_TTL = Duration.days(3650);
 const PAIRING_LINK_SUBJECT = "one-time-token";
 
 export interface McpClientSession {
@@ -1143,6 +1145,17 @@ export const make = Effect.gen(function* () {
               input?.proofKeyThumbprint !== undefined &&
               grant.method === "one-time-token" &&
               grant.subject === PAIRING_LINK_SUBJECT;
+            const personalGuest = grant.personalGuest === true;
+            const sessionTtl = personalGuest
+              ? PERSONAL_GUEST_SESSION_TTL
+              : renewable
+                ? RENEWABLE_ACCESS_TOKEN_TTL
+                : Duration.hours(1);
+            const renewalWindow = personalGuest
+              ? PERSONAL_GUEST_SESSION_TTL
+              : renewable
+                ? RENEWABLE_SESSION_WINDOW
+                : undefined;
             const session = yield* sessions
               .issue({
                 method: input?.proofKeyThumbprint ? "dpop-access-token" : "bearer-access-token",
@@ -1151,12 +1164,12 @@ export const make = Effect.gen(function* () {
                 ...(grant.personalGuest ? { personalGuest: true } : {}),
                 ...(grant.hostId ? { hostId: grant.hostId } : {}),
                 ...(input?.proofKeyThumbprint
-                  ? {
-                      proofKeyThumbprint: input.proofKeyThumbprint,
-                      ttl: renewable ? RENEWABLE_ACCESS_TOKEN_TTL : Duration.hours(1),
-                    }
+                  ? { proofKeyThumbprint: input.proofKeyThumbprint }
                   : {}),
-                ...(renewable ? { renewalWindow: RENEWABLE_SESSION_WINDOW } : {}),
+                ...(personalGuest || input?.proofKeyThumbprint !== undefined
+                  ? { ttl: sessionTtl }
+                  : {}),
+                ...(renewalWindow !== undefined ? { renewalWindow } : {}),
                 replaceActiveForSubjectAndMethod: grant.method === "desktop-bootstrap",
                 client: {
                   ...requestMetadata,
