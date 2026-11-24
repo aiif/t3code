@@ -1102,6 +1102,8 @@ export const make = Effect.gen(function* () {
         proofKeyThumbprint,
         ttl: RENEWABLE_ACCESS_TOKEN_TTL,
         renewalWindow: RENEWABLE_SESSION_WINDOW,
+        personalGuestTtl: PERSONAL_GUEST_SESSION_TTL,
+        personalGuestRenewalWindow: PERSONAL_GUEST_SESSION_TTL,
         consumeProof,
       })
       .pipe(

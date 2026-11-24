@@ -1203,6 +1203,36 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
       }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
 
+    it.effect("keeps a renewed guest session for the host key's lifetime", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        const grants = yield* PairingGrantStore.PairingGrantStore;
+        const key = makeDpopKey();
+        yield* grants.setHostKeyGrant({ hostKey, hostId });
+        const access = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+          hostKey,
+          undefined,
+          requestMetadata,
+          { proofKeyThumbprint: key.thumbprint },
+        );
+
+        const renewed = yield* serverAuth.renewAccessToken(
+          access.access_token,
+          key.thumbprint,
+          Effect.void,
+        );
+
+        expect(renewed.expires_in).toBeGreaterThan(60 * 60 * 24 * 365);
+        const session = yield* sessions.verify(renewed.access_token);
+        expect(session).toMatchObject({ personalGuest: true, hostId });
+        const now = (yield* DateTime.now).epochMilliseconds;
+        expect(session.expiresAt?.epochMilliseconds).toBeGreaterThan(
+          now + 364 * 24 * 60 * 60 * 1000,
+        );
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
+    );
+
     it.effect("exchanges the key for a guest cookie", () =>
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;

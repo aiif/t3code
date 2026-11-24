@@ -431,6 +431,9 @@ export class SessionStore extends Context.Service<
         readonly proofKeyThumbprint: string;
         readonly ttl: Duration.Duration;
         readonly renewalWindow: Duration.Duration;
+        /** A personal guest keeps the host key's lifetime instead of the caller's default. */
+        readonly personalGuestTtl?: Duration.Duration;
+        readonly personalGuestRenewalWindow?: Duration.Duration;
         readonly consumeProof: Effect.Effect<
           void,
           ServerAuthInvalidCredentialError | ServerAuthInternalError
@@ -1046,11 +1049,16 @@ const make = Effect.gen(function* () {
         });
       }
       yield* input.consumeProof;
-      const expiresAt = DateTime.add(now, { milliseconds: Duration.toMillis(input.ttl) });
+      const personalGuest = claims.pg === 1;
+      const ttl = personalGuest ? (input.personalGuestTtl ?? input.ttl) : input.ttl;
+      const renewalWindow = personalGuest
+        ? (input.personalGuestRenewalWindow ?? input.renewalWindow)
+        : input.renewalWindow;
+      const expiresAt = DateTime.add(now, { milliseconds: Duration.toMillis(ttl) });
       const extended = yield* authSessions
         .extend({
           sessionId: claims.sid,
-          expiresAt: DateTime.add(now, { milliseconds: Duration.toMillis(input.renewalWindow) }),
+          expiresAt: DateTime.add(now, { milliseconds: Duration.toMillis(renewalWindow) }),
           now,
         })
         .pipe(

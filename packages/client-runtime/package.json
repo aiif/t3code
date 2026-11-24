@@ -183,6 +183,10 @@
       "types": "./src/personal/portal.ts",
       "default": "./src/personal/portal.ts"
     },
+    "./personal/session-repair": {
+      "types": "./src/personal/sessionRepair.ts",
+      "default": "./src/personal/sessionRepair.ts"
+    },
     "./providerSkills": {
       "types": "./src/providerSkills.ts",
       "default": "./src/providerSkills.ts"
