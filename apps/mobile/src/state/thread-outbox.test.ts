@@ -3,6 +3,7 @@ import { EnvironmentNotRegisteredError } from "@t3tools/client-runtime/connectio
 import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
 import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
 import {
+  AgentId,
   CommandId,
   ComposerContextId,
   EnvironmentAuthorizationError,
@@ -1274,6 +1275,7 @@ describe("thread outbox", () => {
       },
       creation: {
         projectId: ProjectId.make("project-1"),
+        agentId: AgentId.make("t3-tech-lead"),
         workspaceMode: "worktree",
         branch: "fork/feature",
         worktreePath: null,

@@ -66,6 +66,7 @@ import {
   scheduleUnusedComposerAttachmentCleanup,
 } from "../../state/use-composer-drafts";
 import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
+import { agentDisplayName, useAgentList } from "../../state/agents";
 import { useProjectClone } from "../../state/projectClones";
 import { projectEnvironment } from "../../state/projects";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -175,6 +176,12 @@ export function NewTaskDraftScreen(props: {
   const flowKey = newTaskFlowKey(currentRoute);
   const { getShare, isLoading: isIncomingShareInboxLoading } = useIncomingShare();
   const { projectScopes, selectedProject, selectedProjectKey, setProject } = flow;
+  const agentList = useAgentList({
+    environmentId: selectedProject?.environmentId ?? null,
+    projectRoot: selectedProject?.workspaceRoot ?? null,
+  });
+  const selectedAgentName = agentDisplayName(agentList.data?.agents ?? [], flow.selectedAgentId);
+  const agentLabel = selectedAgentName ?? gt("Default");
   // selectedProject falls back to the environment's first project; remember only a chosen one.
   useRememberThreadProject(
     selectedProject &&
@@ -742,7 +749,7 @@ export function NewTaskDraftScreen(props: {
     navigation.navigate("NewTaskProject", { incomingShareId: props.incomingShareId });
   };
   const openContextPicker = (
-    routeName: "NewTaskBranch" | "NewTaskEnvironment" | "NewTaskRepositories",
+    routeName: "NewTaskAgent" | "NewTaskBranch" | "NewTaskEnvironment" | "NewTaskRepositories",
   ) => {
     if (isComposerInteractionLocked) {
       return;
@@ -759,6 +766,18 @@ export function NewTaskDraftScreen(props: {
       machineKind={resolveEnvironmentMachineKind(selectedEnvironmentServerConfig)}
       disabled={isComposerInteractionLocked}
       onChooseEnvironment={() => openContextPicker("NewTaskEnvironment")}
+    />
+  );
+  const agentControl = (
+    <ComposerInlineControl
+      accessibilityHint={gt("Chooses the agent that starts this thread")}
+      accessibilityLabel={gt("Agent: {agent}", { agent: agentLabel })}
+      chevronDirection="right"
+      disabled={isComposerInteractionLocked}
+      icon="brain"
+      label={agentLabel}
+      maxWidth="100%"
+      onPress={() => openContextPicker("NewTaskAgent")}
     />
   );
   const shareUnavailableNotice = isIncomingShareUnavailable ? (
@@ -1007,6 +1026,7 @@ export function NewTaskDraftScreen(props: {
         </View>
       ) : null}
       {viewportHeight < SHORT_DRAFT_VIEWPORT_HEIGHT ? contextControls : null}
+      <View className="flex-row flex-wrap items-center gap-x-1 px-2">{agentControl}</View>
       {flow.canChooseWorkspace ? workspaceControls : null}
     </View>
   );

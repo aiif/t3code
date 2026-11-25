@@ -1201,6 +1201,7 @@ export function createThreadOutboxDelivery(): {
         ),
         uploadedAttachments: prepared.attachments,
         modelSelection: sendSettings.modelSelection,
+        ...(creation.agentId === undefined ? {} : { agentId: creation.agentId }),
         runtimeMode: sendSettings.runtimeMode,
         interactionMode: sendSettings.interactionMode,
         workspaceMode: workspace.workspaceMode,

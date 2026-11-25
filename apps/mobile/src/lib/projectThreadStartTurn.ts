@@ -2,6 +2,7 @@ import {
   CommandId,
   MessageId,
   ThreadId,
+  type AgentId,
   type ChatAttachment,
   type ModelSelection,
   type OrchestrationMessageContext,
@@ -30,6 +31,7 @@ export interface ProjectThreadStartTurnSpec {
   readonly context?: OrchestrationMessageContext;
   readonly uploadedAttachments: ReadonlyArray<UploadedMobileAttachment | ChatAttachment>;
   readonly modelSelection: ModelSelection;
+  readonly agentId?: AgentId;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly workspaceMode: "local" | "worktree";
@@ -67,6 +69,7 @@ export function buildProjectThreadStartTurnInput(spec: ProjectThreadStartTurnSpe
         projectId: spec.projectId,
         title,
         modelSelection: spec.modelSelection,
+        ...(spec.agentId === undefined ? {} : { agentId: spec.agentId }),
         runtimeMode: spec.runtimeMode,
         interactionMode: spec.interactionMode,
         branch: spec.branch,

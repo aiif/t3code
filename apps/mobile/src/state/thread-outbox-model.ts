@@ -8,6 +8,7 @@ import {
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import type { ThreadFamilyRead } from "@t3tools/client-runtime/state/threads";
 import {
+  AgentId,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EnvironmentId,
@@ -42,6 +43,7 @@ const QueuedThreadCreationSchema = Schema.Struct({
   projectId: ProjectId,
   projectTitle: Schema.optional(Schema.String),
   projectCwd: Schema.optional(Schema.String),
+  agentId: Schema.optional(AgentId),
   workspaceMode: Schema.Literals(["local", "worktree"]),
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
@@ -78,6 +80,8 @@ export interface QueuedThreadCreation {
   readonly projectId: ProjectIdType;
   readonly projectTitle?: string;
   readonly projectCwd?: string;
+  /** The named agent definition the server applies to the thread's first turn. */
+  readonly agentId?: AgentId;
   readonly workspaceMode: "local" | "worktree";
   readonly branch: string | null;
   readonly worktreePath: string | null;

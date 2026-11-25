@@ -73,6 +73,7 @@ describe("draft deep links", () => {
   });
 
   it.each([
+    ["agent", "NewTaskAgent"],
     ["environment", "NewTaskEnvironment"],
     ["branch", "NewTaskBranch"],
     ["repositories", "NewTaskRepositories"],

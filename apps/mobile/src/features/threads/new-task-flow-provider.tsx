@@ -8,6 +8,7 @@ import * as Dialog from "../../components/ui/Dialog";
 import React, { useRef, useState } from "react";
 
 import type {
+  AgentId,
   EnvironmentId,
   ModelSelection,
   ProviderOptionSelection,
@@ -183,6 +184,7 @@ type NewTaskFlowContextValue = {
   readonly linkedEnvironments: ReadonlyMap<EnvironmentId, string>;
   readonly isScratchDraft: boolean;
   readonly modelOptions: ReadonlyArray<ModelOption>;
+  readonly selectedAgentId: AgentId | null;
   readonly selectedModel: ModelSelection | null;
   readonly selectedModelOption: ModelOption | null;
   readonly selectedProviderStatus: ServerProvider | null;
@@ -227,6 +229,7 @@ type NewTaskFlowContextValue = {
   readonly setSubmitting: (value: boolean) => void;
   readonly loadBranches: () => void;
   readonly setRuntimeMode: (value: RuntimeMode) => void;
+  readonly setAgentId: (agentId: AgentId | null) => void;
   readonly setSelectedModelOptions: (
     value: ReadonlyArray<ProviderOptionSelection> | undefined,
   ) => void;
@@ -378,6 +381,7 @@ export function NewTaskFlowProvider(
           : null;
   const activeNewTask = props.active === false ? null : { pendingKey: activePendingKey };
   const selectedProjectDraft = useComposerDraft(selectedProjectDraftKey);
+  const selectedAgentId = selectedProjectDraft.agentId ?? null;
   const prompt = selectedProjectDraft.text;
   const attachments = selectedProjectDraft.attachments;
   const projectGitStatus = useEnvironmentQuery(
@@ -770,6 +774,12 @@ export function NewTaskFlowProvider(
     }
   };
 
+  const setAgentId = (agentId: AgentId | null) => {
+    if (selectedProjectDraftKey) {
+      updateComposerDraftSettings(selectedProjectDraftKey, { agentId: agentId ?? undefined });
+    }
+  };
+
   const worktreeCreation = (chosen: ReadonlyArray<string> | undefined) => {
     const repositories = resolveWorktreeRepositorySelection({
       choices: worktreeRepositoryChoices,
@@ -832,6 +842,7 @@ export function NewTaskFlowProvider(
         projectId: selectedProject.id,
         projectTitle: selectedProject.title,
         projectCwd: selectedProject.workspaceRoot,
+        ...(draft.agentId === undefined ? {} : { agentId: draft.agentId }),
         workspaceMode: mode,
         ...(mode === "worktree" && workspaceSelection?.pullRequestReference
           ? { pullRequestReference: workspaceSelection.pullRequestReference }
@@ -947,6 +958,7 @@ export function NewTaskFlowProvider(
     linkedEnvironments,
     isScratchDraft,
     modelOptions,
+    selectedAgentId,
     selectedModel,
     selectedModelOption,
     selectedProviderStatus,
@@ -981,6 +993,7 @@ export function NewTaskFlowProvider(
     },
     loadBranches,
     setRuntimeMode,
+    setAgentId,
     setSelectedModelOptions,
     setExpandedProvider: (value: string | null) => updateFlow({ expandedProvider: value }),
   } satisfies NewTaskFlowContextValue;

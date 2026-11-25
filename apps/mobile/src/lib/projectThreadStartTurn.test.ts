@@ -1,4 +1,4 @@
-import { ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import { AgentId, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { serializeComposerMessageForServer } from "./composerContext";
@@ -68,6 +68,30 @@ describe("project thread title", () => {
     expect(relaunched.titleSeed).toBe(title);
     expect(relaunched.message.text).toBe(wire.text);
     expect(relaunched.message.attachments).toEqual(uploadedAttachments);
+  });
+
+  it("passes the selected agent into createThread", () => {
+    const input = buildProjectThreadStartTurnInput({
+      projectId: ProjectId.make("project"),
+      projectCwd: "/workspace",
+      threadId: "thread",
+      commandId: "command",
+      messageId: "message",
+      createdAt: "2026-09-04T00:00:00Z",
+      text: "Ship the change",
+      uploadedAttachments: [],
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
+      agentId: AgentId.make("t3-tech-lead"),
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      workspaceMode: "local",
+      branch: null,
+      worktreePath: null,
+      startFromOrigin: false,
+      worktreeBranchName: "unused",
+    });
+
+    expect(input.bootstrap.createThread.agentId).toBe(AgentId.make("t3-tech-lead"));
   });
 
   it("starts a worktree of a plain project folder from each repository's default branch", () => {

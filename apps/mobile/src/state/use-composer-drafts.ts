@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { msg } from "gt-react-native";
 import { m } from "../i18n/messages";
 import {
+  AgentId as AgentIdSchema,
   EnvironmentId as EnvironmentIdSchema,
   ModelSelection as ModelSelectionSchema,
   ComposerContextId,
@@ -14,6 +15,7 @@ import {
   ProviderInteractionMode as ProviderInteractionModeSchema,
   ProviderOptionSelection as ProviderOptionSelectionSchema,
   RuntimeMode as RuntimeModeSchema,
+  type AgentId,
   type EnvironmentId,
   type ModelSelection,
   type ProjectId,
@@ -445,6 +447,7 @@ export interface ComposerDraft {
   readonly context?: OrchestrationMessageContext;
   readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly importedShareIds?: ReadonlyArray<string>;
+  readonly agentId?: AgentId;
   readonly modelSelection?: ModelSelection;
   readonly runtimeMode?: RuntimeMode;
   readonly interactionMode?: ProviderInteractionMode;
@@ -488,6 +491,7 @@ export interface ComposerDraftWorkspaceSelection {
 
 export type ComposerDraftSettingsUpdate = Pick<
   ComposerDraft,
+  | "agentId"
   | "modelSelection"
   | "runtimeMode"
   | "interactionMode"
@@ -523,6 +527,7 @@ const ComposerDraftSchema = Schema.Struct({
   context: Schema.optional(PersistedComposerContextSchema),
   attachments: Schema.Array(DraftComposerAttachmentSchema),
   importedShareIds: Schema.optional(Schema.Array(Schema.String)),
+  agentId: Schema.optional(AgentIdSchema),
   modelSelection: Schema.optional(ModelSelectionSchema),
   runtimeMode: Schema.optional(RuntimeModeSchema),
   interactionMode: Schema.optional(ProviderInteractionModeSchema),
@@ -703,6 +708,7 @@ function isEmptyDraft(draft: ComposerDraft): boolean {
   return (
     draft.text.length === 0 &&
     draft.attachments.length === 0 &&
+    draft.agentId === undefined &&
     draft.modelSelection === undefined &&
     draft.runtimeMode === undefined &&
     draft.interactionMode === undefined &&
@@ -1723,6 +1729,7 @@ export function clearComposerDraftContentState(
   const {
     importedShareIds: _importedShareIds,
     context: _context,
+    agentId,
     modelSelection,
     workspaceSelection,
     project: _project,
@@ -1730,6 +1737,7 @@ export function clearComposerDraftContentState(
   } = existing;
   const draft = {
     ...retained,
+    ...(options?.clearModelSelection || agentId === undefined ? {} : { agentId }),
     ...(options?.clearModelSelection || modelSelection === undefined ? {} : { modelSelection }),
     ...(options?.clearWorkspaceSelection || workspaceSelection === undefined
       ? {}

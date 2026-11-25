@@ -127,6 +127,19 @@ export default defineConfig({
         extends: true,
         plugins: [
           {
+            // HostProcess imports this Node 22 built-in; jsdom tests only need its default.
+            name: "node-sea-test-stub",
+            enforce: "pre",
+            resolveId(source) {
+              if (source === "node:sea") return "\0node-sea-test-stub";
+            },
+            load(id) {
+              if (id === "\0node-sea-test-stub") {
+                return "export const isSea = () => false;";
+              }
+            },
+          },
+          {
             name: `mobile-release-react-compiler-${testPlatform}`,
             enforce: "pre",
             async transform(code, id) {

@@ -90,6 +90,7 @@ import {
   NewTaskEnvironmentPickerRouteScreen,
   NewTaskRepositoriesPickerRouteScreen,
 } from "./features/threads/NewTaskContextPickerScreens";
+import { NewTaskAgentPickerRouteScreen } from "./features/threads/NewTaskAgentPickerScreen";
 import {
   ExistingThreadSettingsRouteScreen,
   NewTaskThreadSettingsRouteScreen,
@@ -205,6 +206,7 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
   SettingsUsage: msg("Usage"),
   ComponentCatalog: msg("UI components"),
   NewTaskProject: msg("Choose project"),
+  NewTaskAgent: msg("Agent"),
   NewTaskEnvironment: msg("Environment"),
   NewTaskBranch: msg("Branch"),
   NewTaskRepositories: msg("Repositories"),
@@ -659,6 +661,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
     NewTaskProject: createNativeStackScreen({
       screen: NewTaskRouteScreen,
       linking: { path: "new", alias: ["new/project"] },
+      options: pageRoute(),
+    }),
+    NewTaskAgent: createNativeStackScreen({
+      linking: "new/draft/agent",
+      screen: NewTaskAgentPickerRouteScreen,
       options: pageRoute(),
     }),
     NewTaskEnvironment: createNativeStackScreen({
