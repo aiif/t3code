@@ -527,6 +527,8 @@ export function ThreadRelationshipsPanel(props: {
     ? deriveProviderSubagentStatus(parentProjection)?.status
     : undefined;
   const projected = projection?.subagents ?? [];
+  // A thread that delegated work is a team; a child thread showing only its parent is lineage.
+  const hasTeam = projected.length > 0;
   const runtimeSubagents = projectedSubagentsToRuntime(projected);
   const byId = new Map(runtimeSubagents.map((agent) => [agent.id, agent]));
   const subagentsByThreadId = new Map(
@@ -656,7 +658,8 @@ export function ThreadRelationshipsPanel(props: {
 
   const lineageVisible =
     props.showLineage &&
-    (related.length > 0 ||
+    (hasTeam ||
+      related.length > 0 ||
       active.length > 0 ||
       previous.length > 0 ||
       runningCount > 0 ||
@@ -1041,12 +1044,17 @@ export function ThreadRelationshipsPanel(props: {
         <ThreadDetailsSection
           headingId="thread-details-lineage-heading"
           title={
-            runningCount > 0
-              ? gt("Lineage · {runningCount} running", { runningCount })
-              : gt("Lineage", { $context: "thread details section: parent and child agents" })
+            hasTeam
+              ? runningCount > 0
+                ? gt("Team · {runningCount} running", { runningCount })
+                : gt("Team")
+              : runningCount > 0
+                ? gt("Lineage · {runningCount} running", { runningCount })
+                : gt("Lineage", { $context: "thread details section: parent and child agents" })
           }
           // A lone "Previous agents" row names itself; the heading returns for status or actions.
           showHeading={
+            hasTeam ||
             runningCount > 0 ||
             canDetach ||
             related.length > 0 ||
@@ -1055,6 +1063,7 @@ export function ThreadRelationshipsPanel(props: {
             delegatedFrom !== undefined
           }
           data-thread-relationships-panel
+          data-thread-team-panel={hasTeam ? "true" : undefined}
           actions={
             canDetach ? (
               <Menu>
@@ -1081,6 +1090,11 @@ export function ThreadRelationshipsPanel(props: {
             ) : null
           }
         >
+          {hasTeam ? (
+            <p className="px-2.5 pb-1 text-xs leading-4 text-muted-foreground">
+              <T>The lead plans and delegates. Open a teammate to watch or steer it.</T>
+            </p>
+          ) : null}
           {delegatedFrom === undefined ? null : (
             <ThreadLineageRowList hiddenCount={0} onShowMore={() => {}}>
               <DelegatedFromRow

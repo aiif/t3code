@@ -99,6 +99,52 @@ function setup() {
   };
 }
 
+it("names a thread that delegated work as a team", async () => {
+  setup();
+  const projection = makeThreadProjectionFixture();
+  state.projection = {
+    ...projection,
+    subagents: [
+      {
+        id: NodeId.make("agent"),
+        threadId: projection.thread.id,
+        runId: null,
+        parentNodeId: NodeId.make("parent"),
+        origin: "app_owned",
+        createdBy: "agent",
+        driver: "codex",
+        providerInstanceId: projection.thread.providerInstanceId,
+        providerThreadId: null,
+        childThreadId: null,
+        nativeTaskRef: null,
+        prompt: "Review the change",
+        title: "Review the change",
+        model: null,
+        status: "completed",
+        result: null,
+        startedAt: null,
+        completedAt: projection.thread.updatedAt,
+        updatedAt: projection.thread.updatedAt,
+      },
+    ],
+  };
+  await using screen = await render(
+    <ThreadRelationshipsPanel
+      environmentId={environmentId}
+      threadId={projection.thread.id}
+      showLineage
+      showSideChats
+    />,
+  );
+
+  await expect.element(screen.getByRole("heading", { name: "Team" })).toBeVisible();
+  await expect
+    .element(
+      screen.getByText("The lead plans and delegates. Open a teammate to watch or steer it."),
+    )
+    .toBeVisible();
+});
+
 it.each([
   ["merge", "Could not merge back"],
   ["disconnect", "Could not disconnect agent session"],

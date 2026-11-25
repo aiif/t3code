@@ -123,6 +123,12 @@ thread that started it. Exceeding the depth or parallel limit fails with `agent_
 | `t3-debate`        | Asks two providers the same question, presents both, then converges.        | `t3-researcher` only; 2 at once, 1 level.                                                       |
 | `t3-deep-research` | Plans sub-queries, fans out read-only research, and returns a cited report. | `t3-researcher` only; 4 at once, 1 level.                                                       |
 
+A team is just an agent with delegation enabled: its `allowedAgents` are its specialists, and
+starting a thread with it is enough to launch the team. The lead stays the only conversation you
+address; each delegated task is its own child thread, and the lead is woken when one finishes. The
+thread's **Team** panel lists those children with their status and provider, and opens one when you
+want to watch or steer it.
+
 To shadow a built-in, define the same id in a project or global directory. The file replaces the
 built-in completely, so copy any fields you want to keep. The
 [`t3-reviewer.yaml`](../../examples/agents/t3-reviewer.yaml) example does this. `t3 agent show`
@@ -143,10 +149,18 @@ t3 thread start . "Review the uncommitted diff" --agent t3-reviewer
 Run these from the project directory so project definitions are in scope.
 
 From the app, **Settings → Agents** lists the built-ins plus the selected project's definitions, with
-each one's source, provider and model, delegation limits, and copyable id. To start a thread with an
-agent, choose one from the chip beside the model picker in a new thread. The picker is on by default;
-**Settings → Labs → Agent picker** hides it. Picking an agent also switches to its provider and model
-when the definition pins one.
+each one's source, provider and model, delegation limits, and copyable id. In a new thread, the chip
+beside the model picker groups the choices:
+
+- **Default** runs a plain thread with the provider's normal behavior.
+- **Team leads** plan the work and delegate it to the specialists in their definition.
+- **Specialists** run one scoped task and cannot delegate; a team lead usually starts them.
+
+Pick a team lead when you want it to split the work, run children in parallel, and review the
+result. Pick a specialist only when you want that one worker to run the task directly.
+
+The picker is on by default; **Settings → Labs → Agent picker** hides it. Picking an agent also
+switches to its provider and model when the definition pins one.
 
 From a thread, the built-in MCP tools expose definitions:
 
