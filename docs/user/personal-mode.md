@@ -235,9 +235,10 @@ same time; there is no single active host. The existing Connections list shows
 their online state and lets you remove one.
 
 On Android, open **Add environment → Personal network**, enter the relay URL and
-the host key, then **Add computer**. The form stays focused on adding: it does
-not list existing computers. Manage them from **Settings → Environments**;
-removing one there also forgets its saved host keys.
+the host key, then **Add computer**. The section confirms the added computer and
+lists the computers this device holds with their live status. Open **Settings →
+Environments** for details, to rename or remove one; removing one there also
+forgets its saved host keys.
 
 ## What a guest can do
 

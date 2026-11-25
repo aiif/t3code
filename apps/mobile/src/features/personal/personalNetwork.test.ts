@@ -15,6 +15,7 @@ import {
 import {
   addPersonalNetworkHost,
   currentPersonalNetworkRelayUrl,
+  personalNetworkComputers,
   personalNetworkStorage,
   readPersonalNetworkHosts,
   refreshPersonalNetworkHosts,
@@ -115,6 +116,23 @@ describe("a computer that switched relays", () => {
 
   it("defaults the relay field to the live route, not the dead old relay", () => {
     expect(currentPersonalNetworkRelayUrl([deadOld, liveNew])).toBe(NEW_RELAY);
+  });
+
+  it("shows one row through the live route, not the dead old relay", () => {
+    const computers = personalNetworkComputers([deadOld, liveNew]);
+    expect(computers).toHaveLength(1);
+    expect(computers[0]).toMatchObject({ relayUrl: NEW_RELAY, online: true, lastError: null });
+  });
+
+  it("keeps other computers in their own rows", () => {
+    const other = hostRecord({
+      relayUrl: NEW_RELAY,
+      hostKey: `${HOST_KEY}-work`,
+      environmentId: "env-work",
+    });
+    expect(
+      personalNetworkComputers([deadOld, liveNew, other]).map((host) => host.environmentId),
+    ).toEqual(["env-home", "env-work"]);
   });
 
   it("prefers a paused route over a dead one", () => {
